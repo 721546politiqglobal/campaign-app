@@ -1,0 +1,71 @@
+export type ContentStatus =
+  | 'draft' | 'in_review' | 'approved' | 'scheduled' | 'published' | 'rejected' | 'archived';
+
+export type Role = 'owner' | 'manager' | 'staff' | 'approver' | 'super_admin';
+
+export type Platform = 'instagram' | 'facebook' | 'x' | 'linkedin' | 'tiktok' | 'youtube';
+
+export type ContentType =
+  | 'reel' | 'social_post' | 'press_release' | 'email' | 'sms' | 'ad_copy' | 'talking_points';
+
+export interface ContentItem {
+  id: string;
+  campaignId: string;
+  type: ContentType;
+  title: string;
+  body: string;
+  status: ContentStatus;
+  isAiGenerated: boolean;
+  targetJurisdictions: string[];
+  mediaUrl?: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApprovalRecord {
+  id: string;
+  contentItemId: string;
+  campaignId: string;
+  approverUserId: string;
+  decision: 'approve' | 'reject';
+  note?: string;
+  createdAt: string;
+}
+
+export interface DisclosureRecord {
+  id: string;
+  contentItemId: string;
+  campaignId: string;
+  jurisdiction: string;
+  disclosureText: string;
+  placement: string;
+  appliedAt: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  campaignId: string;
+  actorUserId?: string;
+  action: string;
+  entityType: string;
+  entityId?: string;
+  details?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface ContentRepo {
+  get(id: string): Promise<ContentItem | null>;
+  setStatus(id: string, status: ContentStatus): Promise<void>;
+}
+export interface ApprovalRepo {
+  add(rec: Omit<ApprovalRecord, 'id' | 'createdAt'>): Promise<void>;
+  hasApproval(contentItemId: string): Promise<boolean>;
+}
+export interface DisclosureRepo {
+  add(rec: Omit<DisclosureRecord, 'id' | 'appliedAt'>): Promise<void>;
+  listFor(contentItemId: string): Promise<DisclosureRecord[]>;
+}
+export interface AuditRepo {
+  append(entry: Omit<AuditEntry, 'id' | 'createdAt'>): Promise<void>;
+}

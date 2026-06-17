@@ -1,0 +1,210 @@
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { StatusPill } from '@/components/StatusPill';
+import { getCampaignWithStats, getUsers, getContentItems, getAuditEntries } from '@/lib/data';
+import { updateCampaignAction, addUserAction, removeUserAction, impersonateAction } from '../../actions';
+
+function fmt(cents: number) {
+  return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+const ROLE_OPTS = ['owner', 'manager', 'staff', 'approver'];
+
+export default async function CampaignDetail({ params }: { params: { id: string } }) {
+  const [campaign, users, content, audit] = await Promise.all([
+    getCampaignWithStats(params.id),
+    getUsers(params.id),
+    getContentItems(params.id),
+    getAuditEntries(params.id),
+  ]);
+  if (!campaign) notFound();
+
+  const recentAudit = audit.slice(0, 10);
+
+  return (
+    <div>
+      <div className="pagehead">
+        <div>
+          <Link href="/admin" style={{ fontSize: 12, color: 'var(--text-3)', textDecoration: 'none' }}>
+            ← All campaigns
+          </Link>
+          <span className="eyebrow" style={{ marginTop: 8 }}>Campaign</span>
+          <h1>{campaign.name}</h1>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 28 }}>
+        {/* Edit campaign */}
+        <div className="card">
+          <span className="eyebrow">Settings</span>
+          <h2 style={{ fontSize: 14, fontWeight: 700, margin: '6px 0 16px' }}>Edit campaign</h2>
+          <form action={updateCampaignAction} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <input type="hidden" name="id" value={campaign.id} />
+            <div>
+              <label className="field-label">Name</label>
+              <input name="name" className="input" defaultValue={campaign.name} required />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label className="field-label">Monthly cap (USD)</label>
+                <input name="cap" type="number" className="input"
+                  defaultValue={campaign.monthlyCostCapCents / 100} min="0" />
+              </div>
+              <div>
+                <label className="field-label">Jurisdictions</label>
+                <input name="jurisdictions" className="input"
+                  defaultValue={campaign.jurisdictions.join(', ')} />
+              </div>
+            </div>
+            <button className="btn primary" style={{ alignSelf: 'flex-start', fontSize: 13 }}>
+              Save changes
+            </button>
+          </form>
+        </div>
+
+        {/* Spend summary */}
+        <div className="card">
+          <span className="eyebrow">Spend</span>
+          <h2 style={{ fontSize: 14, fontWeight: 700, margin: '6px 0 16px' }}>This month</h2>
+          <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)', marginBottom: 6 }}>
+            {fmt(campaign.monthlySpendCents)}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 14 }}>
+            of {fmt(campaign.monthlyCostCapCents)} cap
+          </div>
+          <div style={{ height: 6, background: 'var(--bg-hover)', borderRadius: 3 }}>
+            <div style={{
+              height: '100%', borderRadius: 3,
+              width: `${Math.min((campaign.monthlySpendCents / campaign.monthlyCostCapCents) * 100, 100)}%`,
+              background: campaign.monthlySpendCents > campaign.monthlyCostCapCents ? 'var(--bad)' : 'var(--accent)',
+            }} />
+          </div>
+          <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            {[
+              { label: 'Users', value: campaign.userCount },
+              { label: 'Content', value: campaign.contentCount },
+              { label: 'In review', value: campaign.inReviewCount },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ textAlign: 'center', padding: '10px 0', background: 'var(--bg-hover)', borderRadius: 'var(--r)' }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{value}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Users */}
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>Users</h2>
+        <div className="card" style={{ padding: 0 }}>
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Role</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              {users.map(u => (
+                <tr key={u.id}>
+                  <td style={{ fontWeight: 600, color: 'var(--text)' }}>{u.name}</td>
+                  <td>
+                    <span className="pill"
+                      style={u.role === 'owner' ? { borderColor: 'rgba(249,115,22,0.3)', color: 'var(--accent)' } : {}}>
+                      {u.role}
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <form action={impersonateAction.bind(null, u.id)}>
+                        <button className="admin-impersonate-btn" type="submit">Sign in as</button>
+                      </form>
+                      <form action={removeUserAction.bind(null, u.id, campaign.id)}>
+                        <button className="admin-delete-btn" type="submit">Remove</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {users.length === 0 && (
+                <tr><td colSpan={3} className="muted" style={{ padding: 20 }}>No users yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Add user */}
+        <form action={addUserAction} style={{ display: 'flex', gap: 10, marginTop: 12, alignItems: 'flex-end' }}>
+          <input type="hidden" name="campaignId" value={campaign.id} />
+          <div>
+            <label className="field-label">Name</label>
+            <input name="name" className="input" placeholder="Full name" required style={{ width: 180 }} />
+          </div>
+          <div>
+            <label className="field-label">Role</label>
+            <select name="role" className="input" style={{ width: 130 }}>
+              {ROLE_OPTS.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <button className="btn primary" style={{ fontSize: 13, marginBottom: 1 }}>Add user</button>
+        </form>
+      </div>
+
+      {/* Content */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Content</h2>
+          <Link href={`/admin/content?campaign=${campaign.id}`} style={{ fontSize: 12, color: 'var(--text-3)', textDecoration: 'none' }}>
+            View all →
+          </Link>
+        </div>
+        <div className="card" style={{ padding: 0 }}>
+          <table>
+            <thead><tr><th>Title</th><th>Type</th><th>Status</th></tr></thead>
+            <tbody>
+              {content.slice(0, 6).map(c => (
+                <tr key={c.id}>
+                  <td style={{ fontWeight: 500, color: 'var(--text)' }}>{c.title}</td>
+                  <td className="muted" style={{ fontSize: 12 }}>{c.type.replace('_', ' ')}</td>
+                  <td><StatusPill status={c.status} /></td>
+                </tr>
+              ))}
+              {content.length === 0 && (
+                <tr><td colSpan={3} className="muted" style={{ padding: 20 }}>No content yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Audit log */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Recent activity</h2>
+          <Link href="/admin/audit" style={{ fontSize: 12, color: 'var(--text-3)', textDecoration: 'none' }}>
+            Full log →
+          </Link>
+        </div>
+        <div className="card" style={{ padding: 0 }}>
+          <table>
+            <thead><tr><th>Time</th><th>Action</th><th>Entity</th></tr></thead>
+            <tbody>
+              {recentAudit.map(e => (
+                <tr key={e.id}>
+                  <td className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                    {new Date(e.createdAt).toLocaleString()}
+                  </td>
+                  <td style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{e.action}</td>
+                  <td className="muted" style={{ fontSize: 12 }}>
+                    {e.entityType}{e.entityId ? ` · ${e.entityId}` : ''}
+                  </td>
+                </tr>
+              ))}
+              {recentAudit.length === 0 && (
+                <tr><td colSpan={3} className="muted" style={{ padding: 20 }}>No activity yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
