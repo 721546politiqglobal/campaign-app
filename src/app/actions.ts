@@ -7,8 +7,8 @@ import { adminDb } from '@/lib/supabase';
 import { uid } from '@/lib/store';
 import { getCampaign } from '@/lib/data';
 import { lifecycle, disclosureEngine, usageMeter, contentGenerator, publisher, videoProvider, voiceProvider } from '@/lib/services';
-import { contentRepo, disclosureRepo } from '@/lib/repos';
-import { ContentType, Platform } from '@/domain/types';
+import { contentRepo, approvalRepo, disclosureRepo, auditRepo } from '@/lib/repos';
+import { ContentType, ContentStatus, Platform, VIDEO_CONTENT_TYPES } from '@/domain/types';
 import { GateError } from '@/domain/content-lifecycle';
 import { CapExceeded } from '@/domain/usage';
 
@@ -21,19 +21,104 @@ function guard<T>(fn: () => Promise<T>): Promise<Result> {
   });
 }
 
+const DUMMY_HASH = '$2a$10$abcdefghijklmnopqrstuuabcdefghijklmnopqrstuuabcdefghijk';
+
 export async function loginAction(formData: FormData) {
-  const { cookies } = await import('next/headers');
-  const userId = String(formData.get('userId'));
-  const { data: user } = await adminDb.from('users').select('*').eq('id', userId).single();
-  if (user) {
-    cookies().set('session', JSON.stringify({
-      userId: user.id,
-      name: user.name,
-      role: user.role,
-      campaignId: user.campaign_id,
-    }), { httpOnly: true, sameSite: 'lax', path: '/' });
-  }
-  if (user?.role === 'super_admin') redirect('/admin');
+  const bcrypt = await import('bcryptjs');
+  const { setSessionCookie } = await import('@/lib/session');
+
+  const email = String(formData.get('email') ?? '').trim().toLowerCase();
+  const password = String(formData.get('password') ?? '');
+
+  if (!email || !password) redirect('/login?error=1');
+
+  const { data: user } = await adminDb
+    .from('users')
+    .select('id, name, role, campaign_id, password_hash')
+    .eq('email', email)
+    .single();
+
+  // Always run bcrypt to prevent timing-based email enumeration
+  const hash = user?.password_hash ?? DUMMY_HASH;
+  const valid = await bcrypt.default.compare(password, hash);
+
+  if (!valid || !user) redirect('/login?error=1');
+
+  setSessionCookie({
+    userId: user.id,
+    name: user.name,
+    role: user.role,
+    campaignId: user.campaign_id,
+    exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
+  });
+
+  redirect(user.role === 'super_admin' ? '/admin' : '/dashboard');
+}
+
+export async function joinAction(formData: FormData) {
+  const bcrypt = await import('bcryptjs');
+  const { setSessionCookie } = await import('@/lib/session');
+
+  const code     = String(formData.get('code')     ?? '').trim();
+  const name     = String(formData.get('name')     ?? '').trim();
+  const email    = String(formData.get('email')    ?? '').trim().toLowerCase();
+  const password = String(formData.get('password') ?? '');
+
+  const base = `/join?code=${encodeURIComponent(code)}`;
+
+  if (!code || !name || !email || !password) redirect(`${base}&error=fields`);
+  if (password.length < 8)                   redirect(`${base}&error=password`);
+
+  const { data: invite } = await adminDb
+    .from('invite_codes')
+    .select('*')
+    .eq('code', code)
+    .single();
+
+  if (!invite)                                      redirect(`${base}&error=invalid`);
+  if (invite.used_at)                               redirect(`${base}&error=used`);
+  if (new Date(invite.expires_at) < new Date())     redirect(`${base}&error=expired`);
+
+  const { data: existing } = await adminDb
+    .from('users')
+    .select('id')
+    .eq('email', email)
+    .maybeSingle();
+  if (existing) redirect(`${base}&error=email`);
+
+  const password_hash = await bcrypt.default.hash(password, 10);
+  const userId = 'u-' + Math.random().toString(36).slice(2, 9);
+
+  await adminDb.from('users').insert({
+    id: userId,
+    campaign_id: invite.campaign_id,
+    name,
+    email,
+    password_hash,
+    role: invite.role,
+  });
+
+  await adminDb.from('invite_codes')
+    .update({ used_by: userId, used_at: new Date().toISOString() })
+    .eq('code', code);
+
+  await adminDb.from('audit_entries').insert({
+    campaign_id: invite.campaign_id,
+    actor_user_id: userId,
+    action: 'user_joined',
+    entity_type: 'user',
+    entity_id: userId,
+    details: { via_invite: code },
+  });
+
+  setSessionCookie({
+    userId,
+    name,
+    role: invite.role,
+    campaignId: invite.campaign_id,
+    exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
+  });
+
   redirect('/dashboard');
 }
 
@@ -82,8 +167,8 @@ export async function decideAction(id: string, decision: 'approve' | 'reject', n
   const s = requireSession();
   const r = await guard(() =>
     decision === 'approve'
-      ? lifecycle.approve(id, s.userId, s.role, note)
-      : lifecycle.reject(id, s.userId, s.role, note));
+      ? lifecycle.approve(id, s.userId, note)
+      : lifecycle.reject(id, s.userId, note));
   revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
   return r;
 }
@@ -179,4 +264,89 @@ export async function synthesizeVoiceAction(text: string): Promise<Result & { au
     if (e instanceof CapExceeded) return { ok: false, error: e.message };
     throw e;
   }
+}
+
+// ── Wizard actions ────────────────────────────────────────────────────────────
+
+export async function saveBodyAction(id: string, body: string): Promise<Result> {
+  requireSession();
+  await adminDb.from('content_items')
+    .update({ body, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  revalidatePath(`/content/${id}`);
+  return { ok: true };
+}
+
+export async function approveTextAction(id: string): Promise<Result> {
+  const s = requireSession();
+  const item = await contentRepo.get(id);
+  if (!item) return { ok: false, error: 'Content not found.' };
+
+  await approvalRepo.add({
+    contentItemId: id,
+    campaignId: item.campaignId,
+    approverUserId: s.userId,
+    decision: 'approve',
+  });
+
+  let nextStatus: ContentStatus;
+  if (VIDEO_CONTENT_TYPES.includes(item.type)) {
+    nextStatus = 'in_review';
+  } else if (item.isAiGenerated) {
+    nextStatus = 'approved';
+  } else {
+    nextStatus = 'scheduled';
+  }
+
+  await adminDb.from('content_items')
+    .update({ status: nextStatus, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  await auditRepo.append({
+    campaignId: item.campaignId, actorUserId: s.userId,
+    action: 'approve_text', entityType: 'content_item', entityId: id,
+  });
+  revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
+  return { ok: true };
+}
+
+export async function confirmVideoAction(id: string, videoUrl: string): Promise<Result> {
+  const s = requireSession();
+  const item = await contentRepo.get(id);
+  if (!item) return { ok: false, error: 'Content not found.' };
+  const nextStatus: ContentStatus = item.isAiGenerated ? 'approved' : 'scheduled';
+  await adminDb.from('content_items')
+    .update({ status: nextStatus, media_url: videoUrl, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  await auditRepo.append({
+    campaignId: item.campaignId, actorUserId: s.userId,
+    action: 'confirm_video', entityType: 'content_item', entityId: id,
+    details: { videoUrl },
+  });
+  revalidatePath(`/content/${id}`);
+  return { ok: true };
+}
+
+export async function confirmDisclosureAction(id: string): Promise<Result> {
+  const s = requireSession();
+  const item = await contentRepo.get(id);
+  if (!item) return { ok: false, error: 'Content not found.' };
+  const required = await disclosureEngine.requiredFor(item.targetJurisdictions, item.isAiGenerated);
+  for (const req of required) {
+    await disclosureRepo.add({
+      contentItemId: id,
+      campaignId: s.campaignId,
+      jurisdiction: req.jurisdiction,
+      disclosureText: req.disclosureText,
+      placement: req.placement,
+    });
+  }
+  await adminDb.from('content_items')
+    .update({ status: 'scheduled', updated_at: new Date().toISOString() })
+    .eq('id', id);
+  await auditRepo.append({
+    campaignId: item.campaignId, actorUserId: s.userId,
+    action: 'confirm_disclosure', entityType: 'content_item', entityId: id,
+  });
+  revalidatePath(`/content/${id}`);
+  return { ok: true };
 }

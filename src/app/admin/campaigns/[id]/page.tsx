@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { StatusPill } from '@/components/StatusPill';
-import { getCampaignWithStats, getUsers, getContentItems, getAuditEntries } from '@/lib/data';
-import { updateCampaignAction, addUserAction, removeUserAction, impersonateAction } from '../../actions';
+import { getCampaignWithStats, getUsers, getContentItems, getAuditEntries, getInviteCodes } from '@/lib/data';
+import { updateCampaignAction, addUserAction, removeUserAction, impersonateAction, generateInviteAction } from '../../actions';
 
 function fmt(cents: number) {
   return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -11,11 +11,12 @@ function fmt(cents: number) {
 const ROLE_OPTS = ['owner', 'manager', 'staff', 'approver'];
 
 export default async function CampaignDetail({ params }: { params: { id: string } }) {
-  const [campaign, users, content, audit] = await Promise.all([
+  const [campaign, users, content, audit, invites] = await Promise.all([
     getCampaignWithStats(params.id),
     getUsers(params.id),
     getContentItems(params.id),
     getAuditEntries(params.id),
+    getInviteCodes(params.id),
   ]);
   if (!campaign) notFound();
 
@@ -173,6 +174,70 @@ export default async function CampaignDetail({ params }: { params: { id: string 
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Invite codes */}
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>Invite links</h2>
+        <div className="card" style={{ padding: 0 }}>
+          {invites.length > 0 ? (
+            <table>
+              <thead>
+                <tr><th>Code</th><th>Role</th><th>Expires</th><th>Status</th><th>Link</th></tr>
+              </thead>
+              <tbody>
+                {invites.map(inv => {
+                  const expired = new Date(inv.expiresAt) < new Date();
+                  const shareUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/join?code=${inv.code}`;
+                  return (
+                    <tr key={inv.code}>
+                      <td className="mono" style={{ fontSize: 12 }}>{inv.code}</td>
+                      <td><span className="pill">{inv.role}</span></td>
+                      <td className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                        {new Date(inv.expiresAt).toLocaleDateString()}
+                      </td>
+                      <td>
+                        {inv.usedAt ? (
+                          <span style={{ fontSize: 12, color: 'var(--ok)', fontWeight: 600 }}>Used</span>
+                        ) : expired ? (
+                          <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600 }}>Expired</span>
+                        ) : (
+                          <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>Active</span>
+                        )}
+                      </td>
+                      <td>
+                        {!inv.usedAt && !expired && (
+                          <code style={{
+                            fontSize: 11, color: 'var(--text-2)',
+                            background: 'var(--bg-hover)', padding: '2px 8px',
+                            borderRadius: 4, userSelect: 'all',
+                          }}>
+                            /join?code={inv.code}
+                          </code>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <div style={{ padding: 20 }} className="muted">No invite links yet.</div>
+          )}
+        </div>
+
+        <form action={generateInviteAction} style={{ display: 'flex', gap: 10, marginTop: 12, alignItems: 'flex-end' }}>
+          <input type="hidden" name="campaignId" value={campaign.id} />
+          <div>
+            <label className="field-label">Role</label>
+            <select name="role" className="input" style={{ width: 140 }}>
+              {ROLE_OPTS.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <button className="btn primary" style={{ fontSize: 13, marginBottom: 1 }}>
+            Generate invite link
+          </button>
+        </form>
       </div>
 
       {/* Audit log */}

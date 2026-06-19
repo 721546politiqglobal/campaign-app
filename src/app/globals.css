@@ -235,7 +235,7 @@ h3 { font-size: 13px; font-weight: 600; margin: 0; color: var(--text); }
   border: 1px solid var(--border-strong);
 }
 
-.content { padding: 26px 28px 48px; max-width: 1100px; width: 100%; }
+.content { padding: 26px 28px 48px; width: 100%; }
 
 .pagehead {
   display: flex;
@@ -406,6 +406,29 @@ tr.row:hover td { background: var(--bg-hover); }
 tr.row:hover .linkcell { color: var(--accent); }
 
 /* ── Admin panel ───────────────────────────────────────────────────────────── */
+.admin-content {
+  padding: 28px 32px 52px;
+  width: 100%;
+  flex: 1;
+  min-width: 0;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-2);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.stat-value {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  line-height: 1;
+  margin-top: 6px;
+}
+
 .admin-sidebar {
   width: var(--sidebar-w);
   min-height: 100vh;
@@ -531,7 +554,7 @@ label.field .cap {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-input[type=text], input[type=number], textarea, select {
+input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=submit]):not([type=reset]):not([type=button]), textarea, select {
   width: 100%;
   font-family: var(--font, 'Manrope', sans-serif);
   font-size: 14px;
@@ -545,6 +568,13 @@ input[type=text], input[type=number], textarea, select {
   -webkit-appearance: none;
 }
 input::placeholder, textarea::placeholder { color: var(--text-3); }
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px var(--bg) inset;
+  -webkit-text-fill-color: var(--text);
+  transition: background-color 5000s ease-in-out 0s;
+}
 input:focus, textarea:focus, select:focus {
   outline: none;
   border-color: var(--accent);

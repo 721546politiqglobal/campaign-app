@@ -1,12 +1,14 @@
 export type ContentStatus =
   | 'draft' | 'in_review' | 'approved' | 'scheduled' | 'published' | 'rejected' | 'archived';
 
-export type Role = 'owner' | 'manager' | 'staff' | 'approver' | 'super_admin';
+export type Role = 'owner' | 'manager' | 'super_admin';
 
 export type Platform = 'instagram' | 'facebook' | 'x' | 'linkedin' | 'tiktok' | 'youtube';
 
 export type ContentType =
   | 'reel' | 'social_post' | 'press_release' | 'email' | 'sms' | 'ad_copy' | 'talking_points';
+
+export const VIDEO_CONTENT_TYPES: ContentType[] = ['reel'];
 
 export interface ContentItem {
   id: string;

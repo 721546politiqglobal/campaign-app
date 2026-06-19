@@ -2,7 +2,7 @@
 // All functions use the admin client — server-side only.
 
 import { adminDb } from './supabase';
-import { ContentStatus } from '@/domain/types';
+import { ContentStatus, ContentType } from '@/domain/types';
 
 export interface Campaign {
   id: string; name: string; jurisdictions: string[]; monthlyCostCapCents: number;
@@ -227,13 +227,40 @@ export async function getSystemStats() {
   };
 }
 
+export interface InviteCode {
+  code: string;
+  campaignId: string;
+  role: string;
+  createdBy: string;
+  expiresAt: string;
+  usedAt: string | null;
+  createdAt: string;
+}
+
+export async function getInviteCodes(campaignId: string): Promise<InviteCode[]> {
+  const { data } = await adminDb
+    .from('invite_codes')
+    .select('*')
+    .eq('campaign_id', campaignId)
+    .order('created_at', { ascending: false });
+  return (data ?? []).map(r => ({
+    code: r.code,
+    campaignId: r.campaign_id,
+    role: r.role,
+    createdBy: r.created_by,
+    expiresAt: r.expires_at,
+    usedAt: r.used_at,
+    createdAt: r.created_at,
+  }));
+}
+
 // ── internal mapper ──────────────────────────────────────────────────────────
 
 function toItem(r: Record<string, unknown>) {
   return {
     id: r.id as string,
     campaignId: r.campaign_id as string,
-    type: r.type as string,
+    type: r.type as ContentType,
     title: r.title as string,
     body: r.body as string,
     status: r.status as ContentStatus,

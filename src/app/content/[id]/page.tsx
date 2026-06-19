@@ -1,75 +1,57 @@
 import { notFound } from 'next/navigation';
 import { AppFrame } from '@/components/AppFrame';
 import { StatusPill } from '@/components/StatusPill';
-import { GateStrip } from '@/components/GateStrip';
-import { ActionPanel } from '@/components/ActionPanel';
+import { ContentWizard } from '@/components/ContentWizard';
 import { requireSession } from '@/lib/session';
-import { getContentItem, getApprovals, getDisclosuresForItem, getAuditEntries } from '@/lib/data';
+import { disclosureEngine } from '@/lib/services';
+import { getContentItem, getDisclosuresForItem, getAuditEntries } from '@/lib/data';
 
 export default async function ContentDetail({ params }: { params: { id: string } }) {
   const s = requireSession();
-  const [item, approvals, discs, log] = await Promise.all([
+  const [item, discs, log] = await Promise.all([
     getContentItem(params.id),
-    getApprovals(s.campaignId),
     getDisclosuresForItem(params.id),
     getAuditEntries(params.id),
   ]);
   if (!item) notFound();
 
-  const approved = approvals.some(a => a.contentItemId === item.id && a.decision === 'approve');
+  const hasDisclosure = discs.length > 0;
+  const requiredDisclosures =
+    item.isAiGenerated && !hasDisclosure
+      ? await disclosureEngine.requiredFor(item.targetJurisdictions, item.isAiGenerated)
+      : [];
 
   return (
     <AppFrame>
       <div className="pagehead">
         <div>
-          <span className="eyebrow">{item.isAiGenerated ? 'AI-generated' : 'Human-written'}</span>
+          <span className="eyebrow">{item.type.replace('_', ' ')}</span>
           <h1>{item.title}</h1>
         </div>
-        <div className="actions"><StatusPill status={item.status} /></div>
+        <StatusPill status={item.status} />
       </div>
 
-      <div style={{ marginBottom: 18 }}>
-        <GateStrip approved={approved} disclosed={discs.length > 0} isAiGenerated={item.isAiGenerated} />
-      </div>
+      <ContentWizard
+        item={item}
+        hasDisclosure={hasDisclosure}
+        requiredDisclosures={requiredDisclosures}
+      />
 
-      <div className="grid cols-2">
-        <div>
-          <div className="card">
-            <h2>Body</h2>
-            <p style={{ whiteSpace: 'pre-wrap', fontSize: 14 }}>{item.body}</p>
-          </div>
-          <div className="spacer-y" />
-          <div className="card">
-            <h2>Disclosures</h2>
-            {discs.length === 0 && <p className="muted">None attached yet.</p>}
-            {discs.map(d => (
-              <div key={d.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
-                <div className="eyebrow">{d.jurisdiction} &middot; {d.placement}</div>
-                <div style={{ fontSize: 14 }}>{d.disclosureText}</div>
-              </div>
-            ))}
-          </div>
+      {log.length > 0 && (
+        <div className="card" style={{ marginTop: 24 }}>
+          <h2>Activity</h2>
+          {log.map(a => (
+            <div key={a.id} style={{ display: 'flex', gap: 12, padding: '5px 0', fontSize: 13, borderBottom: '1px solid var(--line)' }}>
+              <span className="mono" style={{ color: 'var(--text-3)', minWidth: 70 }}>
+                {new Date(a.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+              <span style={{ fontWeight: 600, color: 'var(--text-2)' }}>
+                {a.action.replace(/_/g, ' ')}
+              </span>
+            </div>
+          ))}
         </div>
-
-        <div>
-          <ActionPanel id={item.id} status={item.status} role={s.role}
-            isAiGenerated={item.isAiGenerated} approved={approved} disclosed={discs.length > 0} />
-          <div className="spacer-y" />
-          <div className="card">
-            <h2>Activity</h2>
-            {log.length === 0 && <p className="muted">No activity yet.</p>}
-            {log.map(a => (
-              <div key={a.id} style={{ display: 'flex', gap: 10, padding: '6px 0', fontSize: 13 }}>
-                <span className="mono">{new Date(a.createdAt).toLocaleTimeString()}</span>
-                <span style={{ fontWeight: 600 }}>{a.action.replace(/_/g, ' ')}</span>
-              </div>
-            ))}
-            <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-              Every action is written to an append-only audit log.
-            </p>
-          </div>
-        </div>
-      </div>
+      )}
     </AppFrame>
   );
 }

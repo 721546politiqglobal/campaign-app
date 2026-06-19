@@ -1,5 +1,5 @@
 import {
-  ContentItem, ContentStatus, Role,
+  ContentItem, ContentStatus,
   ContentRepo, ApprovalRepo, DisclosureRepo, AuditRepo,
 } from './types';
 
@@ -30,7 +30,7 @@ export class ContentLifecycle {
     await this.log(item, actorUserId, 'submit_for_review');
   }
 
-  async approve(itemId: string, approverUserId: string, _role: Role, note?: string): Promise<void> {
+  async approve(itemId: string, approverUserId: string, note?: string): Promise<void> {
     const item = await this.require(itemId);
     this.assertTransition(item.status, 'approved');
     await this.approvals.add({ contentItemId: itemId, campaignId: item.campaignId, approverUserId, decision: 'approve', note });
@@ -38,7 +38,7 @@ export class ContentLifecycle {
     await this.log(item, approverUserId, 'approve', { note });
   }
 
-  async reject(itemId: string, approverUserId: string, _role: Role, note?: string): Promise<void> {
+  async reject(itemId: string, approverUserId: string, note?: string): Promise<void> {
     const item = await this.require(itemId);
     this.assertTransition(item.status, 'rejected');
     await this.approvals.add({ contentItemId: itemId, campaignId: item.campaignId, approverUserId, decision: 'reject', note });

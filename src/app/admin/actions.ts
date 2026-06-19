@@ -2,19 +2,38 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { cookies } from 'next/headers';
 import { requireAdmin } from '@/lib/session';
 import { adminDb } from '@/lib/supabase';
 
 export async function impersonateAction(userId: string) {
   requireAdmin();
+  const { setSessionCookie } = await import('@/lib/session');
   const { data: user } = await adminDb.from('users').select('*').eq('id', userId).single();
   if (!user) return;
-  cookies().set('session', JSON.stringify({
-    userId: user.id, name: user.name,
-    role: user.role, campaignId: user.campaign_id,
-  }), { httpOnly: true, sameSite: 'lax', path: '/' });
+  setSessionCookie({
+    userId: user.id,
+    name: user.name,
+    role: user.role,
+    campaignId: user.campaign_id,
+    exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
+  });
   redirect('/dashboard');
+}
+
+export async function generateInviteAction(formData: FormData) {
+  const s = requireAdmin();
+  const campaignId = String(formData.get('campaignId'));
+  const role = String(formData.get('role') ?? 'staff');
+  if (!campaignId) return;
+  const code = 'inv_' + Math.random().toString(36).slice(2, 14);
+  await adminDb.from('invite_codes').insert({
+    code,
+    campaign_id: campaignId,
+    role,
+    created_by: s.userId,
+    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+  });
+  revalidatePath(`/admin/campaigns/${campaignId}`);
 }
 
 export async function updateCampaignAction(formData: FormData) {

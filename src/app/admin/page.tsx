@@ -156,7 +156,7 @@ export default async function AdminOverview() {
       </div>
 
       {/* Create campaign form */}
-      <div className="card" style={{ maxWidth: 540 }}>
+      <div className="card">
         <div style={{ marginBottom: 16 }}>
           <span className="eyebrow">New campaign</span>
           <h2 style={{ fontSize: 15, fontWeight: 700, margin: '4px 0 0' }}>Create campaign</h2>

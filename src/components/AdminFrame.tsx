@@ -6,7 +6,9 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
   return (
     <div className="shell">
       <AdminSidebar name={s.name} />
-      <main className="main">{children}</main>
+      <main className="main">
+        <div className="admin-content">{children}</div>
+      </main>
     </div>
   );
 }
