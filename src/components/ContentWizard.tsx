@@ -38,7 +38,7 @@ function getSteps(item: ContentItem): WizardStep[] {
 
 function getCurrentStep(item: ContentItem, hasDisclosure: boolean): WizardStep {
   if (item.status === 'draft') return 'review';
-  if (item.status === 'in_review') return 'video';
+  if (item.status === 'in_review') return VIDEO_CONTENT_TYPES.includes(item.type) ? 'video' : 'review';
   if (item.status === 'approved') {
     if (item.isAiGenerated && !hasDisclosure) return 'disclosure';
     return 'publish';

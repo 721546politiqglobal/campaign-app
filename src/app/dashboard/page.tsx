@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { AppFrame } from '@/components/AppFrame';
 import { StatusPill } from '@/components/StatusPill';
 import { GateStrip } from '@/components/GateStrip';
@@ -10,6 +11,7 @@ import {
 
 export default async function Dashboard() {
   const s = requireSession();
+  if (s.role === 'super_admin') redirect('/admin');
   const [items, approvals, disclosures, monitoring, spend, campaign, rules] = await Promise.all([
     getContentItems(s.campaignId),
     getApprovals(s.campaignId),

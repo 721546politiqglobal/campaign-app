@@ -70,9 +70,10 @@ export default async function AdminContent({
             {filtered.map(c => (
               <tr key={c.id}>
                 <td style={{ fontWeight: 600, color: 'var(--text)', maxWidth: 280 }}>
-                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <Link href={`/content/${c.id}`}
+                    style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'inherit', textDecoration: 'none' }}>
                     {c.title}
-                  </span>
+                  </Link>
                 </td>
                 <td>
                   <Link href={`/admin/campaigns/${c.campaignId}`}
