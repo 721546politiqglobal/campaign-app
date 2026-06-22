@@ -326,6 +326,64 @@ export async function confirmVideoAction(id: string, videoUrl: string): Promise<
   return { ok: true };
 }
 
+export async function generateFromMonitoringAction(
+  monitoringResultId: string,
+  contentType: string,
+): Promise<Result & { contentId?: string }> {
+  const s = requireSession();
+  const campaign = await getCampaign(s.campaignId);
+  if (!campaign) return { ok: false, error: 'Campaign not found.' };
+
+  const { data: result } = await adminDb
+    .from('monitoring_results')
+    .select('*')
+    .eq('id', monitoringResultId)
+    .single();
+  if (!result) return { ok: false, error: 'Monitoring result not found.' };
+
+  try {
+    await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, 9_00);
+
+    const instruction =
+      `Respond to this news story${result.opponent ? ` about ${result.opponent}` : ''} on behalf of a political campaign.\n\n` +
+      `Source: ${result.source}\n` +
+      `Excerpt: "${result.excerpt}"\n` +
+      (result.url ? `Article: ${result.url}\n` : '') +
+      `\nWrite a ${contentType.replace('_', ' ')} that directly addresses this story. ` +
+      `Be factual, on-message, and persuasive.`;
+
+    const out = await contentGenerator.draft({ instruction, type: contentType });
+    await usageMeter.record(s.campaignId, 'llm_tokens', 1, 9_00);
+
+    const id = uid();
+    await adminDb.from('content_items').insert({
+      id,
+      campaign_id: s.campaignId,
+      type: contentType,
+      title: out.title,
+      body: out.text,
+      status: 'draft',
+      is_ai_generated: true,
+      target_jurisdictions: campaign.jurisdictions,
+      created_by: s.userId,
+    });
+
+    await auditRepo.append({
+      campaignId: s.campaignId,
+      actorUserId: s.userId,
+      action: 'generate_from_monitoring',
+      entityType: 'content_item',
+      entityId: id,
+      details: { monitoringResultId, contentType },
+    });
+
+    return { ok: true, contentId: id };
+  } catch (e) {
+    if (e instanceof CapExceeded) return { ok: false, error: e.message };
+    throw e;
+  }
+}
+
 export async function confirmDisclosureAction(id: string): Promise<Result> {
   const s = requireSession();
   const item = await contentRepo.get(id);

@@ -7,7 +7,7 @@ import { ContentStatus, ContentType } from '@/domain/types';
 export interface Campaign {
   id: string; name: string; jurisdictions: string[]; monthlyCostCapCents: number;
 }
-export interface User { id: string; name: string; role: string; campaignId: string; }
+export interface User { id: string; name: string; role: string; campaignId: string; email: string | null; }
 export interface MonitoringResult {
   id: string; campaignId: string; source: string; opponent?: string; excerpt: string; url: string; capturedAt: string;
 }
@@ -21,12 +21,12 @@ export async function getCampaign(campaignId: string): Promise<Campaign | null> 
 export async function getUser(userId: string): Promise<User | null> {
   const { data } = await adminDb.from('users').select('*').eq('id', userId).single();
   if (!data) return null;
-  return { id: data.id, name: data.name, role: data.role, campaignId: data.campaign_id };
+  return { id: data.id, name: data.name, role: data.role, campaignId: data.campaign_id, email: data.email ?? null };
 }
 
 export async function getUsers(campaignId: string): Promise<User[]> {
   const { data } = await adminDb.from('users').select('*').eq('campaign_id', campaignId);
-  return (data ?? []).map(r => ({ id: r.id, name: r.name, role: r.role, campaignId: r.campaign_id }));
+  return (data ?? []).map(r => ({ id: r.id, name: r.name, role: r.role, campaignId: r.campaign_id, email: r.email ?? null }));
 }
 
 export async function getContentItems(campaignId: string, filter?: ContentStatus) {
@@ -116,6 +116,7 @@ export interface CampaignWithStats extends Campaign {
 
 export interface UserWithCampaign extends User {
   campaignName: string | null;
+  email: string | null;
 }
 
 export interface ContentItemWithCampaign {
@@ -165,6 +166,7 @@ export async function getAllUsersAdmin(): Promise<UserWithCampaign[]> {
   return (u.data ?? []).map(r => ({
     id: r.id, name: r.name, role: r.role,
     campaignId: r.campaign_id, campaignName: campMap[r.campaign_id] ?? null,
+    email: (r.email as string | null) ?? null,
   }));
 }
 

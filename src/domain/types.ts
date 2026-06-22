@@ -1,7 +1,7 @@
 export type ContentStatus =
   | 'draft' | 'in_review' | 'approved' | 'scheduled' | 'published' | 'rejected' | 'archived';
 
-export type Role = 'owner' | 'manager' | 'super_admin';
+export type Role = 'owner' | 'manager' | 'staff' | 'approver' | 'super_admin';
 
 export type Platform = 'instagram' | 'facebook' | 'x' | 'linkedin' | 'tiktok' | 'youtube';
 

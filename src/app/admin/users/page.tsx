@@ -23,6 +23,7 @@ export default async function AdminUsers() {
           <thead>
             <tr>
               <th>Name</th>
+              <th>Email</th>
               <th>Role</th>
               <th>Campaign</th>
               <th>Actions</th>
@@ -34,6 +35,9 @@ export default async function AdminUsers() {
                 <td>
                   <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: 13.5 }}>{u.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{u.id}</div>
+                </td>
+                <td className="muted" style={{ fontSize: 12 }}>
+                  {u.email ?? <span style={{ color: 'var(--bad)', fontWeight: 500 }}>No email — can&apos;t log in</span>}
                 </td>
                 <td>
                   <span className="pill"

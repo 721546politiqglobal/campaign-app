@@ -1,4 +1,5 @@
 import { AppFrame } from '@/components/AppFrame';
+import { MonitoringTable } from '@/components/MonitoringTable';
 import { requireSession } from '@/lib/session';
 import { getMonitoringResults } from '@/lib/data';
 
@@ -22,23 +23,7 @@ export default async function Monitoring() {
           </div>
         </div>
       )}
-      <div className="card" style={{ padding: 0 }}>
-        <table>
-          <thead><tr><th>Source</th><th>Subject</th><th>Excerpt</th></tr></thead>
-          <tbody>
-            {results.map(m => (
-              <tr className="row" key={m.id}>
-                <td className="muted">{m.source}</td>
-                <td>{m.opponent ?? '—'}</td>
-                <td><a href={m.url} className="linkcell" target="_blank" rel="noopener noreferrer">{m.excerpt}</a></td>
-              </tr>
-            ))}
-            {results.length === 0 && (
-              <tr><td colSpan={3} className="muted" style={{ padding: 24 }}>No monitoring results yet.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <MonitoringTable results={results} />
     </AppFrame>
   );
 }

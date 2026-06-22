@@ -70,17 +70,35 @@ export async function createCampaignAction(formData: FormData) {
     monthly_cost_cap_cents: Math.round(capDollars * 100),
   });
   revalidatePath('/admin');
+  revalidatePath('/admin/campaigns');
   redirect(`/admin/campaigns/${id}`);
 }
 
 export async function addUserAction(formData: FormData) {
-  requireAdmin();
+  const s = requireAdmin();
   const campaignId = String(formData.get('campaignId'));
-  const name = String(formData.get('name') ?? '').trim();
-  const role = String(formData.get('role') ?? 'staff');
-  if (!name || !campaignId) return;
-  const id = 'u-' + Math.random().toString(36).slice(2, 9);
-  await adminDb.from('users').insert({ id, campaign_id: campaignId, name, role });
+  const name      = String(formData.get('name')  ?? '').trim();
+  const email     = String(formData.get('email') ?? '').trim().toLowerCase();
+  const role      = String(formData.get('role')  ?? 'staff');
+  if (!name || !email || !campaignId) return;
+
+  const userId = 'u-' + Math.random().toString(36).slice(2, 9);
+  const { error } = await adminDb.from('users').insert({
+    id: userId, campaign_id: campaignId, name, email, role,
+  });
+  // If email already exists the unique index fires — don't throw, just bail
+  if (error) return;
+
+  // Auto-generate an invite so the new user can set their password
+  const code = 'inv_' + Math.random().toString(36).slice(2, 14);
+  await adminDb.from('invite_codes').insert({
+    code,
+    campaign_id: campaignId,
+    role,
+    created_by: s.userId,
+    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+  });
+
   revalidatePath(`/admin/campaigns/${campaignId}`);
   revalidatePath('/admin/users');
 }

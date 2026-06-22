@@ -101,12 +101,15 @@ export default async function CampaignDetail({ params }: { params: { id: string 
         <div className="card" style={{ padding: 0 }}>
           <table>
             <thead>
-              <tr><th>Name</th><th>Role</th><th>Actions</th></tr>
+              <tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {users.map(u => (
                 <tr key={u.id}>
                   <td style={{ fontWeight: 600, color: 'var(--text)' }}>{u.name}</td>
+                  <td className="muted" style={{ fontSize: 12 }}>
+                    {u.email ?? <span style={{ color: 'var(--bad)', fontSize: 11 }}>No email</span>}
+                  </td>
                   <td>
                     <span className="pill"
                       style={u.role === 'owner' ? { borderColor: 'rgba(249,115,22,0.3)', color: 'var(--accent)' } : {}}>
@@ -133,11 +136,15 @@ export default async function CampaignDetail({ params }: { params: { id: string 
         </div>
 
         {/* Add user */}
-        <form action={addUserAction} style={{ display: 'flex', gap: 10, marginTop: 12, alignItems: 'flex-end' }}>
+        <form action={addUserAction} style={{ display: 'flex', gap: 10, marginTop: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <input type="hidden" name="campaignId" value={campaign.id} />
           <div>
             <label className="field-label">Name</label>
-            <input name="name" className="input" placeholder="Full name" required style={{ width: 180 }} />
+            <input name="name" className="input" placeholder="Full name" required style={{ width: 160 }} />
+          </div>
+          <div>
+            <label className="field-label">Email</label>
+            <input type="email" name="email" className="input" placeholder="user@example.com" required style={{ width: 200 }} />
           </div>
           <div>
             <label className="field-label">Role</label>
@@ -145,8 +152,11 @@ export default async function CampaignDetail({ params }: { params: { id: string 
               {ROLE_OPTS.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>
-          <button className="btn primary" style={{ fontSize: 13, marginBottom: 1 }}>Add user</button>
+          <button className="btn primary" style={{ fontSize: 13, marginBottom: 1 }}>Add &amp; invite</button>
         </form>
+        <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+          Creates the user account and generates an invite link below — share it so they can set their password.
+        </p>
       </div>
 
       {/* Content */}
@@ -211,8 +221,12 @@ export default async function CampaignDetail({ params }: { params: { id: string 
                             fontSize: 11, color: 'var(--text-2)',
                             background: 'var(--bg-hover)', padding: '2px 8px',
                             borderRadius: 4, userSelect: 'all',
-                          }}>
-                            /join?code={inv.code}
+                            display: 'block', maxWidth: 340,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}
+                            title={shareUrl}
+                          >
+                            {shareUrl || `/join?code=${inv.code}`}
                           </code>
                         )}
                       </td>
