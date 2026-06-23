@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { AppFrame } from '@/components/AppFrame';
 import { ContentEditor } from '@/components/ContentEditor';
 
@@ -7,7 +8,9 @@ export default function NewContent() {
       <div className="pagehead">
         <div><span className="eyebrow">Create</span><h1>New content</h1></div>
       </div>
-      <ContentEditor />
+      <Suspense>
+        <ContentEditor />
+      </Suspense>
     </AppFrame>
   );
 }

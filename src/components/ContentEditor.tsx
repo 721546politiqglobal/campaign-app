@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { createContentAction, generateDraftAction } from '@/app/actions';
 
 const TYPES = [
@@ -8,66 +9,108 @@ const TYPES = [
   ['email', 'Email'], ['sms', 'SMS'], ['ad_copy', 'Ad copy'], ['talking_points', 'Talking points'],
 ] as const;
 
+const BRIEF_SUGGESTIONS = [
+  'Announce our upcoming town hall event',
+  'Respond to an opponent attack ad',
+  'Share our healthcare plan highlights',
+  'Thank volunteers after a successful event',
+  'Push back on a false claim in the news',
+];
+
 export function ContentEditor() {
-  const [type, setType] = useState('social_post');
-  const [instruction, setInstruction] = useState('');
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [isAi, setIsAi] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const searchParams = useSearchParams();
+  const [type, setType]               = useState((searchParams.get('type') as string) || 'social_post');
+  const [instruction, setInstruction] = useState(searchParams.get('brief') || '');
+  const [title, setTitle]             = useState('');
+  const [body, setBody]               = useState('');
+  const [isAi, setIsAi]               = useState(true);
+  const [busy, setBusy]               = useState(false);
+  const [error, setError]             = useState('');
+  const [generated, setGenerated]     = useState(false);
 
   async function generate() {
     if (!instruction.trim()) { setError('Describe what you want first.'); return; }
     setBusy(true); setError('');
     try {
       const out = await generateDraftAction(instruction, type);
-      setTitle(out.title); setBody(out.text); setIsAi(true);
+      setTitle(out.title); setBody(out.text); setIsAi(true); setGenerated(true);
     } catch {
-      setError('Could not generate a draft. The spend cap may be reached.');
+      setError('Could not generate a draft. Your AI key may not be configured or the spend cap has been reached.');
     } finally { setBusy(false); }
   }
 
   return (
     <form action={createContentAction}>
-      <div className="grid cols-2">
-        <div className="card">
-          <h2>Brief</h2>
-          <label className="field">
-            <span className="cap">Type</span>
-            <select name="type" value={type} onChange={e => setType(e.target.value)}>
-              {TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </label>
-          <label className="field">
-            <span className="cap">What should this say?</span>
-            <textarea value={instruction} onChange={e => setInstruction(e.target.value)}
-              placeholder="e.g. Make a reel about our healthcare plan lowering premiums" />
-          </label>
-          <button type="button" className="btn primary" onClick={generate} disabled={busy}>
-            {busy ? 'Generating\u2026' : 'Generate draft with AI'}
-          </button>
-          {error && <div className="error">{error}</div>}
-        </div>
+      <input type="hidden" name="isAiGenerated" value={isAi ? 'on' : 'off'} />
 
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2>Brief</h2>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+          {TYPES.map(([v, l]) => (
+            <label key={v} style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '6px 12px', borderRadius: 20, cursor: 'pointer', fontSize: 13,
+              border: `1.5px solid ${type === v ? 'var(--accent)' : 'var(--line)'}`,
+              background: type === v ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent',
+              color: type === v ? 'var(--accent)' : 'var(--text-2)',
+            }}>
+              <input type="radio" name="type" value={v} checked={type === v}
+                onChange={() => setType(v)} style={{ display: 'none' }} />
+              {l}
+            </label>
+          ))}
+        </div>
+        <label className="field-label">What should this say?</label>
+        <textarea
+          value={instruction}
+          onChange={e => setInstruction(e.target.value)}
+          placeholder="e.g. Announce our healthcare town hall on Saturday"
+          className="input"
+          style={{ minHeight: 80, marginBottom: 10 }}
+        />
+        {!instruction && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+            {BRIEF_SUGGESTIONS.map(s => (
+              <button key={s} type="button" className="btn"
+                style={{ fontSize: 12, padding: '4px 10px' }}
+                onClick={() => setInstruction(s)}>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button type="button" className="btn primary" onClick={generate} disabled={busy} style={{ minWidth: 170 }}>
+            {busy ? 'Writing your draft…' : generated ? 'Regenerate' : 'Generate with AI'}
+          </button>
+          {!generated && (
+            <button type="button" className="btn" style={{ fontSize: 13 }}
+              onClick={() => { setIsAi(false); setGenerated(true); }}>
+              Write it myself
+            </button>
+          )}
+        </div>
+        {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
+      </div>
+
+      {generated && (
         <div className="card">
           <h2>Draft</h2>
-          <label className="field">
-            <span className="cap">Title</span>
-            <input type="text" name="title" value={title} onChange={e => setTitle(e.target.value)} required />
-          </label>
-          <label className="field">
-            <span className="cap">Body</span>
-            <textarea name="body" value={body} onChange={e => setBody(e.target.value)} required />
-          </label>
-          <label className="checkrow">
-            <input type="checkbox" name="isAiGenerated" checked={isAi} onChange={e => setIsAi(e.target.checked)} />
-            AI-generated (requires a disclosure before publishing)
-          </label>
-          <div className="spacer-y" />
-          <button type="submit" className="btn primary">Save draft</button>
+          <label className="field-label">Title</label>
+          <input type="text" name="title" className="input" value={title}
+            onChange={e => setTitle(e.target.value)} required style={{ marginBottom: 12 }} />
+          <label className="field-label">Body</label>
+          <textarea name="body" className="input" value={body}
+            onChange={e => setBody(e.target.value)} required style={{ minHeight: 180 }} />
+          <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center' }}>
+            <button type="submit" className="btn primary">Save draft →</button>
+            <label className="checkrow" style={{ fontSize: 13 }}>
+              <input type="checkbox" checked={isAi} onChange={e => setIsAi(e.target.checked)} />
+              AI-generated (adds required disclosure)
+            </label>
+          </div>
         </div>
-      </div>
+      )}
     </form>
   );
 }

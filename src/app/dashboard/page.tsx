@@ -2,139 +2,132 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AppFrame } from '@/components/AppFrame';
 import { StatusPill } from '@/components/StatusPill';
-import { GateStrip } from '@/components/GateStrip';
 import { requireSession } from '@/lib/session';
 import {
-  getContentItems, getApprovals, getDisclosures,
-  getMonitoringResults, getMonthlySpend, getCampaign, getDisclosureRules,
+  getContentItems, getMonitoringResults, getMonthlySpend,
+  getCampaign, getScheduledToday,
 } from '@/lib/data';
+
+const PLATFORM_ICON: Record<string, string> = {
+  instagram: 'IG', facebook: 'FB', x: 'X', linkedin: 'LI', tiktok: 'TK', youtube: 'YT',
+};
 
 export default async function Dashboard() {
   const s = requireSession();
   if (s.role === 'super_admin') redirect('/admin');
-  const [items, approvals, disclosures, monitoring, spend, campaign, rules] = await Promise.all([
+
+  const [items, monitoring, spend, campaign, todayScheduled] = await Promise.all([
     getContentItems(s.campaignId),
-    getApprovals(s.campaignId),
-    getDisclosures(s.campaignId),
     getMonitoringResults(s.campaignId),
     getMonthlySpend(s.campaignId),
     getCampaign(s.campaignId),
-    getDisclosureRules(),
+    getScheduledToday(s.campaignId),
   ]);
 
-  const approved = (id: string) => approvals.some(a => a.contentItemId === id && a.decision === 'approve');
-  const disclosed = (id: string) => disclosures.some(d => d.contentItemId === id);
+  const needsAttention = items
+    .filter(c => c.status === 'draft' || c.status === 'in_review')
+    .sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
 
-  const queue = items.filter(c => c.status === 'in_review');
-  const live = items.filter(c => c.status === 'published').length;
-  const scheduled = items.filter(c => c.status === 'scheduled').length;
   const cap = campaign?.monthlyCostCapCents ?? 0;
-  const needsLegal = rules.filter(r => r.needsLegalReview).map(r => r.jurisdiction);
+  const spendPct = cap > 0 ? Math.min((spend / cap) * 100, 100) : 0;
 
   return (
     <AppFrame>
-      <div className="pagehead">
+      {/* Action bar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <span className="eyebrow">Overview</span>
-          <h1>Today</h1>
+          <h1 style={{ margin: '2px 0 0' }}>Today</h1>
         </div>
-        <div className="actions">
-          <Link className="btn primary" href="/content/new">New content</Link>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Link className="btn" href="/monitoring">Opponent feed</Link>
+          <Link className="btn primary" href="/content/new">+ New content</Link>
         </div>
       </div>
 
-      {needsLegal.length > 0 && (
-        <div className="banner warn" style={{ marginBottom: 18 }}>
-          <div>
-            <div className="t">Disclosure rules need legal review</div>
-            <div className="b">
-              Placeholder wording is in place for {needsLegal.join(', ')}. Confirm the exact required
-              text and pre-election timing with counsel before publishing AI content.
-            </div>
+      {/* Today's schedule strip */}
+      {todayScheduled.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div className="eyebrow" style={{ marginBottom: 10 }}>Going out today</div>
+          <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
+            {todayScheduled.map(item => (
+              <Link key={item.id} href={`/content/${item.id}`} style={{
+                display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px',
+                border: '1px solid var(--line)', borderRadius: 10, minWidth: 180,
+                background: 'var(--bg-hover)', textDecoration: 'none', color: 'inherit', flexShrink: 0,
+              }}>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {item.platforms.slice(0, 3).map(p => (
+                    <span key={p} style={{
+                      fontSize: 10, fontWeight: 700, padding: '2px 5px',
+                      borderRadius: 4, background: 'var(--accent)', color: '#fff',
+                    }}>{PLATFORM_ICON[p] ?? p.toUpperCase()}</span>
+                  ))}
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.3 }}>
+                  {item.title.slice(0, 48)}{item.title.length > 48 ? '…' : ''}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                  {new Date(item.scheduledAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                </div>
+              </Link>
+            ))}
           </div>
         </div>
       )}
 
-      <div className="grid cols-3" style={{ marginBottom: 16 }}>
-        <div className="card stat">
-          <div className="stat-header">
-            <div className="stat-icon">
-              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
-                <circle cx="7.5" cy="7.5" r="5.5" stroke="currentColor" strokeWidth="1.4"/>
-                <line x1="7.5" y1="4.5" x2="7.5" y2="7.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-                <circle cx="7.5" cy="9.8" r="0.7" fill="currentColor"/>
-              </svg>
-            </div>
-          </div>
-          <div className="n">{queue.length}</div>
-          <div className="l">Awaiting review</div>
-        </div>
-        <div className="card stat">
-          <div className="stat-header">
-            <div className="stat-icon">
-              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
-                <rect x="1.5" y="3" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
-                <line x1="1.5" y1="5.5" x2="13.5" y2="5.5" stroke="currentColor" strokeWidth="1.3"/>
-                <line x1="5" y1="1" x2="5" y2="4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-                <line x1="10" y1="1" x2="10" y2="4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-              </svg>
-            </div>
-          </div>
-          <div className="n">{scheduled}</div>
-          <div className="l">Scheduled</div>
-        </div>
-        <div className="card stat">
-          <div className="stat-header">
-            <div className="stat-icon">
-              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
-                <circle cx="7.5" cy="7.5" r="5.5" stroke="currentColor" strokeWidth="1.4"/>
-                <path d="M4.5 7.5L6.5 9.5L10.5 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-          </div>
-          <div className="n">{live}</div>
-          <div className="l">Published</div>
-        </div>
-      </div>
-
       <div className="grid cols-2">
+        {/* Needs attention */}
         <div className="card">
           <h2>Needs attention</h2>
-          {queue.length === 0 && <p className="muted">Nothing waiting for review.</p>}
-          {queue.map(c => (
-            <div key={c.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--line)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <Link className="linkcell" href={`/content/${c.id}`}>{c.title}</Link>
+          {needsAttention.length === 0 ? (
+            <div style={{ padding: '24px 0', textAlign: 'center' }}>
+              <div className="muted" style={{ marginBottom: 12 }}>You&apos;re all caught up.</div>
+              <Link className="btn primary" href="/content/new">Create new content</Link>
+            </div>
+          ) : (
+            needsAttention.map(c => (
+              <div key={c.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div>
+                  <Link className="linkcell" href={`/content/${c.id}`}>{c.title}</Link>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                    {c.type.replace('_', ' ')} · updated {new Date(c.updatedAt).toLocaleDateString()}
+                  </div>
+                </div>
                 <StatusPill status={c.status} />
               </div>
-              <GateStrip approved={approved(c.id)} disclosed={disclosed(c.id)} isAiGenerated={c.isAiGenerated} />
-            </div>
-          ))}
+            ))
+          )}
         </div>
 
+        {/* Opponent pulse */}
         <div className="card">
-          <h2>Opponent monitoring</h2>
+          <h2>Opponent pulse</h2>
           {monitoring.slice(0, 3).map(m => (
             <div key={m.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--line)' }}>
               <div className="eyebrow">{m.source}</div>
-              <div style={{ fontSize: 14 }}>{m.excerpt}</div>
+              <div style={{ fontSize: 13, lineHeight: 1.5 }}>{m.excerpt.slice(0, 120)}{m.excerpt.length > 120 ? '…' : ''}</div>
             </div>
           ))}
+          {monitoring.length === 0 && <p className="muted">No monitoring results yet.</p>}
           <div className="spacer-y" />
-          <Link className="btn" href="/monitoring">Open monitoring</Link>
+          <Link className="btn" href="/monitoring">See full feed</Link>
         </div>
       </div>
 
-      <div className="subtle-divider" />
-      <div className="card">
-        <h2>This month&rsquo;s spend</h2>
-        <p>
-          <span style={{ fontSize: 22, fontWeight: 600 }}>${(spend / 100).toFixed(2)}</span>
-          <span className="muted"> of ${(cap / 100).toFixed(2)} cap</span>
-        </p>
-        <p className="muted" style={{ fontSize: 13 }}>
-          Paid actions (video, voice, AI drafting) count against the campaign&rsquo;s cap. Adjust in Settings.
-        </p>
+      {/* Spend — single line */}
+      <div style={{ marginTop: 20, padding: '14px 20px', border: '1px solid var(--line)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 16 }}>
+        <span className="muted" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>Monthly spend</span>
+        <div style={{ flex: 1, height: 4, background: 'var(--bg-hover)', borderRadius: 2 }}>
+          <div style={{
+            height: '100%', borderRadius: 2, transition: 'width 0.3s',
+            width: `${spendPct}%`,
+            background: spendPct > 90 ? 'var(--bad)' : spendPct > 70 ? 'var(--warn)' : 'var(--accent)',
+          }} />
+        </div>
+        <span style={{ fontSize: 13, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+          ${(spend / 100).toFixed(2)} <span className="muted">/ ${(cap / 100).toFixed(2)}</span>
+        </span>
       </div>
     </AppFrame>
   );

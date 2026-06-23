@@ -46,7 +46,24 @@ export default async function ContentList({ searchParams }: { searchParams: { st
               </ClickableRow>
             ))}
             {items.length === 0 && (
-              <tr><td colSpan={4} className="muted" style={{ padding: 24 }}>No content with this status yet.</td></tr>
+              <tr>
+                <td colSpan={4} style={{ padding: '40px 24px', textAlign: 'center' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden style={{ opacity: 0.25 }}>
+                      <rect x="4" y="3" width="32" height="34" rx="4" stroke="currentColor" strokeWidth="2"/>
+                      <line x1="11" y1="13" x2="29" y2="13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                      <line x1="11" y1="19" x2="29" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                      <line x1="11" y1="25" x2="21" y2="25" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
+                    <span className="muted" style={{ fontSize: 14 }}>
+                      {filter ? `No ${filter.replace('_', ' ')} content yet.` : 'No content yet — create your first piece.'}
+                    </span>
+                    {!filter && (
+                      <a href="/content/new" className="btn primary" style={{ marginTop: 4 }}>Create content</a>
+                    )}
+                  </div>
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

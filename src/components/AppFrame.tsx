@@ -1,5 +1,7 @@
+import { redirect } from 'next/navigation';
 import { requireSession } from '@/lib/session';
 import { getCampaign } from '@/lib/data';
+import { getCandidateProfile } from '@/lib/candidate';
 import { Sidebar } from './Sidebar';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -8,7 +10,15 @@ const ROLE_LABEL: Record<string, string> = {
 
 export async function AppFrame({ children }: { children: React.ReactNode }) {
   const s = requireSession();
+
+  // super_admin manages all campaigns — no profile required
+  if (s.role !== 'super_admin') {
+    const profile = await getCandidateProfile(s.campaignId);
+    if (!profile) redirect('/setup');
+  }
+
   const campaign = await getCampaign(s.campaignId);
+
   return (
     <div className="shell">
       <Sidebar name={s.name} campaign={campaign?.name ?? ''} />

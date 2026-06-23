@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { ContentItem, VIDEO_CONTENT_TYPES } from '@/domain/types';
 import { Platform } from '@/integrations';
+import { useToast } from '@/components/Toast';
 import {
   saveBodyAction, approveTextAction,
   generateVideoAction, getVideoStatusAction, confirmVideoAction,
-  confirmDisclosureAction, publishAction,
+  confirmDisclosureAction, publishAction, scheduleWithTimeAction,
 } from '@/app/actions';
 
 type WizardStep = 'review' | 'video' | 'disclosure' | 'publish';
@@ -57,6 +58,7 @@ export function ContentWizard({
   requiredDisclosures: RequiredDisclosure[];
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const steps = getSteps(item);
   const currentStep = getCurrentStep(item, hasDisclosure);
   const stepIndex = steps.indexOf(currentStep);
@@ -68,8 +70,16 @@ export function ContentWizard({
   const [videoId, setVideoId] = useState<string | null>(null);
   const [videoStatus, setVideoStatus] = useState<'idle' | 'generating' | 'ready' | 'failed'>('idle');
   const [videoUrl, setVideoUrl] = useState<string | null>(item.mediaUrl ?? null);
+  const [scheduleMode, setScheduleMode] = useState<'now' | 'later'>('now');
+  const [scheduledAt, setScheduledAt] = useState('');
+  const [timezone, setTimezone] = useState(
+    Intl.DateTimeFormat().resolvedOptions().timeZone
+  );
 
-  const run = useCallback(async (fn: () => Promise<{ ok: boolean; error?: string }>) => {
+  const run = useCallback(async (
+    fn: () => Promise<{ ok: boolean; error?: string }>,
+    successMsg?: string,
+  ) => {
     setBusy(true);
     setError('');
     const r = await fn();
@@ -77,9 +87,10 @@ export function ContentWizard({
     if (!r.ok) {
       setError(r.error ?? 'Something went wrong.');
     } else {
+      if (successMsg) toast(successMsg);
       router.refresh();
     }
-  }, [router]);
+  }, [router, toast]);
 
   useEffect(() => {
     if (!videoId || videoStatus !== 'generating') return;
@@ -385,11 +396,9 @@ export function ContentWizard({
         <div style={{ maxWidth: 620, margin: '0 auto', width: '100%' }}>
           <div className="card">
             <h2>Publish</h2>
-            <p className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>
-              Select the platforms you want to publish to. The post goes out immediately.
-            </p>
-            <div className="spacer-y" />
-            <div className="eyebrow" style={{ marginBottom: 10 }}>Platforms</div>
+
+            {/* Platforms */}
+            <div className="eyebrow" style={{ marginBottom: 8 }}>Platforms</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
               {PLATFORMS.map(p => {
                 const selected = platforms.includes(p);
@@ -402,40 +411,75 @@ export function ContentWizard({
                     fontWeight: selected ? 600 : 400,
                     background: selected ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent',
                     color: selected ? 'var(--accent)' : 'var(--text-2)',
-                    userSelect: 'none',
-                    transition: 'all 0.15s',
+                    userSelect: 'none', transition: 'all 0.15s',
                   }}>
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      onChange={() => togglePlatform(p)}
-                      style={{ display: 'none' }}
-                    />
+                    <input type="checkbox" checked={selected} onChange={() => togglePlatform(p)} style={{ display: 'none' }} />
                     {p.charAt(0).toUpperCase() + p.slice(1)}
                   </label>
                 );
               })}
             </div>
+
+            {/* Timing toggle */}
+            <div className="eyebrow" style={{ marginBottom: 8 }}>Timing</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+              {(['now', 'later'] as const).map(m => (
+                <button key={m} type="button" className="btn"
+                  onClick={() => setScheduleMode(m)}
+                  style={scheduleMode === m ? { borderColor: 'var(--accent)', color: 'var(--accent)', fontWeight: 600 } : {}}>
+                  {m === 'now' ? 'Publish now' : 'Schedule for later'}
+                </button>
+              ))}
+            </div>
+
+            {scheduleMode === 'later' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+                <div>
+                  <label className="field-label">Date &amp; time</label>
+                  <input
+                    type="datetime-local"
+                    className="input"
+                    value={scheduledAt}
+                    min={new Date(Date.now() + 5 * 60 * 1000).toISOString().slice(0, 16)}
+                    onChange={e => setScheduledAt(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="field-label">Timezone</label>
+                  <select className="input" value={timezone} onChange={e => setTimezone(e.target.value)}>
+                    {[
+                      'America/New_York', 'America/Chicago', 'America/Denver',
+                      'America/Los_Angeles', 'America/Anchorage', 'Pacific/Honolulu',
+                    ].map(tz => (
+                      <option key={tz} value={tz}>{tz.replace('America/', '').replace('_', ' ')}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
             {item.mediaUrl && (
               <div style={{ marginBottom: 20 }}>
                 <div className="eyebrow" style={{ marginBottom: 8 }}>Video</div>
-                <video
-                  src={item.mediaUrl}
-                  controls
-                  style={{ width: '100%', maxWidth: 400, borderRadius: 8, background: '#000' }}
-                />
+                <video src={item.mediaUrl} controls style={{ width: '100%', maxWidth: 400, borderRadius: 8, background: '#000' }} />
               </div>
             )}
-            <button
-              className="btn primary"
-              style={{ width: '100%' }}
-              disabled={busy || platforms.length === 0}
-              onClick={() => run(() => publishAction(item.id, platforms))}
-            >
-              {busy
-                ? 'Publishing…'
-                : `Publish to ${platforms.length} platform${platforms.length !== 1 ? 's' : ''}`}
-            </button>
+
+            {scheduleMode === 'now' ? (
+              <button className="btn primary" style={{ width: '100%' }}
+                disabled={busy || platforms.length === 0}
+                onClick={() => run(() => publishAction(item.id, platforms), 'Published successfully!')}>
+                {busy ? 'Publishing…' : `Publish to ${platforms.length} platform${platforms.length !== 1 ? 's' : ''}`}
+              </button>
+            ) : (
+              <button className="btn primary" style={{ width: '100%' }}
+                disabled={busy || platforms.length === 0 || !scheduledAt}
+                onClick={() => run(() => scheduleWithTimeAction(item.id, platforms, scheduledAt, timezone), 'Content scheduled!')}>
+                {busy ? 'Scheduling…' : scheduledAt
+                  ? `Schedule for ${new Date(scheduledAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+                  : 'Pick a time above'}
+              </button>
+            )}
             {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
           </div>
         </div>

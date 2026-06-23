@@ -71,3 +71,24 @@ export interface DisclosureRepo {
 export interface AuditRepo {
   append(entry: Omit<AuditEntry, 'id' | 'createdAt'>): Promise<void>;
 }
+
+export type VoiceTone = 'formal' | 'conversational' | 'urgent' | 'inspirational';
+
+export interface CandidateProfile {
+  id: string;
+  campaignId: string;
+  fullName: string;
+  preferredName: string;
+  office: string;
+  district: string;
+  party: string;
+  bio: string;
+  keyPositions: string[];
+  voiceTone: VoiceTone;
+  targetAudience: string;
+  tagline: string;
+  photoUrl?: string | null;
+  opponentName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

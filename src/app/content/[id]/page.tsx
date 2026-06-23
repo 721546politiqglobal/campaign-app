@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import Link from 'next/link';
 import { AppFrame } from '@/components/AppFrame';
 import { StatusPill } from '@/components/StatusPill';
 import { ContentWizard } from '@/components/ContentWizard';
@@ -23,6 +24,11 @@ export default async function ContentDetail({ params }: { params: { id: string }
 
   return (
     <AppFrame>
+      <nav className="breadcrumb" aria-label="Breadcrumb">
+        <Link href="/content">Content</Link>
+        <span className="breadcrumb-sep" aria-hidden>›</span>
+        <span>{item.title}</span>
+      </nav>
       <div className="pagehead">
         <div>
           <span className="eyebrow">{item.type.replace('_', ' ')}</span>

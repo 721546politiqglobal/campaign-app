@@ -8,9 +8,15 @@ export type { Platform };
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
+import type { CandidateProfile } from '@/domain/types';
+
 export interface ContentGenerator {
-  draft(input: { instruction: string; type: string; audience?: string }):
-    Promise<{ text: string; title: string }>;
+  draft(input: {
+    instruction: string;
+    type: string;
+    audience?: string;
+    candidateProfile?: CandidateProfile;
+  }): Promise<{ text: string; title: string }>;
 }
 
 export interface VideoProvider {
@@ -42,24 +48,28 @@ export class ClaudeContentGenerator implements ContentGenerator {
     this.client = new Anthropic({ apiKey });
   }
 
-  async draft({ instruction, type }: { instruction: string; type: string }) {
+  async draft({ instruction, type, candidateProfile }: {
+    instruction: string;
+    type: string;
+    audience?: string;
+    candidateProfile?: CandidateProfile;
+  }) {
+    const { buildCandidatePrompt } = await import('@/lib/prompt');
+
+    const systemPrompt = candidateProfile
+      ? buildCandidatePrompt(candidateProfile, type)
+      : 'You are a professional political campaign copywriter. Write factual, persuasive campaign content.';
+
     const msg = await this.client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
+      system: systemPrompt,
       messages: [{
         role: 'user',
-        content: `You are a professional political campaign copywriter. Write campaign content for the following brief.
-
-Content type: ${type}
+        content: `Content type: ${type}
 Brief: ${instruction}
 
-Requirements:
-- Keep it factual and grounded — no invented claims
-- Appropriate tone for a political campaign
-- Include a compelling title on the first line starting with "Title: "
-- Then the body content after a blank line
-
-Write the content now:`,
+Write the content now. Start with "Title: [your title here]" on the first line, then a blank line, then the body.`,
       }],
     });
 
@@ -212,15 +222,13 @@ export class NewsDataMonitoringSource implements MonitoringSource {
 // ── Mock implementations (used when no API key is present) ───────────────────
 
 export class MockContentGenerator implements ContentGenerator {
-  async draft({ instruction, type }: { instruction: string; type: string }) {
+  async draft({ instruction, type }: { instruction: string; type: string; candidateProfile?: CandidateProfile }) {
     const title = instruction.replace(/^(make|write|draft)\s+(a|an)?\s*/i, '').slice(0, 60) || 'Untitled draft';
     const text =
-      `[Draft — ${type}]\n\n` +
       `Here's how our plan answers what voters told us matters most.\n\n` +
       `${instruction.trim()}\n\n` +
       `We'll keep costs down, protect what works, and fix what doesn't. ` +
-      `Read the full proposal and tell us what you think.\n\n` +
-      `(Add LLM_API_KEY to .env to generate real content with Claude.)`;
+      `Read the full proposal and tell us what you think.`;
     return { title: title[0].toUpperCase() + title.slice(1), text };
   }
 }

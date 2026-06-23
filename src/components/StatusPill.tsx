@@ -6,5 +6,5 @@ const LABELS: Record<ContentStatus, string> = {
 };
 
 export function StatusPill({ status }: { status: ContentStatus }) {
-  return <span className={`pill ${status}`}>{LABELS[status]}</span>;
+  return <span className={`pill ${status}`} aria-label={`Status: ${status}`}>{LABELS[status]}</span>;
 }

@@ -61,39 +61,53 @@ export function Sidebar({ name, campaign }: { name: string; campaign: string }) 
   const isActive = (href: string) => (href === '/dashboard' ? path === '/dashboard' : path.startsWith(href));
 
   return (
-    <aside className="sidebar">
-      <div className="brand">
-        <div className="brand-mark">
-          <div className="brand-icon">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-              <path d="M1.5 6L6 1.5L10.5 6L6 10.5L1.5 6Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
-              <circle cx="6" cy="6" r="1.8" fill="currentColor"/>
-            </svg>
+    <>
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-mark">
+            <div className="brand-icon">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                <path d="M1.5 6L6 1.5L10.5 6L6 10.5L1.5 6Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+                <circle cx="6" cy="6" r="1.8" fill="currentColor"/>
+              </svg>
+            </div>
+            <span className="brand-name">Command Center</span>
           </div>
-          <span className="brand-name">Command Center</span>
+          <div className="brand-campaign">{campaign}</div>
         </div>
-        <div className="brand-campaign">{campaign}</div>
-      </div>
 
-      <nav className="nav">
+        <nav className="nav">
+          {NAV.map(n => (
+            <Link key={n.href} href={n.href} className={isActive(n.href) ? 'active' : ''}>
+              {n.icon}
+              {n.label}
+            </Link>
+          ))}
+        </nav>
+
+        <div className="spacer" />
+
+        <div className="sidebar-footer">
+          <div className="sidebar-user">{name}</div>
+          <form action={logoutAction}>
+            <button className="btn" style={{ width: '100%', fontSize: 13, padding: '7px 12px' }}>
+              Sign out
+            </button>
+          </form>
+        </div>
+      </aside>
+
+      {/* Mobile bottom tab bar */}
+      <nav className="mobile-tabs" aria-label="Main navigation">
         {NAV.map(n => (
-          <Link key={n.href} href={n.href} className={isActive(n.href) ? 'active' : ''}>
+          <Link key={n.href} href={n.href}
+            className={`mobile-tab${isActive(n.href) ? ' active' : ''}`}
+            aria-current={isActive(n.href) ? 'page' : undefined}>
             {n.icon}
-            {n.label}
+            <span>{n.label}</span>
           </Link>
         ))}
       </nav>
-
-      <div className="spacer" />
-
-      <div className="sidebar-footer">
-        <div className="sidebar-user">{name}</div>
-        <form action={logoutAction}>
-          <button className="btn" style={{ width: '100%', fontSize: 13, padding: '7px 12px' }}>
-            Sign out
-          </button>
-        </form>
-      </div>
-    </aside>
+    </>
   );
 }

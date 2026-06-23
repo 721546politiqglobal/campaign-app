@@ -1,14 +1,42 @@
+import { revalidatePath } from 'next/cache';
 import { AppFrame } from '@/components/AppFrame';
 import { requireSession } from '@/lib/session';
 import { getCampaign, getDisclosureRules, getUsers } from '@/lib/data';
+import { getCandidateProfile } from '@/lib/candidate';
+import { upsertCandidateProfile } from '@/lib/candidate';
 import { setCapAction } from '@/app/actions';
+import type { VoiceTone } from '@/domain/types';
+
+async function saveProfileAction(formData: FormData) {
+  'use server';
+  const { requireSession } = await import('@/lib/session');
+  const s = requireSession();
+  const keyPositions = String(formData.get('key_positions') ?? '')
+    .split('\n').map((p: string) => p.trim()).filter(Boolean);
+  await upsertCandidateProfile(s.campaignId, {
+    fullName:       String(formData.get('full_name')       ?? '').trim(),
+    preferredName:  String(formData.get('preferred_name')  ?? '').trim(),
+    office:         String(formData.get('office')          ?? '').trim(),
+    district:       String(formData.get('district')        ?? '').trim(),
+    party:          String(formData.get('party')           ?? '').trim(),
+    bio:            String(formData.get('bio')             ?? '').trim(),
+    keyPositions,
+    voiceTone:      (String(formData.get('voice_tone') ?? 'conversational')) as VoiceTone,
+    targetAudience: String(formData.get('target_audience') ?? '').trim(),
+    tagline:        String(formData.get('tagline')         ?? '').trim(),
+    photoUrl:       String(formData.get('photo_url')       ?? '').trim() || null,
+    opponentName:   String(formData.get('opponent_name')   ?? '').trim() || null,
+  });
+  revalidatePath('/settings');
+}
 
 export default async function Settings() {
   const s = requireSession();
-  const [campaign, rules, users] = await Promise.all([
+  const [campaign, rules, users, profile] = await Promise.all([
     getCampaign(s.campaignId),
     getDisclosureRules(),
     getUsers(s.campaignId),
+    getCandidateProfile(s.campaignId),
   ]);
   const cap = ((campaign?.monthlyCostCapCents ?? 0) / 100).toFixed(0);
 
@@ -16,6 +44,68 @@ export default async function Settings() {
     <AppFrame>
       <div className="pagehead">
         <div><span className="eyebrow">Configuration</span><h1>Settings</h1></div>
+      </div>
+
+      {/* Candidate profile — first and most important section */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h2 style={{ marginBottom: 16 }}>Candidate profile</h2>
+        <form action={saveProfileAction} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label className="field-label">Full name</label>
+              <input name="full_name" className="input" defaultValue={profile?.fullName ?? ''} required />
+            </div>
+            <div>
+              <label className="field-label">Preferred name</label>
+              <input name="preferred_name" className="input" defaultValue={profile?.preferredName ?? ''} required />
+            </div>
+            <div>
+              <label className="field-label">Running for</label>
+              <input name="office" className="input" defaultValue={profile?.office ?? ''} required />
+            </div>
+            <div>
+              <label className="field-label">District</label>
+              <input name="district" className="input" defaultValue={profile?.district ?? ''} required />
+            </div>
+            <div>
+              <label className="field-label">Party</label>
+              <input name="party" className="input" defaultValue={profile?.party ?? ''} />
+            </div>
+            <div>
+              <label className="field-label">Primary opponent</label>
+              <input name="opponent_name" className="input" defaultValue={profile?.opponentName ?? ''} />
+            </div>
+          </div>
+          <div>
+            <label className="field-label">Bio (2–3 sentences)</label>
+            <textarea name="bio" className="input" style={{ minHeight: 72 }} defaultValue={profile?.bio ?? ''} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label className="field-label">Tagline</label>
+              <input name="tagline" className="input" defaultValue={profile?.tagline ?? ''} />
+            </div>
+            <div>
+              <label className="field-label">Target audience</label>
+              <input name="target_audience" className="input" defaultValue={profile?.targetAudience ?? ''} />
+            </div>
+          </div>
+          <div>
+            <label className="field-label">Key positions (one per line)</label>
+            <textarea name="key_positions" className="input" style={{ minHeight: 100 }}
+              defaultValue={profile?.keyPositions.join('\n') ?? ''} />
+          </div>
+          <div>
+            <label className="field-label">Voice tone</label>
+            <select name="voice_tone" className="input" defaultValue={profile?.voiceTone ?? 'conversational'}>
+              <option value="conversational">Conversational</option>
+              <option value="formal">Formal</option>
+              <option value="urgent">Urgent</option>
+              <option value="inspirational">Inspirational</option>
+            </select>
+          </div>
+          <button className="btn primary" type="submit" style={{ alignSelf: 'flex-start' }}>Save profile</button>
+        </form>
       </div>
 
       <div className="grid cols-2">
@@ -107,6 +197,9 @@ export default async function Settings() {
             ))}
           </tbody>
         </table>
+        <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
+          To add a team member, contact your platform administrator.
+        </p>
       </div>
     </AppFrame>
   );

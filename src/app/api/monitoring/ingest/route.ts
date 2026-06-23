@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/supabase';
+import { scoreCredibility, categorizeSource } from '@/lib/credibility';
+import { uid } from '@/lib/store';
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get('authorization');
@@ -43,11 +45,14 @@ export async function POST(req: NextRequest) {
   }
 
   const { error: insertError } = await adminDb.from('monitoring_results').insert({
+    id: uid(),
     campaign_id,
     source,
     opponent: opponent || null,
     excerpt: String(excerpt).substring(0, 1000),
     url,
+    credibility: scoreCredibility(url),
+    category:    categorizeSource(url, source),
   });
 
   if (insertError) {

@@ -148,11 +148,23 @@ export async function createContentAction(formData: FormData) {
 
 export async function generateDraftAction(instruction: string, type: string) {
   const s = requireSession();
-  const campaign = await getCampaign(s.campaignId);
+  const { CONTENT_COST_CENTS } = await import('@/lib/prompt');
+  const { getCandidateProfile } = await import('@/lib/candidate');
+
+  const [campaign, profile] = await Promise.all([
+    getCampaign(s.campaignId),
+    getCandidateProfile(s.campaignId),
+  ]);
   if (!campaign) throw new Error('Campaign not found');
-  await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, 9_00);
-  const out = await contentGenerator.draft({ instruction, type });
-  await usageMeter.record(s.campaignId, 'llm_tokens', 1, 9_00);
+
+  const cost = CONTENT_COST_CENTS[type] ?? 5_00;
+  await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, cost);
+  const out = await contentGenerator.draft({
+    instruction,
+    type,
+    candidateProfile: profile ?? undefined,
+  });
+  await usageMeter.record(s.campaignId, 'llm_tokens', 1, cost);
   return out;
 }
 
@@ -331,7 +343,13 @@ export async function generateFromMonitoringAction(
   contentType: string,
 ): Promise<Result & { contentId?: string }> {
   const s = requireSession();
-  const campaign = await getCampaign(s.campaignId);
+  const { getCandidateProfile } = await import('@/lib/candidate');
+  const { CONTENT_COST_CENTS } = await import('@/lib/prompt');
+
+  const [campaign, profile] = await Promise.all([
+    getCampaign(s.campaignId),
+    getCandidateProfile(s.campaignId),
+  ]);
   if (!campaign) return { ok: false, error: 'Campaign not found.' };
 
   const { data: result } = await adminDb
@@ -342,7 +360,8 @@ export async function generateFromMonitoringAction(
   if (!result) return { ok: false, error: 'Monitoring result not found.' };
 
   try {
-    await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, 9_00);
+    const cost = CONTENT_COST_CENTS[contentType] ?? 5_00;
+    await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, cost);
 
     const instruction =
       `Respond to this news story${result.opponent ? ` about ${result.opponent}` : ''} on behalf of a political campaign.\n\n` +
@@ -352,8 +371,8 @@ export async function generateFromMonitoringAction(
       `\nWrite a ${contentType.replace('_', ' ')} that directly addresses this story. ` +
       `Be factual, on-message, and persuasive.`;
 
-    const out = await contentGenerator.draft({ instruction, type: contentType });
-    await usageMeter.record(s.campaignId, 'llm_tokens', 1, 9_00);
+    const out = await contentGenerator.draft({ instruction, type: contentType, candidateProfile: profile ?? undefined });
+    await usageMeter.record(s.campaignId, 'llm_tokens', 1, cost);
 
     const id = uid();
     await adminDb.from('content_items').insert({
@@ -407,4 +426,49 @@ export async function confirmDisclosureAction(id: string): Promise<Result> {
   });
   revalidatePath(`/content/${id}`);
   return { ok: true };
+}
+
+export async function dismissMonitoringAction(id: string): Promise<Result> {
+  return guard(async () => {
+    const s = requireSession();
+    await adminDb.from('monitoring_results')
+      .update({ dismissed_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('campaign_id', s.campaignId);
+    revalidatePath('/monitoring');
+  });
+}
+
+export async function scheduleWithTimeAction(
+  id: string,
+  platforms: Platform[],
+  scheduledAt: string,
+  timezone: string,
+): Promise<Result> {
+  return guard(async () => {
+    const s = requireSession();
+    if (!scheduledAt) throw new GateError('Scheduled time is required');
+    if (new Date(scheduledAt) <= new Date()) throw new GateError('Scheduled time must be in the future');
+
+    await adminDb.from('content_items')
+      .update({
+        status: 'scheduled',
+        scheduled_at: new Date(scheduledAt).toISOString(),
+        timezone,
+        platforms,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
+
+    await auditRepo.append({
+      campaignId: s.campaignId,
+      actorUserId: s.userId,
+      action: 'schedule',
+      entityType: 'content_item',
+      entityId: id,
+      details: { scheduledAt, timezone, platforms },
+    });
+
+    revalidatePath(`/content/${id}`);
+  });
 }

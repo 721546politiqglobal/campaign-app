@@ -9,7 +9,10 @@ export interface Campaign {
 }
 export interface User { id: string; name: string; role: string; campaignId: string; email: string | null; }
 export interface MonitoringResult {
-  id: string; campaignId: string; source: string; opponent?: string; excerpt: string; url: string; capturedAt: string;
+  id: string; campaignId: string; source: string; opponent?: string;
+  excerpt: string; url: string; capturedAt: string;
+  credibility: 'high' | 'medium' | 'low';
+  category: 'news' | 'social' | 'blog' | 'press_release';
 }
 
 export async function getCampaign(campaignId: string): Promise<Campaign | null> {
@@ -80,10 +83,14 @@ export async function getAuditEntries(entityId: string) {
 
 export async function getMonitoringResults(campaignId: string): Promise<MonitoringResult[]> {
   const { data } = await adminDb.from('monitoring_results').select('*')
-    .eq('campaign_id', campaignId).order('captured_at', { ascending: false });
+    .eq('campaign_id', campaignId)
+    .is('dismissed_at', null)
+    .order('captured_at', { ascending: false });
   return (data ?? []).map(r => ({
     id: r.id, campaignId: r.campaign_id, source: r.source,
     opponent: r.opponent, excerpt: r.excerpt, url: r.url, capturedAt: r.captured_at,
+    credibility: (r.credibility as 'high' | 'medium' | 'low') ?? 'medium',
+    category: (r.category as 'news' | 'social' | 'blog' | 'press_release') ?? 'news',
   }));
 }
 
@@ -253,6 +260,33 @@ export async function getInviteCodes(campaignId: string): Promise<InviteCode[]> 
     expiresAt: r.expires_at,
     usedAt: r.used_at,
     createdAt: r.created_at,
+  }));
+}
+
+export interface ScheduledItem {
+  id: string; title: string; type: string;
+  scheduledAt: string; platforms: string[]; status: string;
+}
+
+export async function getScheduledToday(campaignId: string): Promise<ScheduledItem[]> {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+
+  const { data } = await adminDb
+    .from('content_items')
+    .select('id, title, type, scheduled_at, platforms, status')
+    .eq('campaign_id', campaignId)
+    .in('status', ['scheduled', 'published'])
+    .not('scheduled_at', 'is', null)
+    .gte('scheduled_at', start.toISOString())
+    .lte('scheduled_at', end.toISOString())
+    .order('scheduled_at', { ascending: true });
+
+  return (data ?? []).map(r => ({
+    id: r.id, title: r.title, type: r.type,
+    scheduledAt: r.scheduled_at, platforms: r.platforms ?? [], status: r.status,
   }));
 }
 
