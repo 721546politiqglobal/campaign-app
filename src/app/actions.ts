@@ -11,6 +11,7 @@ import { contentRepo, approvalRepo, disclosureRepo, auditRepo } from '@/lib/repo
 import { ContentType, ContentStatus, Platform, VIDEO_CONTENT_TYPES } from '@/domain/types';
 import { GateError } from '@/domain/content-lifecycle';
 import { CapExceeded } from '@/domain/usage';
+import { can } from '@/lib/permissions';
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -202,6 +203,7 @@ export async function attachDisclosureAction(id: string): Promise<Result> {
 
 export async function scheduleAction(id: string): Promise<Result> {
   const s = requireSession();
+  if (!can(s.role, 'schedule')) return { ok: false, error: 'Permission denied.' };
   const r = await guard(() => lifecycle.schedule(id, s.userId));
   revalidatePath(`/content/${id}`); revalidatePath('/');
   return r;
@@ -209,6 +211,7 @@ export async function scheduleAction(id: string): Promise<Result> {
 
 export async function publishAction(id: string, platforms: Platform[]): Promise<Result> {
   const s = requireSession();
+  if (!can(s.role, 'publish')) return { ok: false, error: 'Permission denied.' };
   const item = await contentRepo.get(id);
   if (!item) return { ok: false, error: 'Content not found.' };
   const disc = await disclosureRepo.listFor(id);
@@ -226,6 +229,7 @@ export async function publishAction(id: string, platforms: Platform[]): Promise<
 
 export async function setCapAction(formData: FormData): Promise<void> {
   const s = requireSession();
+  if (!can(s.role, 'edit_settings')) return;
   const dollars = Number(formData.get('cap'));
   if (Number.isFinite(dollars) && dollars >= 0) {
     await adminDb.from('campaigns')
@@ -306,6 +310,7 @@ export async function saveBodyAction(id: string, body: string): Promise<Result> 
 
 export async function approveTextAction(id: string): Promise<Result> {
   const s = requireSession();
+  if (!can(s.role, 'approve')) return { ok: false, error: 'Permission denied.' };
   const item = await contentRepo.get(id);
   if (!item) return { ok: false, error: 'Content not found.' };
 
@@ -338,6 +343,7 @@ export async function approveTextAction(id: string): Promise<Result> {
 
 export async function confirmVideoAction(id: string, videoUrl: string): Promise<Result> {
   const s = requireSession();
+  if (!can(s.role, 'approve')) return { ok: false, error: 'Permission denied.' };
   const item = await contentRepo.get(id);
   if (!item) return { ok: false, error: 'Content not found.' };
   const nextStatus: ContentStatus = item.isAiGenerated ? 'approved' : 'scheduled';
@@ -501,6 +507,7 @@ export async function scheduleWithTimeAction(
 ): Promise<Result> {
   return guard(async () => {
     const s = requireSession();
+    if (!can(s.role, 'schedule')) throw new GateError('Permission denied.');
     if (!scheduledAt) throw new GateError('Scheduled time is required');
     if (new Date(scheduledAt) <= new Date()) throw new GateError('Scheduled time must be in the future');
 
