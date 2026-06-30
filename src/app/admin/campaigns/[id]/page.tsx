@@ -102,14 +102,14 @@ export default async function CampaignDetail({ params }: { params: { id: string 
         <span className="eyebrow">Video</span>
         <h2 style={{ fontSize: 14, fontWeight: 700, margin: '6px 0 8px' }}>Candidate avatar</h2>
         <p className="muted" style={{ fontSize: 12, marginBottom: 16, lineHeight: 1.6 }}>
-          Assign the HeyGen <strong>avatar_id</strong> for this campaign&rsquo;s candidate.
-          All looks (outfits / poses) of that avatar become available for the campaign owner to choose from in their Settings.
-          Find the ID in HeyGen → Avatars → click the avatar → copy the ID from the URL or details panel.
+          Paste the HeyGen <strong>avatar group ID</strong> for this candidate.
+          Works for both photo avatars (talking photos) and studio avatars — all looks in that group appear for the campaign owner to pick from in their Settings.
+          Find it in HeyGen → Photo Avatars → open the avatar → copy the group ID shown in the URL or identity panel.
         </p>
         <form action={assignAvatarAction} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <input type="hidden" name="campaignId" value={campaign.id} />
           <div style={{ flex: 1, minWidth: 240 }}>
-            <label className="field-label">HeyGen avatar ID</label>
+            <label className="field-label">HeyGen avatar group ID</label>
             <input
               name="heygen_base_avatar_id"
               className="input"

@@ -1,16 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { saveVideoSettingsAction, uploadBackgroundAction } from '@/app/actions';
+import { useState, useEffect } from 'react';
+import { saveVideoSettingsAction } from '@/app/actions';
 import { useToast } from '@/components/Toast';
 
 interface HeyGenAvatar {
   avatar_id: string;
   avatar_name: string;
-  gender?: string;
   preview_image_url?: string;
   preview_video_url?: string;
-  look_id?: string;
 }
 
 const ASPECT_RATIOS = [
@@ -22,35 +20,22 @@ const ASPECT_RATIOS = [
 export function AvatarLibrary({
   baseAvatarId,
   currentAvatarId,
-  currentBackground,
   currentAspectRatio,
-  role,
 }: {
   baseAvatarId?: string | null;
   currentAvatarId?: string | null;
-  currentBackground?: string;
   currentAspectRatio?: string;
-  role?: string;
 }) {
   const { toast } = useToast();
-  const fileRef = useRef<HTMLInputElement>(null);
 
-  const [looks, setLooks]       = useState<HeyGenAvatar[]>([]);
-  const [loading, setLoading]   = useState(false);
-  const [saving, setSaving]     = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [looks, setLooks]     = useState<HeyGenAvatar[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving]   = useState(false);
 
   const [selectedLookId, setSelectedLookId] = useState(currentAvatarId ?? '');
   const [selectedRatio,  setSelectedRatio]  = useState<'16:9' | '9:16' | '1:1'>(
     (currentAspectRatio as '16:9' | '9:16' | '1:1') ?? '16:9'
   );
-  // Only treat stored value as a URL if it actually looks like one
-  const [bgUrl, setBgUrl] = useState(
-    currentBackground?.startsWith('http') ? currentBackground : ''
-  );
-
-  // Admin: setting the base avatar ID
-  void role; // passed from settings but avatar assignment now lives in /admin/campaigns/[id]
 
   useEffect(() => {
     if (!baseAvatarId) return;
@@ -62,38 +47,18 @@ export function AvatarLibrary({
       .finally(() => setLoading(false));
   }, [baseAvatarId]);
 
-  async function handleSaveLook() {
+  async function handleSave() {
     const selected = looks.find(l => l.avatar_id === selectedLookId) ?? looks[0];
     setSaving(true);
     const result = await saveVideoSettingsAction({
-      heygenAvatarId: selected?.avatar_id ?? null,
-      heygenLookId:   selected?.look_id   ?? null,
-      videoBackground:  bgUrl || undefined,
+      heygenAvatarId:   selected?.avatar_id ?? null,
+      heygenLookId:     null,
       videoAspectRatio: selectedRatio,
     });
     setSaving(false);
     if (result.ok) toast('Video settings saved!');
     else toast(result.error ?? 'Save failed', 'error');
   }
-
-  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    const fd = new FormData();
-    fd.append('file', file);
-    const result = await uploadBackgroundAction(fd);
-    setUploading(false);
-    if (result.ok && result.url) {
-      setBgUrl(result.url);
-      toast('Background uploaded!');
-    } else {
-      toast((!result.ok && result.error) ? result.error : 'Upload failed', 'error');
-    }
-    if (fileRef.current) fileRef.current.value = '';
-  }
-
-  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div>
@@ -129,11 +94,9 @@ export function AvatarLibrary({
           )}
 
           {!loading && looks.length === 0 && (
-            <div style={{ padding: '20px 0' }}>
-              <p className="muted" style={{ fontSize: 13 }}>
-                No avatar found with that ID — check the HeyGen avatar_id above.
-              </p>
-            </div>
+            <p className="muted" style={{ fontSize: 13 }}>
+              No avatar found for this group ID — check the HeyGen avatar group ID in the admin panel.
+            </p>
           )}
 
           {!loading && looks.length > 0 && (
@@ -167,7 +130,7 @@ export function AvatarLibrary({
                       }}>✓</div>
                     )}
                     <div style={{ padding: '8px 10px 10px', fontSize: 12, fontWeight: 600 }}>
-                      Look {i + 1}
+                      {look.avatar_name || `Look ${i + 1}`}
                       {look.preview_video_url && (
                         <a href={look.preview_video_url} target="_blank" rel="noreferrer"
                           style={{ display: 'block', fontSize: 11, color: 'var(--accent)', marginTop: 2, textDecoration: 'none' }}>
@@ -184,7 +147,7 @@ export function AvatarLibrary({
       )}
 
       {/* ── Video format ──────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom: 24 }}>
         <div className="eyebrow" style={{ marginBottom: 8 }}>Video format</div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {ASPECT_RATIOS.map(r => (
@@ -202,67 +165,8 @@ export function AvatarLibrary({
         </div>
       </div>
 
-      {/* ── Background ────────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 24 }}>
-        <div className="eyebrow" style={{ marginBottom: 6 }}>Background</div>
-        <p className="muted" style={{ fontSize: 12, marginBottom: 14 }}>
-          Upload a background image or paste a URL. HeyGen composites your avatar over it.
-          Use a high-resolution photo (1920×1080 or larger).
-        </p>
-
-        {/* Upload + URL row */}
-        <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            style={{ display: 'none' }}
-            onChange={handleFileUpload}
-          />
-          <button type="button" className="btn"
-            disabled={uploading}
-            onClick={() => fileRef.current?.click()}
-            style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
-            {uploading ? 'Uploading…' : '↑ Upload image'}
-          </button>
-          <input
-            type="url"
-            className="input"
-            placeholder="or paste an image URL"
-            value={bgUrl}
-            onChange={e => setBgUrl(e.target.value)}
-            style={{ flex: 1, fontSize: 13 }}
-          />
-        </div>
-
-        {/* Preview */}
-        {bgUrl && (
-          <div style={{ position: 'relative', display: 'inline-block' }}>
-            <img src={bgUrl} alt="Background preview"
-              style={{ height: 90, maxWidth: 200, objectFit: 'cover', borderRadius: 8, border: '1.5px solid var(--line)', display: 'block' }} />
-            <button type="button"
-              onClick={() => setBgUrl('')}
-              style={{
-                position: 'absolute', top: -8, right: -8, width: 22, height: 22,
-                borderRadius: '50%', background: 'var(--bg-elevated)', border: '1.5px solid var(--line)',
-                cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>✕</button>
-          </div>
-        )}
-
-        {!bgUrl && (
-          <div style={{
-            width: 200, height: 90, borderRadius: 8, border: '1.5px dashed var(--line)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'var(--bg-hover)',
-          }}>
-            <span className="muted" style={{ fontSize: 12 }}>No background set</span>
-          </div>
-        )}
-      </div>
-
       {/* ── Save ──────────────────────────────────────────────────────────── */}
-      <button className="btn primary" disabled={saving} onClick={handleSaveLook}>
+      <button className="btn primary" disabled={saving} onClick={handleSave}>
         {saving ? 'Saving…' : 'Save video settings'}
       </button>
     </div>

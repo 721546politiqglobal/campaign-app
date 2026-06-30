@@ -322,7 +322,7 @@ export default function LandingPage() {
                   <path d="M3 7H11M8 4L11 7L8 10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </Link>
-              <a href="mailto:hello@commandcenter.ai" className="lp-btn-ghost">Talk to the team</a>
+              <a href="mailto:ceo@ivac.org" className="lp-btn-ghost">Talk to the team</a>
             </div>
           </div>
         </div>
@@ -356,7 +356,7 @@ export default function LandingPage() {
               <div className="lp-footer-col">
                 <div className="lp-footer-col-title">Company</div>
                 <a href="#">About</a>
-                <a href="mailto:hello@commandcenter.ai">Contact</a>
+                <a href="mailto:ceo@ivac.org">Contact</a>
               </div>
             </div>
           </div>

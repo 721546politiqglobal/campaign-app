@@ -6,7 +6,6 @@ import { getCandidateProfile } from '@/lib/candidate';
 import { upsertCandidateProfile } from '@/lib/candidate';
 import { setCapAction } from '@/app/actions';
 import { AvatarLibrary } from '@/components/AvatarLibrary';
-import { VoiceLibrary } from '@/components/VoiceLibrary';
 import type { VoiceTone } from '@/domain/types';
 
 async function saveProfileAction(formData: FormData) {
@@ -114,26 +113,13 @@ export default async function Settings() {
       <div className="card" style={{ marginBottom: 24 }}>
         <h2 style={{ marginBottom: 4 }}>Avatar & video settings</h2>
         <p className="muted" style={{ fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>
-          Choose the avatar and video format used when generating campaign videos.
-          Your selection is saved as the default for all future videos.
+          Choose the avatar look and video format used when generating campaign videos.
         </p>
         <AvatarLibrary
           baseAvatarId={profile?.heygenBaseAvatarId}
           currentAvatarId={profile?.heygenAvatarId}
-          currentBackground={profile?.videoBackground}
           currentAspectRatio={profile?.videoAspectRatio}
-          role={s.role}
         />
-      </div>
-
-      {/* Voice settings */}
-      <div className="card" style={{ marginBottom: 24 }}>
-        <h2 style={{ marginBottom: 4 }}>Voice</h2>
-        <p className="muted" style={{ fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>
-          Select the voice used for video narration and audio content.
-          Preview voices before committing — pick one that fits your candidate&rsquo;s style.
-        </p>
-        <VoiceLibrary currentVoiceId={profile?.elevenLabsVoiceId} />
       </div>
 
       <div className="grid cols-2">
