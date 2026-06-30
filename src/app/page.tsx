@@ -1,62 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-/* ── Animated counter ─────────────────────────────────────── */
-function Counter({ end, suffix = '', prefix = '', start = 0 }: { end: number; suffix?: string; prefix?: string; start?: number }) {
-  const [value, setValue] = useState(start);
-  const ref = useRef<HTMLSpanElement>(null);
-  const started = useRef(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !started.current) {
-          started.current = true;
-          const duration = 1800;
-          const t0 = performance.now();
-          const step = (now: number) => {
-            const p = Math.min((now - t0) / duration, 1);
-            const ease = 1 - Math.pow(1 - p, 3);
-            setValue(Math.floor(start + ease * (end - start)));
-            if (p < 1) requestAnimationFrame(step);
-          };
-          requestAnimationFrame(step);
-        }
-      },
-      { threshold: 0.5 },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [end, start]);
-
-  return <span ref={ref}>{prefix}{value.toLocaleString()}{suffix}</span>;
-}
-
-/* ── Scroll-reveal hook ───────────────────────────────────── */
-function useReveal() {
-  useEffect(() => {
-    const els = document.querySelectorAll<HTMLElement>('[data-reveal]');
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((e) => {
-          if (e.isIntersecting) {
-            (e.target as HTMLElement).style.animationPlayState = 'running';
-            observer.unobserve(e.target);
-          }
-        });
-      },
-      { threshold: 0.12 },
-    );
-    els.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, []);
-}
-
-/* ── Logo mark ────────────────────────────────────────────── */
 function LogoMark({ size = 24 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -146,7 +92,7 @@ const STEPS = [
   {
     n: '01',
     title: 'Draft in seconds',
-    desc: 'Describe what you need. Command Center\'s AI drafts press releases, social posts, email blasts, and talking points instantly.',
+    desc: "Describe what you need. Command Center's AI drafts press releases, social posts, email blasts, and talking points instantly.",
   },
   {
     n: '02',
@@ -160,49 +106,16 @@ const STEPS = [
   },
 ];
 
-const PLANS = [
-  {
-    name: 'Starter',
-    price: '$299',
-    per: '/mo',
-    desc: 'Perfect for local and state-level campaigns.',
-    features: ['5 team members', 'AI content drafting', 'Approval workflow', 'Disclosure engine', 'Email support'],
-    cta: 'Start free trial',
-    highlight: false,
-  },
-  {
-    name: 'Command',
-    price: '$799',
-    per: '/mo',
-    desc: 'For congressional and statewide campaigns.',
-    features: ['Unlimited team members', 'Everything in Starter', 'Opponent monitoring', 'Video + voice AI', 'Priority support', 'Advanced analytics'],
-    cta: 'Start free trial',
-    highlight: true,
-  },
-  {
-    name: 'Enterprise',
-    price: 'Custom',
-    per: '',
-    desc: 'Presidential and party-level operations.',
-    features: ['Custom integrations', 'Dedicated account team', 'SLA guarantee', 'FEC reporting exports', 'On-prem option', 'Legal review tools'],
-    cta: 'Contact us',
-    highlight: false,
-  },
-];
-
-/* ── App preview mockup ───────────────────────────────────── */
-function AppMockup() {
+function AppPreview() {
   return (
     <div className="lp-mockup-wrap">
       <div className="lp-mockup">
-        {/* Browser chrome */}
         <div className="lp-chrome">
           <div className="lp-dots">
             <span /><span /><span />
           </div>
           <div className="lp-url">commandcenter.ai/dashboard</div>
         </div>
-        {/* App shell */}
         <div className="lp-app">
           <div className="lp-sidebar">
             <div className="lp-sb-logo">
@@ -275,16 +188,12 @@ function AppMockup() {
           </div>
         </div>
       </div>
-      {/* Glow under mockup */}
-      <div className="lp-mockup-glow" />
     </div>
   );
 }
 
-/* ── Main page ────────────────────────────────────────────── */
 export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
-  useReveal();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -304,7 +213,6 @@ export default function LandingPage() {
           <div className="lp-navlinks">
             <a href="#features">Features</a>
             <a href="#workflow">How it works</a>
-            <a href="#pricing">Pricing</a>
           </div>
           <div className="lp-nav-actions">
             <Link href="/login" className="lp-nav-signin">Sign in</Link>
@@ -315,69 +223,38 @@ export default function LandingPage() {
 
       {/* ── Hero ───────────────────────────────────────────── */}
       <section className="lp-hero">
-        <div className="lp-hero-bg">
-          <div className="lp-grid-overlay" />
-          <div className="lp-orb lp-orb-1" />
-          <div className="lp-orb lp-orb-2" />
-          <div className="lp-orb lp-orb-3" />
-        </div>
         <div className="lp-hero-inner">
           <div className="lp-hero-text">
-            <div className="lp-eyebrow-badge" style={{ animationDelay: '0ms' }}>
-              <span className="lp-badge-dot" />
-              Trusted by 500+ campaigns nationwide
-            </div>
-            <h1 className="lp-h1" style={{ animationDelay: '80ms' }}>
+            <h1 className="lp-h1">
               The war room<br />
               for modern<br />
               <span className="lp-h1-accent">campaigns.</span>
             </h1>
-            <p className="lp-hero-sub" style={{ animationDelay: '160ms' }}>
-              AI-drafted content, human-reviewed, legally disclosed. <br />
+            <p className="lp-hero-sub">
+              AI-drafted content, human-reviewed, legally disclosed.{' '}
               Run your entire communications operation from one command center.
             </p>
-            <div className="lp-hero-ctas" style={{ animationDelay: '240ms' }}>
+            <div className="lp-hero-ctas">
               <Link href="/login" className="lp-btn-primary">
-                Start free trial
+                Get started
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
                   <path d="M3 7H11M8 4L11 7L8 10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </Link>
-              <a href="#workflow" className="lp-btn-ghost">
-                See how it works
+              <a href="#features" className="lp-btn-ghost">
+                See the platform
               </a>
             </div>
-            <div className="lp-hero-trust" style={{ animationDelay: '320ms' }}>
-              <span>SOC 2 Type II</span>
-              <span className="lp-sep">·</span>
+            <div className="lp-hero-trust">
               <span>FEC-compliant records</span>
               <span className="lp-sep">·</span>
-              <span>99.9% uptime SLA</span>
+              <span>State-aware disclosures</span>
+              <span className="lp-sep">·</span>
+              <span>Full audit trail</span>
             </div>
           </div>
-          <div className="lp-hero-visual" style={{ animationDelay: '200ms' }}>
-            <AppMockup />
-          </div>
-        </div>
-      </section>
-
-      {/* ── Stats ──────────────────────────────────────────── */}
-      <section className="lp-stats-section">
-        <div className="lp-container">
-          <div className="lp-stats-grid">
-            {[
-              { value: 500, suffix: '+', label: 'Active campaigns', start: 0 },
-              { value: 2400000, suffix: '+', label: 'Content pieces reviewed', start: 0 },
-              { value: 47, suffix: '', label: 'States covered', start: 0 },
-              { value: 99, suffix: '.9%', label: 'Uptime SLA', start: 95 },
-            ].map((s) => (
-              <div key={s.label} className="lp-stat">
-                <div className="lp-stat-value">
-                  <Counter end={s.value} suffix={s.suffix} start={s.start} />
-                </div>
-                <div className="lp-stat-label">{s.label}</div>
-              </div>
-            ))}
+          <div className="lp-hero-visual">
+            <AppPreview />
           </div>
         </div>
       </section>
@@ -385,7 +262,7 @@ export default function LandingPage() {
       {/* ── Features ───────────────────────────────────────── */}
       <section className="lp-section" id="features">
         <div className="lp-container">
-          <div className="lp-section-head" data-reveal style={{ animationPlayState: 'paused' }}>
+          <div className="lp-section-head">
             <span className="lp-section-eyebrow">Platform</span>
             <h2 className="lp-section-title">
               Everything your campaign<br />needs to communicate.
@@ -395,13 +272,8 @@ export default function LandingPage() {
             </p>
           </div>
           <div className="lp-features-grid">
-            {FEATURES.map((f, i) => (
-              <div
-                key={f.label}
-                className="lp-feature-card"
-                data-reveal
-                style={{ animationPlayState: 'paused', animationDelay: `${i * 60}ms` }}
-              >
+            {FEATURES.map((f) => (
+              <div key={f.label} className="lp-feature-card">
                 <div className="lp-feature-icon">{f.icon}</div>
                 <h3 className="lp-feature-title">{f.label}</h3>
                 <p className="lp-feature-desc">{f.desc}</p>
@@ -414,7 +286,7 @@ export default function LandingPage() {
       {/* ── Workflow ───────────────────────────────────────── */}
       <section className="lp-section lp-workflow-section" id="workflow">
         <div className="lp-container">
-          <div className="lp-section-head" data-reveal style={{ animationPlayState: 'paused' }}>
+          <div className="lp-section-head">
             <span className="lp-section-eyebrow">How it works</span>
             <h2 className="lp-section-title">
               From brief to published<br />in minutes, not days.
@@ -422,12 +294,7 @@ export default function LandingPage() {
           </div>
           <div className="lp-steps">
             {STEPS.map((step, i) => (
-              <div
-                key={step.n}
-                className="lp-step"
-                data-reveal
-                style={{ animationPlayState: 'paused', animationDelay: `${i * 100}ms` }}
-              >
+              <div key={step.n} className="lp-step">
                 <div className="lp-step-num">{step.n}</div>
                 <div className="lp-step-body">
                   <h3 className="lp-step-title">{step.title}</h3>
@@ -440,91 +307,22 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Testimonial ────────────────────────────────────── */}
-      <section className="lp-section">
-        <div className="lp-container">
-          <div className="lp-testimonial" data-reveal style={{ animationPlayState: 'paused' }}>
-            <div className="lp-quote-mark">&ldquo;</div>
-            <blockquote className="lp-quote">
-              Command Center cut our content production time by 80% while making sure every AI-generated piece had the right disclosure. We couldn&rsquo;t run a statewide race without it.
-            </blockquote>
-            <div className="lp-quote-attr">
-              <div className="lp-quote-avatar">JM</div>
-              <div>
-                <div className="lp-quote-name">Jordan Mills</div>
-                <div className="lp-quote-title">Campaign Manager, Senate Race 2024</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Pricing ────────────────────────────────────────── */}
-      <section className="lp-section" id="pricing">
-        <div className="lp-container">
-          <div className="lp-section-head" data-reveal style={{ animationPlayState: 'paused' }}>
-            <span className="lp-section-eyebrow">Pricing</span>
-            <h2 className="lp-section-title">Simple, transparent pricing.</h2>
-            <p className="lp-section-sub">No per-seat gotchas. No surprise overages. Just one plan that scales with your campaign.</p>
-          </div>
-          <div className="lp-plans">
-            {PLANS.map((plan, i) => (
-              <div
-                key={plan.name}
-                className={`lp-plan${plan.highlight ? ' highlighted' : ''}`}
-                data-reveal
-                style={{ animationPlayState: 'paused', animationDelay: `${i * 80}ms` }}
-              >
-                {plan.highlight && <div className="lp-plan-badge">Most popular</div>}
-                <div className="lp-plan-name">{plan.name}</div>
-                <div className="lp-plan-price">
-                  {plan.price}<span className="lp-plan-per">{plan.per}</span>
-                </div>
-                <p className="lp-plan-desc">{plan.desc}</p>
-                <div className="lp-plan-divider" />
-                <ul className="lp-plan-features">
-                  {plan.features.map((f) => (
-                    <li key={f}>
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-                        <circle cx="7" cy="7" r="6" fill="var(--ok-dim)" stroke="var(--ok-border)"/>
-                        <path d="M4.5 7L6 8.5L9.5 5" stroke="var(--ok)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  href="/login"
-                  className={plan.highlight ? 'lp-btn-primary' : 'lp-btn-outline'}
-                  style={{ marginTop: 'auto', justifyContent: 'center' }}
-                >
-                  {plan.cta}
-                </Link>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ── Bottom CTA ─────────────────────────────────────── */}
       <section className="lp-cta-section">
-        <div className="lp-cta-bg">
-          <div className="lp-orb lp-orb-1" style={{ opacity: 0.4 }} />
-        </div>
-        <div className="lp-container" style={{ position: 'relative', zIndex: 1 }}>
-          <div className="lp-cta-inner" data-reveal style={{ animationPlayState: 'paused' }}>
+        <div className="lp-container">
+          <div className="lp-cta-inner">
             <h2 className="lp-cta-title">Ready to run a smarter campaign?</h2>
             <p className="lp-cta-sub">
-              Join 500+ campaigns that trust Command Center for their communications.
+              AI-powered communications built for the demands of modern political campaigns.
             </p>
             <div className="lp-hero-ctas" style={{ justifyContent: 'center' }}>
               <Link href="/login" className="lp-btn-primary">
-                Get started free
+                Get started
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
                   <path d="M3 7H11M8 4L11 7L8 10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </Link>
-              <a href="mailto:hello@commandcenter.ai" className="lp-btn-ghost">Talk to sales</a>
+              <a href="mailto:hello@commandcenter.ai" className="lp-btn-ghost">Talk to the team</a>
             </div>
           </div>
         </div>
@@ -547,7 +345,6 @@ export default function LandingPage() {
               <div className="lp-footer-col">
                 <div className="lp-footer-col-title">Product</div>
                 <a href="#features">Features</a>
-                <a href="#pricing">Pricing</a>
                 <a href="#workflow">How it works</a>
               </div>
               <div className="lp-footer-col">
@@ -560,7 +357,6 @@ export default function LandingPage() {
                 <div className="lp-footer-col-title">Company</div>
                 <a href="#">About</a>
                 <a href="mailto:hello@commandcenter.ai">Contact</a>
-                <a href="#">Blog</a>
               </div>
             </div>
           </div>

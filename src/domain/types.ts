@@ -6,7 +6,7 @@ export type Role = 'owner' | 'manager' | 'staff' | 'approver' | 'super_admin';
 export type Platform = 'instagram' | 'facebook' | 'x' | 'linkedin' | 'tiktok' | 'youtube';
 
 export type ContentType =
-  | 'reel' | 'social_post' | 'press_release' | 'email' | 'sms' | 'ad_copy' | 'talking_points';
+  | 'reel' | 'social_post' | 'press_release' | 'ad_copy' | 'talking_points';
 
 export const VIDEO_CONTENT_TYPES: ContentType[] = ['reel'];
 
@@ -89,6 +89,12 @@ export interface CandidateProfile {
   tagline: string;
   photoUrl?: string | null;
   opponentName?: string | null;
+  heygenBaseAvatarId?: string | null;
+  heygenAvatarId?: string | null;
+  heygenLookId?: string | null;
+  elevenLabsVoiceId?: string | null;
+  videoAspectRatio: '16:9' | '9:16' | '1:1';
+  videoBackground: string;
   createdAt: string;
   updatedAt: string;
 }

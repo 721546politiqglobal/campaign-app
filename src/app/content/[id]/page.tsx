@@ -6,13 +6,15 @@ import { ContentWizard } from '@/components/ContentWizard';
 import { requireSession } from '@/lib/session';
 import { disclosureEngine } from '@/lib/services';
 import { getContentItem, getDisclosuresForItem, getAuditEntries } from '@/lib/data';
+import { getCandidateProfile } from '@/lib/candidate';
 
 export default async function ContentDetail({ params }: { params: { id: string } }) {
   const s = requireSession();
-  const [item, discs, log] = await Promise.all([
+  const [item, discs, log, profile] = await Promise.all([
     getContentItem(params.id),
     getDisclosuresForItem(params.id),
     getAuditEntries(params.id),
+    getCandidateProfile(s.campaignId),
   ]);
   if (!item) notFound();
 
@@ -41,6 +43,12 @@ export default async function ContentDetail({ params }: { params: { id: string }
         item={item}
         hasDisclosure={hasDisclosure}
         requiredDisclosures={requiredDisclosures}
+        videoSettings={{
+          avatarId: profile?.heygenAvatarId ?? undefined,
+          voiceId: profile?.elevenLabsVoiceId ?? undefined,
+          background: profile?.videoBackground ?? 'plain',
+          aspectRatio: profile?.videoAspectRatio ?? '16:9',
+        }}
       />
 
       {log.length > 0 && (

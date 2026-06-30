@@ -115,18 +115,26 @@ export default async function Dashboard() {
         </div>
       </div>
 
-      {/* Spend — single line */}
-      <div style={{ marginTop: 20, padding: '14px 20px', border: '1px solid var(--line)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 16 }}>
-        <span className="muted" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>Monthly spend</span>
-        <div style={{ flex: 1, height: 4, background: 'var(--bg-hover)', borderRadius: 2 }}>
+      {/* Spend */}
+      <div className="card" style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ minWidth: 0 }}>
+          <div className="eyebrow" style={{ marginBottom: 2 }}>Monthly spend</div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+            <span style={{ color: spendPct > 90 ? 'var(--bad)' : spendPct > 70 ? 'var(--warn)' : 'var(--text)', fontWeight: 600 }}>
+              ${(spend / 100).toFixed(2)}
+            </span>
+            <span className="muted"> / ${(cap / 100).toFixed(2)}</span>
+          </div>
+        </div>
+        <div style={{ flex: 1, height: 5, background: 'var(--bg-hover)', borderRadius: 3, minWidth: 0 }}>
           <div style={{
-            height: '100%', borderRadius: 2, transition: 'width 0.3s',
+            height: '100%', borderRadius: 3, transition: 'width 0.4s ease',
             width: `${spendPct}%`,
             background: spendPct > 90 ? 'var(--bad)' : spendPct > 70 ? 'var(--warn)' : 'var(--accent)',
           }} />
         </div>
-        <span style={{ fontSize: 13, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-          ${(spend / 100).toFixed(2)} <span className="muted">/ ${(cap / 100).toFixed(2)}</span>
+        <span style={{ fontSize: 12, color: 'var(--text-3)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+          {spendPct.toFixed(0)}%
         </span>
       </div>
     </AppFrame>

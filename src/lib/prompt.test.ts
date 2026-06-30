@@ -16,6 +16,8 @@ const profile: CandidateProfile = {
   targetAudience: 'Working families in the San Fernando Valley',
   tagline: 'A Voice for District 12',
   opponentName: 'John Smith',
+  videoAspectRatio: '16:9',
+  videoBackground: 'plain',
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
 };
@@ -50,7 +52,7 @@ describe('buildCandidatePrompt', () => {
 
 describe('CONTENT_COST_CENTS', () => {
   it('has entries for all content types', () => {
-    const types = ['social_post', 'sms', 'email', 'press_release', 'ad_copy', 'talking_points', 'reel'];
+    const types = ['social_post', 'press_release', 'ad_copy', 'talking_points', 'reel'];
     types.forEach(t => {
       expect(CONTENT_COST_CENTS[t]).toBeGreaterThan(0);
     });

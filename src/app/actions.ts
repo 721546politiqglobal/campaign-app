@@ -237,14 +237,29 @@ export async function setCapAction(formData: FormData): Promise<void> {
 
 // ── Video generation ──────────────────────────────────────────────────────────
 
-export async function generateVideoAction(contentId: string, script: string): Promise<Result & { videoId?: string }> {
+export async function generateVideoAction(
+  contentId: string,
+  script: string,
+  overrides?: { avatarId?: string; voiceId?: string; background?: string; aspectRatio?: '16:9' | '9:16' | '1:1' },
+): Promise<Result & { videoId?: string }> {
   const s = requireSession();
-  const campaign = await getCampaign(s.campaignId);
+  const { getCandidateProfile } = await import('@/lib/candidate');
+  const [campaign, profile] = await Promise.all([
+    getCampaign(s.campaignId),
+    getCandidateProfile(s.campaignId),
+  ]);
   if (!campaign) return { ok: false, error: 'Campaign not found.' };
+  const VIDEO_COST_CENTS = 50_00;
   try {
-    await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, 100_00);
-    const { videoId } = await videoProvider.generateAvatarVideo({ script });
-    await usageMeter.record(s.campaignId, 'video_generation', 1, 100_00);
+    await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, VIDEO_COST_CENTS);
+    const { videoId } = await videoProvider.generateAvatarVideo({
+      script,
+      avatarId: overrides?.avatarId ?? profile?.heygenAvatarId ?? undefined,
+      voiceId: overrides?.voiceId ?? profile?.elevenLabsVoiceId ?? undefined,
+      background: overrides?.background ?? profile?.videoBackground ?? 'plain',
+      aspectRatio: overrides?.aspectRatio ?? profile?.videoAspectRatio ?? '16:9',
+    });
+    await usageMeter.record(s.campaignId, 'video_generation', 1, VIDEO_COST_CENTS);
     await adminDb.from('audit_entries').insert({
       campaign_id: s.campaignId, actor_user_id: s.userId,
       action: 'generate_video', entity_type: 'content_item', entity_id: contentId,
@@ -437,6 +452,45 @@ export async function dismissMonitoringAction(id: string): Promise<Result> {
       .eq('campaign_id', s.campaignId);
     revalidatePath('/monitoring');
   });
+}
+
+export async function saveVideoSettingsAction(data: {
+  heygenBaseAvatarId?: string | null;
+  heygenAvatarId?: string | null;
+  heygenLookId?: string | null;
+  elevenLabsVoiceId?: string | null;
+  videoAspectRatio?: '16:9' | '9:16' | '1:1';
+  videoBackground?: string;
+}): Promise<Result> {
+  return guard(async () => {
+    const s = requireSession();
+    const { upsertCandidateProfile } = await import('@/lib/candidate');
+    await upsertCandidateProfile(s.campaignId, data);
+    revalidatePath('/settings');
+  });
+}
+
+export async function uploadBackgroundAction(formData: FormData): Promise<Result & { url?: string }> {
+  return guard(async () => {
+    const s = requireSession();
+    const file = formData.get('file') as File | null;
+    if (!file || !file.size) throw new GateError('No file provided');
+    if (file.size > 10 * 1024 * 1024) throw new GateError('File must be under 10 MB');
+    if (!file.type.startsWith('image/')) throw new GateError('Only image files are allowed');
+
+    const bytes = await file.arrayBuffer();
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
+    const filename = `backgrounds/${s.campaignId}/${Date.now()}.${ext}`;
+
+    const { error } = await adminDb.storage.from('media').upload(filename, Buffer.from(bytes), {
+      contentType: file.type,
+      upsert: false,
+    });
+    if (error) throw new GateError(error.message);
+
+    const { data } = adminDb.storage.from('media').getPublicUrl(filename);
+    return { url: data.publicUrl };
+  }) as Promise<Result & { url?: string }>;
 }
 
 export async function scheduleWithTimeAction(

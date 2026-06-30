@@ -56,6 +56,16 @@ export async function updateCampaignAction(formData: FormData) {
   revalidatePath('/admin');
 }
 
+export async function assignAvatarAction(formData: FormData) {
+  requireAdmin();
+  const campaignId = String(formData.get('campaignId') ?? '').trim();
+  const heygenBaseAvatarId = String(formData.get('heygen_base_avatar_id') ?? '').trim() || null;
+  if (!campaignId) return;
+  const { upsertCandidateProfile } = await import('@/lib/candidate');
+  await upsertCandidateProfile(campaignId, { heygenBaseAvatarId });
+  revalidatePath(`/admin/campaigns/${campaignId}`);
+}
+
 export async function createCampaignAction(formData: FormData) {
   requireAdmin();
   const name = String(formData.get('name') ?? '').trim();

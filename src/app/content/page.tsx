@@ -24,10 +24,13 @@ export default async function ContentList({ searchParams }: { searchParams: { st
         <div className="actions"><Link className="btn primary" href="/content/new">New content</Link></div>
       </div>
 
-      <div className="btnrow" style={{ marginBottom: 16 }}>
+      <div className="btnrow" style={{ marginBottom: 20 }}>
         {filters.map(f => (
-          <Link key={f} className="btn" href={f === 'all' ? '/content' : `/content?status=${f}`}
-            style={(f === 'all' && !filter) || f === filter ? { borderColor: 'var(--accent)', color: 'var(--accent-ink)' } : {}}>
+          <Link
+            key={f}
+            className={`btn${((f === 'all' && !filter) || f === filter) ? ' active' : ''}`}
+            href={f === 'all' ? '/content' : `/content?status=${f}`}
+          >
             {f === 'all' ? 'All' : f.replace('_', ' ')}
           </Link>
         ))}

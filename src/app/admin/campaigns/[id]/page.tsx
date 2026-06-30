@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { StatusPill } from '@/components/StatusPill';
 import { getCampaignWithStats, getUsers, getContentItems, getAuditEntries, getInviteCodes } from '@/lib/data';
-import { updateCampaignAction, addUserAction, removeUserAction, impersonateAction, generateInviteAction } from '../../actions';
+import { updateCampaignAction, addUserAction, removeUserAction, impersonateAction, generateInviteAction, assignAvatarAction } from '../../actions';
+import { getCandidateProfile } from '@/lib/candidate';
 
 function fmt(cents: number) {
   return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -11,12 +12,13 @@ function fmt(cents: number) {
 const ROLE_OPTS = ['owner', 'manager', 'staff', 'approver'];
 
 export default async function CampaignDetail({ params }: { params: { id: string } }) {
-  const [campaign, users, content, audit, invites] = await Promise.all([
+  const [campaign, users, content, audit, invites, profile] = await Promise.all([
     getCampaignWithStats(params.id),
     getUsers(params.id),
     getContentItems(params.id),
     getAuditEntries(params.id),
     getInviteCodes(params.id),
+    getCandidateProfile(params.id),
   ]);
   if (!campaign) notFound();
 
@@ -93,6 +95,46 @@ export default async function CampaignDetail({ params }: { params: { id: string 
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Avatar assignment */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <span className="eyebrow">Video</span>
+        <h2 style={{ fontSize: 14, fontWeight: 700, margin: '6px 0 8px' }}>Candidate avatar</h2>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 16, lineHeight: 1.6 }}>
+          Assign the HeyGen <strong>avatar_id</strong> for this campaign&rsquo;s candidate.
+          All looks (outfits / poses) of that avatar become available for the campaign owner to choose from in their Settings.
+          Find the ID in HeyGen → Avatars → click the avatar → copy the ID from the URL or details panel.
+        </p>
+        <form action={assignAvatarAction} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <input type="hidden" name="campaignId" value={campaign.id} />
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <label className="field-label">HeyGen avatar ID</label>
+            <input
+              name="heygen_base_avatar_id"
+              className="input"
+              style={{ fontFamily: 'monospace', fontSize: 13 }}
+              defaultValue={profile?.heygenBaseAvatarId ?? ''}
+              placeholder="e.g. ee7b9943a5ac4d6e9e986075299dbb02"
+            />
+          </div>
+          <button className="btn primary" type="submit" style={{ fontSize: 13, marginBottom: 1 }}>
+            {profile?.heygenBaseAvatarId ? 'Update avatar' : 'Assign avatar'}
+          </button>
+        </form>
+        {profile?.heygenBaseAvatarId && (
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ok)', display: 'inline-block' }} />
+            <span style={{ fontSize: 12, color: 'var(--ok)', fontWeight: 600 }}>Avatar assigned</span>
+            <code style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 4 }}>{profile.heygenBaseAvatarId}</code>
+          </div>
+        )}
+        {!profile?.heygenBaseAvatarId && (
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--text-3)', display: 'inline-block' }} />
+            <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600 }}>No avatar assigned yet</span>
+          </div>
+        )}
       </div>
 
       {/* Users */}

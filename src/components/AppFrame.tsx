@@ -24,7 +24,6 @@ export async function AppFrame({ children }: { children: React.ReactNode }) {
       <Sidebar name={s.name} campaign={campaign?.name ?? ''} />
       <div className="main">
         <div className="topbar">
-          <span className="eyebrow">Workspace</span>
           <span className="ws">{campaign?.name}</span>
           <div className="right">
             <span className="rolebadge">{ROLE_LABEL[s.role] ?? s.role}</span>

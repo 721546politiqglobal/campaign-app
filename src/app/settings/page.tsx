@@ -5,6 +5,8 @@ import { getCampaign, getDisclosureRules, getUsers } from '@/lib/data';
 import { getCandidateProfile } from '@/lib/candidate';
 import { upsertCandidateProfile } from '@/lib/candidate';
 import { setCapAction } from '@/app/actions';
+import { AvatarLibrary } from '@/components/AvatarLibrary';
+import { VoiceLibrary } from '@/components/VoiceLibrary';
 import type { VoiceTone } from '@/domain/types';
 
 async function saveProfileAction(formData: FormData) {
@@ -108,6 +110,32 @@ export default async function Settings() {
         </form>
       </div>
 
+      {/* Avatar & video settings */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h2 style={{ marginBottom: 4 }}>Avatar & video settings</h2>
+        <p className="muted" style={{ fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>
+          Choose the avatar and video format used when generating campaign videos.
+          Your selection is saved as the default for all future videos.
+        </p>
+        <AvatarLibrary
+          baseAvatarId={profile?.heygenBaseAvatarId}
+          currentAvatarId={profile?.heygenAvatarId}
+          currentBackground={profile?.videoBackground}
+          currentAspectRatio={profile?.videoAspectRatio}
+          role={s.role}
+        />
+      </div>
+
+      {/* Voice settings */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h2 style={{ marginBottom: 4 }}>Voice</h2>
+        <p className="muted" style={{ fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>
+          Select the voice used for video narration and audio content.
+          Preview voices before committing — pick one that fits your candidate&rsquo;s style.
+        </p>
+        <VoiceLibrary currentVoiceId={profile?.elevenLabsVoiceId} />
+      </div>
+
       <div className="grid cols-2">
         <div className="card">
           <h2>Campaign</h2>
@@ -134,33 +162,6 @@ export default async function Settings() {
             Video, voice, and AI drafting count against this cap. Paid actions are blocked once it&rsquo;s reached.
           </p>
         </div>
-      </div>
-
-      <div className="spacer-y" />
-      <div className="card">
-        <h2>Active integrations</h2>
-        <table>
-          <thead><tr><th>Service</th><th>Purpose</th><th>Status</th></tr></thead>
-          <tbody>
-            {[
-              { name: 'Claude (LLM)', key: 'LLM_API_KEY', purpose: 'AI content drafting' },
-              { name: 'HeyGen', key: 'HEYGEN_API_KEY', purpose: 'Candidate avatar video' },
-              { name: 'ElevenLabs', key: 'ELEVENLABS_API_KEY', purpose: 'Voice synthesis' },
-              { name: 'Ayrshare', key: 'AYRSHARE_API_KEY', purpose: 'Social publishing' },
-              { name: 'NewsData', key: 'NEWSDATA_API_KEY', purpose: 'Opponent monitoring' },
-            ].map(svc => (
-              <tr key={svc.key}>
-                <td>{svc.name}</td>
-                <td className="muted" style={{ fontSize: 13 }}>{svc.purpose}</td>
-                <td>
-                  {process.env[svc.key]
-                    ? <span className="pill published">Live</span>
-                    : <span className="pill in_review">Add {svc.key}</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
 
       <div className="spacer-y" />

@@ -6,7 +6,7 @@ import { createContentAction, generateDraftAction } from '@/app/actions';
 
 const TYPES = [
   ['social_post', 'Social post'], ['reel', 'Reel script'], ['press_release', 'Press release'],
-  ['email', 'Email'], ['sms', 'SMS'], ['ad_copy', 'Ad copy'], ['talking_points', 'Talking points'],
+  ['ad_copy', 'Ad copy'], ['talking_points', 'Talking points'],
 ] as const;
 
 const BRIEF_SUGGESTIONS = [

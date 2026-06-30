@@ -20,8 +20,13 @@ export interface ContentGenerator {
 }
 
 export interface VideoProvider {
-  generateAvatarVideo(input: { script: string; avatarId?: string; voiceId?: string }):
-    Promise<{ videoId: string; url?: string }>;
+  generateAvatarVideo(input: {
+    script: string;
+    avatarId?: string;
+    voiceId?: string;
+    background?: string;
+    aspectRatio?: '16:9' | '9:16' | '1:1';
+  }): Promise<{ videoId: string; url?: string }>;
   getVideoStatus(videoId: string): Promise<{ status: 'processing' | 'completed' | 'failed'; url?: string }>;
 }
 
@@ -87,7 +92,20 @@ Write the content now. Start with "Title: [your title here]" on the first line, 
 export class HeyGenVideoProvider implements VideoProvider {
   constructor(private apiKey: string) {}
 
-  async generateAvatarVideo({ script, avatarId, voiceId }: { script: string; avatarId?: string; voiceId?: string }) {
+  async generateAvatarVideo({ script, avatarId, voiceId, background, aspectRatio }: {
+    script: string; avatarId?: string; voiceId?: string; background?: string; aspectRatio?: '16:9' | '9:16' | '1:1';
+  }) {
+    const DIMENSIONS: Record<string, { width: number; height: number }> = {
+      '16:9': { width: 1280, height: 720 },
+      '9:16': { width: 720, height: 1280 },
+      '1:1':  { width: 720, height: 720 },
+    };
+    const dimension = DIMENSIONS[aspectRatio ?? '16:9'] ?? { width: 1280, height: 720 };
+
+    const bgConfig: Record<string, string> = background?.startsWith('http')
+      ? { type: 'image', url: background }
+      : { type: 'color', value: (!background || background === 'plain') ? '#FFFFFF' : background };
+
     const res = await fetch('https://api.heygen.com/v2/video/generate', {
       method: 'POST',
       headers: { 'X-Api-Key': this.apiKey, 'Content-Type': 'application/json' },
@@ -103,8 +121,9 @@ export class HeyGenVideoProvider implements VideoProvider {
             input_text: script,
             voice_id: voiceId ?? process.env.HEYGEN_VOICE_ID ?? '',
           },
+          background: bgConfig,
         }],
-        dimension: { width: 1280, height: 720 },
+        dimension,
       }),
     });
     const json = await res.json();
@@ -240,7 +259,9 @@ export class MockPublisher implements Publisher {
 }
 
 export class MockVideoProvider implements VideoProvider {
-  async generateAvatarVideo() { return { videoId: 'mock-video-id' }; }
+  async generateAvatarVideo(_input: { script: string; avatarId?: string; voiceId?: string; background?: string; aspectRatio?: '16:9' | '9:16' | '1:1' }) {
+    return { videoId: 'mock-video-id' };
+  }
   async getVideoStatus() { return { status: 'completed' as const, url: 'https://example.com/demo-video.mp4' }; }
 }
 

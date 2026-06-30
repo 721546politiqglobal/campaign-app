@@ -20,7 +20,13 @@ const STEP_LABELS: Record<WizardStep, string> = {
   publish: 'Publish',
 };
 
-const PLATFORMS: Platform[] = ['instagram', 'facebook', 'x', 'linkedin', 'tiktok', 'youtube'];
+const CONTENT_TYPE_PLATFORMS: Record<string, Platform[]> = {
+  social_post:    ['instagram', 'facebook', 'x', 'linkedin', 'tiktok'],
+  reel:           ['instagram', 'tiktok', 'youtube'],
+  press_release:  ['facebook', 'linkedin'],
+  ad_copy:        ['instagram', 'facebook', 'x', 'linkedin'],
+  talking_points: ['linkedin'],
+};
 
 export interface RequiredDisclosure {
   jurisdiction: string;
@@ -52,10 +58,17 @@ export function ContentWizard({
   item,
   hasDisclosure,
   requiredDisclosures,
+  videoSettings,
 }: {
   item: ContentItem;
   hasDisclosure: boolean;
   requiredDisclosures: RequiredDisclosure[];
+  videoSettings?: {
+    avatarId?: string;
+    voiceId?: string;
+    background?: string;
+    aspectRatio?: '16:9' | '9:16' | '1:1';
+  };
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -66,7 +79,7 @@ export function ContentWizard({
   const [body, setBody] = useState(item.body);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [platforms, setPlatforms] = useState<Platform[]>(['instagram', 'facebook']);
+  const [platforms, setPlatforms] = useState<Platform[]>(CONTENT_TYPE_PLATFORMS[item.type] ?? []);
   const [videoId, setVideoId] = useState<string | null>(null);
   const [videoStatus, setVideoStatus] = useState<'idle' | 'generating' | 'ready' | 'failed'>('idle');
   const [videoUrl, setVideoUrl] = useState<string | null>(item.mediaUrl ?? null);
@@ -75,6 +88,13 @@ export function ContentWizard({
   const [timezone, setTimezone] = useState(
     Intl.DateTimeFormat().resolvedOptions().timeZone
   );
+  const [videoOverride, setVideoOverride] = useState<{
+    background: string;
+    aspectRatio: '16:9' | '9:16' | '1:1';
+  }>({
+    background: videoSettings?.background ?? 'plain',
+    aspectRatio: videoSettings?.aspectRatio ?? '16:9',
+  });
 
   const run = useCallback(async (
     fn: () => Promise<{ ok: boolean; error?: string }>,
@@ -111,7 +131,7 @@ export function ContentWizard({
   async function handleGenerateVideo() {
     setBusy(true);
     setError('');
-    const result = await generateVideoAction(item.id, item.body);
+    const result = await generateVideoAction(item.id, item.body, videoOverride);
     setBusy(false);
     if (!result.ok) {
       setError(result.error ?? 'Video generation failed.');
@@ -266,6 +286,39 @@ export function ContentWizard({
                 <p className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>
                   Your candidate avatar will deliver this script. Generation takes 2–4 minutes.
                 </p>
+                {/* Video customization */}
+                <div style={{ margin: '14px 0', padding: 14, background: 'var(--bg-hover)', borderRadius: 8 }}>
+                  <div className="eyebrow" style={{ marginBottom: 10 }}>Video settings</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                    {(['16:9', '9:16', '1:1'] as const).map(r => (
+                      <button key={r} type="button" className="btn"
+                        onClick={() => setVideoOverride(v => ({ ...v, aspectRatio: r }))}
+                        style={videoOverride.aspectRatio === r ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}
+                      >{r}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {[
+                      { id: 'plain',   color: '#FFFFFF', label: 'White' },
+                      { id: '#1A1A1A', color: '#1A1A1A', label: 'Dark' },
+                      { id: '#1E3A5F', color: '#1E3A5F', label: 'Navy' },
+                      { id: '#064E3B', color: '#064E3B', label: 'Forest' },
+                      { id: '#7C2D12', color: '#7C2D12', label: 'Burgundy' },
+                      { id: '#F97316', color: '#F97316', label: 'Campaign' },
+                    ].map(bg => (
+                      <button key={bg.id} type="button" title={bg.label}
+                        onClick={() => setVideoOverride(v => ({ ...v, background: bg.id }))}
+                        style={{
+                          width: 28, height: 28, borderRadius: 6, background: bg.color, cursor: 'pointer',
+                          border: `2px solid ${videoOverride.background === bg.id ? 'var(--accent)' : 'var(--line)'}`,
+                        }} />
+                    ))}
+                  </div>
+                  <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
+                    Default settings can be changed in{' '}
+                    <a href="/settings" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>Settings → Avatar</a>
+                  </div>
+                </div>
                 <div className="spacer-y" />
                 <button
                   className="btn primary"
@@ -400,7 +453,7 @@ export function ContentWizard({
             {/* Platforms */}
             <div className="eyebrow" style={{ marginBottom: 8 }}>Platforms</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
-              {PLATFORMS.map(p => {
+              {(CONTENT_TYPE_PLATFORMS[item.type] ?? []).map(p => {
                 const selected = platforms.includes(p);
                 return (
                   <label key={p} style={{
