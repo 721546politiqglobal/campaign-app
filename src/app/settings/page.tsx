@@ -6,12 +6,15 @@ import { getCandidateProfile } from '@/lib/candidate';
 import { upsertCandidateProfile } from '@/lib/candidate';
 import { setCapAction } from '@/app/actions';
 import { AvatarLibrary } from '@/components/AvatarLibrary';
+import { can } from '@/lib/permissions';
 import type { VoiceTone } from '@/domain/types';
 
 async function saveProfileAction(formData: FormData) {
   'use server';
   const { requireSession } = await import('@/lib/session');
+  const { can } = await import('@/lib/permissions');
   const s = requireSession();
+  if (!can(s.role, 'edit_settings')) return;
   const keyPositions = String(formData.get('key_positions') ?? '')
     .split('\n').map((p: string) => p.trim()).filter(Boolean);
   await upsertCandidateProfile(s.campaignId, {
@@ -40,6 +43,7 @@ export default async function Settings() {
     getCandidateProfile(s.campaignId),
   ]);
   const cap = ((campaign?.monthlyCostCapCents ?? 0) / 100).toFixed(0);
+  const canEdit = can(s.role, 'edit_settings');
 
   return (
     <AppFrame>
@@ -54,58 +58,60 @@ export default async function Settings() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label className="field-label">Full name</label>
-              <input name="full_name" className="input" defaultValue={profile?.fullName ?? ''} required />
+              <input name="full_name" className="input" defaultValue={profile?.fullName ?? ''} required disabled={!canEdit} />
             </div>
             <div>
               <label className="field-label">Preferred name</label>
-              <input name="preferred_name" className="input" defaultValue={profile?.preferredName ?? ''} required />
+              <input name="preferred_name" className="input" defaultValue={profile?.preferredName ?? ''} required disabled={!canEdit} />
             </div>
             <div>
               <label className="field-label">Running for</label>
-              <input name="office" className="input" defaultValue={profile?.office ?? ''} required />
+              <input name="office" className="input" defaultValue={profile?.office ?? ''} required disabled={!canEdit} />
             </div>
             <div>
               <label className="field-label">District</label>
-              <input name="district" className="input" defaultValue={profile?.district ?? ''} required />
+              <input name="district" className="input" defaultValue={profile?.district ?? ''} required disabled={!canEdit} />
             </div>
             <div>
               <label className="field-label">Party</label>
-              <input name="party" className="input" defaultValue={profile?.party ?? ''} />
+              <input name="party" className="input" defaultValue={profile?.party ?? ''} disabled={!canEdit} />
             </div>
             <div>
               <label className="field-label">Primary opponent</label>
-              <input name="opponent_name" className="input" defaultValue={profile?.opponentName ?? ''} />
+              <input name="opponent_name" className="input" defaultValue={profile?.opponentName ?? ''} disabled={!canEdit} />
             </div>
           </div>
           <div>
             <label className="field-label">Bio (2–3 sentences)</label>
-            <textarea name="bio" className="input" style={{ minHeight: 72 }} defaultValue={profile?.bio ?? ''} />
+            <textarea name="bio" className="input" style={{ minHeight: 72 }} defaultValue={profile?.bio ?? ''} disabled={!canEdit} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label className="field-label">Tagline</label>
-              <input name="tagline" className="input" defaultValue={profile?.tagline ?? ''} />
+              <input name="tagline" className="input" defaultValue={profile?.tagline ?? ''} disabled={!canEdit} />
             </div>
             <div>
               <label className="field-label">Target audience</label>
-              <input name="target_audience" className="input" defaultValue={profile?.targetAudience ?? ''} />
+              <input name="target_audience" className="input" defaultValue={profile?.targetAudience ?? ''} disabled={!canEdit} />
             </div>
           </div>
           <div>
             <label className="field-label">Key positions (one per line)</label>
             <textarea name="key_positions" className="input" style={{ minHeight: 100 }}
-              defaultValue={profile?.keyPositions.join('\n') ?? ''} />
+              defaultValue={profile?.keyPositions.join('\n') ?? ''} disabled={!canEdit} />
           </div>
           <div>
             <label className="field-label">Voice tone</label>
-            <select name="voice_tone" className="input" defaultValue={profile?.voiceTone ?? 'conversational'}>
+            <select name="voice_tone" className="input" defaultValue={profile?.voiceTone ?? 'conversational'} disabled={!canEdit}>
               <option value="conversational">Conversational</option>
               <option value="formal">Formal</option>
               <option value="urgent">Urgent</option>
               <option value="inspirational">Inspirational</option>
             </select>
           </div>
-          <button className="btn primary" type="submit" style={{ alignSelf: 'flex-start' }}>Save profile</button>
+          {canEdit && (
+            <button className="btn primary" type="submit" style={{ alignSelf: 'flex-start' }}>Save profile</button>
+          )}
         </form>
       </div>
 
@@ -140,9 +146,9 @@ export default async function Settings() {
           <form action={setCapAction}>
             <label className="field">
               <span className="cap">Cap (USD)</span>
-              <input type="text" name="cap" defaultValue={cap} inputMode="numeric" />
+              <input type="text" name="cap" defaultValue={cap} inputMode="numeric" disabled={!canEdit} />
             </label>
-            <button className="btn primary" type="submit">Save cap</button>
+            {canEdit && <button className="btn primary" type="submit">Save cap</button>}
           </form>
           <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
             Video, voice, and AI drafting count against this cap. Paid actions are blocked once it&rsquo;s reached.

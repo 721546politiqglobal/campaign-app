@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import type { Role } from '@/domain/types';
 import { ContentItem, VIDEO_CONTENT_TYPES } from '@/domain/types';
+import { can } from '@/lib/permissions';
 import { Platform } from '@/integrations';
 import { useToast } from '@/components/Toast';
 import {
@@ -59,6 +61,7 @@ export function ContentWizard({
   hasDisclosure,
   requiredDisclosures,
   videoSettings,
+  role,
 }: {
   item: ContentItem;
   hasDisclosure: boolean;
@@ -69,6 +72,7 @@ export function ContentWizard({
     background?: string;
     aspectRatio?: '16:9' | '9:16' | '1:1';
   };
+  role: Role;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -256,14 +260,20 @@ export function ContentWizard({
               </p>
             )}
             <div className="spacer-y" />
-            <button
-              className="btn primary"
-              style={{ width: '100%' }}
-              disabled={busy}
-              onClick={() => run(() => approveTextAction(item.id))}
-            >
-              {busy ? 'Saving…' : 'Looks good — Continue →'}
-            </button>
+            {can(role, 'approve') ? (
+              <button
+                className="btn primary"
+                style={{ width: '100%' }}
+                disabled={busy}
+                onClick={() => run(() => approveTextAction(item.id))}
+              >
+                {busy ? 'Saving…' : 'Looks good — Continue →'}
+              </button>
+            ) : (
+              <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+                Approval requires manager or approver access.
+              </p>
+            )}
             {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
           </div>
         </div>
@@ -353,14 +363,20 @@ export function ContentWizard({
                   controls
                   style={{ width: '100%', borderRadius: 8, marginBottom: 16, background: '#000' }}
                 />
-                <button
-                  className="btn primary"
-                  style={{ width: '100%' }}
-                  disabled={busy}
-                  onClick={() => run(() => confirmVideoAction(item.id, videoUrl))}
-                >
-                  {busy ? 'Saving…' : 'Video looks good — Continue →'}
-                </button>
+                {can(role, 'approve') ? (
+                  <button
+                    className="btn primary"
+                    style={{ width: '100%' }}
+                    disabled={busy}
+                    onClick={() => run(() => confirmVideoAction(item.id, videoUrl))}
+                  >
+                    {busy ? 'Saving…' : 'Video looks good — Continue →'}
+                  </button>
+                ) : (
+                  <p className="muted" style={{ fontSize: 13 }}>
+                    Approval requires manager or approver access.
+                  </p>
+                )}
               </>
             )}
             {videoStatus === 'failed' && (
@@ -378,14 +394,20 @@ export function ContentWizard({
                   controls
                   style={{ width: '100%', borderRadius: 8, marginBottom: 16, background: '#000' }}
                 />
-                <button
-                  className="btn primary"
-                  style={{ width: '100%' }}
-                  disabled={busy}
-                  onClick={() => run(() => confirmVideoAction(item.id, item.mediaUrl!))}
-                >
-                  {busy ? 'Saving…' : 'Video looks good — Continue →'}
-                </button>
+                {can(role, 'approve') ? (
+                  <button
+                    className="btn primary"
+                    style={{ width: '100%' }}
+                    disabled={busy}
+                    onClick={() => run(() => confirmVideoAction(item.id, item.mediaUrl!))}
+                  >
+                    {busy ? 'Saving…' : 'Video looks good — Continue →'}
+                  </button>
+                ) : (
+                  <p className="muted" style={{ fontSize: 13 }}>
+                    Approval requires manager or approver access.
+                  </p>
+                )}
               </>
             )}
             {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
@@ -519,19 +541,27 @@ export function ContentWizard({
             )}
 
             {scheduleMode === 'now' ? (
-              <button className="btn primary" style={{ width: '100%' }}
-                disabled={busy || platforms.length === 0}
-                onClick={() => run(() => publishAction(item.id, platforms), 'Published successfully!')}>
-                {busy ? 'Publishing…' : `Publish to ${platforms.length} platform${platforms.length !== 1 ? 's' : ''}`}
-              </button>
+              can(role, 'publish') ? (
+                <button className="btn primary" style={{ width: '100%' }}
+                  disabled={busy || platforms.length === 0}
+                  onClick={() => run(() => publishAction(item.id, platforms), 'Published successfully!')}>
+                  {busy ? 'Publishing…' : `Publish to ${platforms.length} platform${platforms.length !== 1 ? 's' : ''}`}
+                </button>
+              ) : (
+                <p className="muted" style={{ fontSize: 13 }}>Publishing requires manager access.</p>
+              )
             ) : (
-              <button className="btn primary" style={{ width: '100%' }}
-                disabled={busy || platforms.length === 0 || !scheduledAt}
-                onClick={() => run(() => scheduleWithTimeAction(item.id, platforms, scheduledAt, timezone), 'Content scheduled!')}>
-                {busy ? 'Scheduling…' : scheduledAt
-                  ? `Schedule for ${new Date(scheduledAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
-                  : 'Pick a time above'}
-              </button>
+              can(role, 'schedule') ? (
+                <button className="btn primary" style={{ width: '100%' }}
+                  disabled={busy || platforms.length === 0 || !scheduledAt}
+                  onClick={() => run(() => scheduleWithTimeAction(item.id, platforms, scheduledAt, timezone), 'Content scheduled!')}>
+                  {busy ? 'Scheduling…' : scheduledAt
+                    ? `Schedule for ${new Date(scheduledAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+                    : 'Pick a time above'}
+                </button>
+              ) : (
+                <p className="muted" style={{ fontSize: 13 }}>Scheduling requires manager access.</p>
+              )
             )}
             {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
           </div>

@@ -49,6 +49,7 @@ export default async function ContentDetail({ params }: { params: { id: string }
           background: profile?.videoBackground ?? 'plain',
           aspectRatio: profile?.videoAspectRatio ?? '16:9',
         }}
+        role={s.role}
       />
 
       {log.length > 0 && (
