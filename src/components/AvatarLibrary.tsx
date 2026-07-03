@@ -22,7 +22,7 @@ export function AvatarLibrary({
   currentAvatarId,
   currentAspectRatio,
 }: {
-  baseAvatarId?: string | null;
+  baseAvatarId: string;
   currentAvatarId?: string | null;
   currentAspectRatio?: string;
 }) {
@@ -38,7 +38,6 @@ export function AvatarLibrary({
   );
 
   useEffect(() => {
-    if (!baseAvatarId) return;
     setLoading(true);
     fetch(`/api/heygen/avatars?baseId=${encodeURIComponent(baseAvatarId)}`)
       .then(r => r.json())
@@ -52,7 +51,6 @@ export function AvatarLibrary({
     setSaving(true);
     const result = await saveVideoSettingsAction({
       heygenAvatarId:   selected?.avatar_id ?? null,
-      heygenLookId:     null,
       videoAspectRatio: selectedRatio,
     });
     setSaving(false);
@@ -62,89 +60,72 @@ export function AvatarLibrary({
 
   return (
     <div>
-      {/* ── No avatar assigned yet ────────────────────────────────────────── */}
-      {!baseAvatarId && (
-        <div style={{
-          padding: '28px 20px', border: '1.5px dashed var(--line)', borderRadius: 12,
-          textAlign: 'center', marginBottom: 24,
-        }}>
-          <div style={{ fontSize: 36, marginBottom: 10 }}>🎬</div>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>Avatar not configured yet</div>
-          <p className="muted" style={{ fontSize: 13 }}>
-            Your platform admin will set up your candidate avatar.
-            Once assigned, it will appear here for you to customize.
-          </p>
-        </div>
-      )}
-
       {/* ── Avatar looks grid ─────────────────────────────────────────────── */}
-      {baseAvatarId && (
-        <div style={{ marginBottom: 24 }}>
-          <div className="eyebrow" style={{ marginBottom: 10 }}>Your avatar</div>
-          <p className="muted" style={{ fontSize: 12, marginBottom: 14 }}>
-            These are the available looks for your avatar. Pick the one to use in campaign videos.
+      <div style={{ marginBottom: 24 }}>
+        <div className="eyebrow" style={{ marginBottom: 10 }}>Your avatar</div>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 14 }}>
+          These are the available looks for your avatar. Pick the one to use in campaign videos.
+        </p>
+
+        {loading && (
+          <div style={{ display: 'flex', gap: 12 }}>
+            {[1, 2, 3].map(i => (
+              <div key={i} className="skeleton" style={{ width: 140, height: 190, borderRadius: 10, flexShrink: 0 }} />
+            ))}
+          </div>
+        )}
+
+        {!loading && looks.length === 0 && (
+          <p className="muted" style={{ fontSize: 13 }}>
+            This avatar has no completed looks yet — check back once training finishes.
           </p>
+        )}
 
-          {loading && (
-            <div style={{ display: 'flex', gap: 12 }}>
-              {[1, 2, 3].map(i => (
-                <div key={i} className="skeleton" style={{ width: 140, height: 190, borderRadius: 10, flexShrink: 0 }} />
-              ))}
-            </div>
-          )}
-
-          {!loading && looks.length === 0 && (
-            <p className="muted" style={{ fontSize: 13 }}>
-              No avatar found for this group ID — check the HeyGen avatar group ID in the admin panel.
-            </p>
-          )}
-
-          {!loading && looks.length > 0 && (
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              {looks.map((look, i) => {
-                const isSelected = selectedLookId === look.avatar_id || (!selectedLookId && i === 0);
-                return (
-                  <button key={`${look.avatar_id}-${i}`} type="button"
-                    onClick={() => setSelectedLookId(look.avatar_id)}
-                    style={{
-                      padding: 0, borderRadius: 12, overflow: 'hidden', cursor: 'pointer',
-                      border: `3px solid ${isSelected ? 'var(--accent)' : 'var(--line)'}`,
-                      background: 'var(--bg-hover)', position: 'relative', textAlign: 'left',
-                      width: 140, flexShrink: 0,
-                      boxShadow: isSelected ? '0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent)' : 'none',
-                      transition: 'border-color 0.15s, box-shadow 0.15s',
-                    }}>
-                    {look.preview_image_url ? (
-                      <img src={look.preview_image_url} alt={look.avatar_name}
-                        style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', display: 'block' }} />
-                    ) : (
-                      <div style={{ width: '100%', aspectRatio: '3/4', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>
-                        👤
-                      </div>
-                    )}
-                    {isSelected && (
-                      <div style={{
-                        position: 'absolute', top: 8, right: 8, width: 24, height: 24,
-                        background: 'var(--accent)', borderRadius: '50%', display: 'flex',
-                        alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 700,
-                      }}>✓</div>
-                    )}
-                    <div style={{ padding: '8px 10px 10px', fontSize: 12, fontWeight: 600 }}>
-                      {look.avatar_name || `Look ${i + 1}`}
-                      {look.preview_video_url && (
-                        <a href={look.preview_video_url} target="_blank" rel="noreferrer"
-                          style={{ display: 'block', fontSize: 11, color: 'var(--accent)', marginTop: 2, textDecoration: 'none' }}>
-                          Preview ↗
-                        </a>
-                      )}
+        {!loading && looks.length > 0 && (
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {looks.map((look, i) => {
+              const isSelected = selectedLookId === look.avatar_id || (!selectedLookId && i === 0);
+              return (
+                <button key={`${look.avatar_id}-${i}`} type="button"
+                  onClick={() => setSelectedLookId(look.avatar_id)}
+                  style={{
+                    padding: 0, borderRadius: 12, overflow: 'hidden', cursor: 'pointer',
+                    border: `3px solid ${isSelected ? 'var(--accent)' : 'var(--line)'}`,
+                    background: 'var(--bg-hover)', position: 'relative', textAlign: 'left',
+                    width: 140, flexShrink: 0,
+                    boxShadow: isSelected ? '0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent)' : 'none',
+                    transition: 'border-color 0.15s, box-shadow 0.15s',
+                  }}>
+                  {look.preview_image_url ? (
+                    <img src={look.preview_image_url} alt={look.avatar_name}
+                      style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', display: 'block' }} />
+                  ) : (
+                    <div style={{ width: '100%', aspectRatio: '3/4', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>
+                      👤
                     </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+                  )}
+                  {isSelected && (
+                    <div style={{
+                      position: 'absolute', top: 8, right: 8, width: 24, height: 24,
+                      background: 'var(--accent)', borderRadius: '50%', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 700,
+                    }}>✓</div>
+                  )}
+                  <div style={{ padding: '8px 10px 10px', fontSize: 12, fontWeight: 600 }}>
+                    {look.avatar_name || `Look ${i + 1}`}
+                    {look.preview_video_url && (
+                      <a href={look.preview_video_url} target="_blank" rel="noreferrer"
+                        style={{ display: 'block', fontSize: 11, color: 'var(--accent)', marginTop: 2, textDecoration: 'none' }}>
+                        Preview ↗
+                      </a>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* ── Video format ──────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 24 }}>

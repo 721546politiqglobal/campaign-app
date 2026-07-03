@@ -6,7 +6,7 @@ import { requireSession, signInAs, signOut } from '@/lib/session';
 import { adminDb } from '@/lib/supabase';
 import { uid } from '@/lib/store';
 import { getCampaign } from '@/lib/data';
-import { lifecycle, disclosureEngine, usageMeter, contentGenerator, publisher, videoProvider, voiceProvider } from '@/lib/services';
+import { lifecycle, disclosureEngine, usageMeter, contentGenerator, publisher, videoProvider, voiceProvider, photoAvatarProvider } from '@/lib/services';
 import { contentRepo, approvalRepo, disclosureRepo, auditRepo } from '@/lib/repos';
 import { ContentType, ContentStatus, Platform, VIDEO_CONTENT_TYPES } from '@/domain/types';
 import { GateError } from '@/domain/content-lifecycle';
@@ -463,13 +463,13 @@ export async function dismissMonitoringAction(id: string): Promise<Result> {
 export async function saveVideoSettingsAction(data: {
   heygenBaseAvatarId?: string | null;
   heygenAvatarId?: string | null;
-  heygenLookId?: string | null;
   elevenLabsVoiceId?: string | null;
   videoAspectRatio?: '16:9' | '9:16' | '1:1';
   videoBackground?: string;
 }): Promise<Result> {
   return guard(async () => {
     const s = requireSession();
+    if (!can(s.role, 'edit_settings')) throw new GateError('Permission denied.');
     const { upsertCandidateProfile } = await import('@/lib/candidate');
     await upsertCandidateProfile(s.campaignId, data);
     revalidatePath('/settings');
@@ -479,6 +479,7 @@ export async function saveVideoSettingsAction(data: {
 export async function uploadBackgroundAction(formData: FormData): Promise<Result & { url?: string }> {
   return guard(async () => {
     const s = requireSession();
+    if (!can(s.role, 'edit_settings')) throw new GateError('Permission denied.');
     const file = formData.get('file') as File | null;
     if (!file || !file.size) throw new GateError('No file provided');
     if (file.size > 10 * 1024 * 1024) throw new GateError('File must be under 10 MB');
@@ -532,4 +533,118 @@ export async function scheduleWithTimeAction(
 
     revalidatePath(`/content/${id}`);
   });
+}
+
+// ── Avatar creation ───────────────────────────────────────────────────────────
+
+export async function createAvatarAction(formData: FormData): Promise<Result & { avatarId?: string }> {
+  const s = requireSession();
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+
+  const consent = formData.get('consent') === 'on';
+  if (!consent) return { ok: false, error: 'Consent confirmation is required.' };
+
+  const name = String(formData.get('name') ?? '').trim() || 'Avatar';
+  const files = formData.getAll('photos').filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.length < 4 || files.length > 10) return { ok: false, error: 'Upload between 4 and 10 photos.' };
+  for (const file of files) {
+    if (file.size > 10 * 1024 * 1024) return { ok: false, error: 'Each photo must be under 10 MB.' };
+    if (!file.type.startsWith('image/')) return { ok: false, error: 'Only image files are allowed.' };
+  }
+
+  const { insertAvatar, updateAvatarStatus } = await import('@/lib/avatars');
+  const avatarId = uid();
+  const buffers = await Promise.all(files.map(f => f.arrayBuffer().then(b => Buffer.from(b))));
+
+  const sourcePhotoUrls: string[] = [];
+  for (let i = 0; i < files.length; i++) {
+    const ext = files[i].name.split('.').pop()?.toLowerCase() ?? 'jpg';
+    const filename = `avatars/${s.campaignId}/${avatarId}/${i}.${ext}`;
+    const { error } = await adminDb.storage.from('media').upload(filename, buffers[i], {
+      contentType: files[i].type,
+      upsert: false,
+    });
+    if (error) return { ok: false, error: error.message };
+    const { data } = adminDb.storage.from('media').getPublicUrl(filename);
+    sourcePhotoUrls.push(data.publicUrl);
+  }
+
+  await insertAvatar({
+    id: avatarId,
+    campaignId: s.campaignId,
+    name,
+    sourcePhotoUrls,
+    consentConfirmedBy: s.userId,
+    createdBy: s.userId,
+    status: 'training',
+  });
+
+  try {
+    let groupId: string | undefined;
+    for (let i = 0; i < files.length; i++) {
+      const { assetId } = await photoAvatarProvider.uploadAsset(buffers[i], files[i].type);
+      const { groupId: newGroupId } = await photoAvatarProvider.createAvatarLook({
+        name,
+        assetId,
+        avatarGroupId: groupId,
+      });
+      groupId = groupId ?? newGroupId;
+    }
+    await updateAvatarStatus(avatarId, 'training', { heygenGroupId: groupId });
+  } catch (e) {
+    await updateAvatarStatus(avatarId, 'failed', { errorMessage: e instanceof Error ? e.message : String(e) });
+  }
+
+  revalidatePath('/avatars');
+  return { ok: true, avatarId };
+}
+
+export async function checkAvatarStatusAction(avatarId: string): Promise<Result> {
+  const s = requireSession();
+  const { getAvatar, updateAvatarStatus } = await import('@/lib/avatars');
+  const avatar = await getAvatar(avatarId);
+  if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: 'Avatar not found.' };
+  if (avatar.status !== 'training' || !avatar.heygenGroupId) return { ok: true };
+
+  const looks = await photoAvatarProvider.getGroupLooks(avatar.heygenGroupId);
+  const failedLook = looks.find(l => l.status === 'failed');
+  if (failedLook) {
+    await updateAvatarStatus(avatarId, 'failed', { errorMessage: failedLook.error?.message ?? 'Avatar training failed.' });
+  } else if (looks.length > 0 && looks.every(l => l.status === 'completed')) {
+    await updateAvatarStatus(avatarId, 'ready');
+  }
+  revalidatePath('/avatars');
+  return { ok: true };
+}
+
+export async function setActiveAvatarAction(avatarId: string): Promise<Result> {
+  const s = requireSession();
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+  const { getAvatar } = await import('@/lib/avatars');
+  const { upsertCandidateProfile } = await import('@/lib/candidate');
+  const avatar = await getAvatar(avatarId);
+  if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: 'Avatar not found.' };
+  if (avatar.status !== 'ready') return { ok: false, error: 'Avatar is not ready yet.' };
+
+  await upsertCandidateProfile(s.campaignId, {
+    activeAvatarId: avatarId,
+    heygenBaseAvatarId: avatar.heygenGroupId,
+    heygenAvatarId: null,
+  });
+  revalidatePath('/avatars');
+  return { ok: true };
+}
+
+export async function deleteAvatarAction(avatarId: string): Promise<Result> {
+  const s = requireSession();
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+  const { getAvatar, deleteAvatarRow } = await import('@/lib/avatars');
+  const { getCandidateProfile } = await import('@/lib/candidate');
+  const avatar = await getAvatar(avatarId);
+  if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: 'Avatar not found.' };
+  const profile = await getCandidateProfile(s.campaignId);
+  if (profile?.activeAvatarId === avatarId) return { ok: false, error: 'Cannot delete the active avatar.' };
+  await deleteAvatarRow(avatarId);
+  revalidatePath('/avatars');
+  return { ok: true };
 }

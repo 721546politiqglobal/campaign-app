@@ -44,6 +44,16 @@ const NAV = [
     ),
   },
   {
+    href: '/avatars',
+    label: 'Avatars',
+    icon: (
+      <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <circle cx="8" cy="6" r="3" stroke="currentColor" strokeWidth="1.4"/>
+        <path d="M2.5 14c0-3 2.5-5 5.5-5s5.5 2 5.5 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
     href: '/settings',
     label: 'Settings',
     icon: (

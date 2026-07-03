@@ -5,7 +5,6 @@ import { getCampaign, getDisclosureRules, getUsers } from '@/lib/data';
 import { getCandidateProfile } from '@/lib/candidate';
 import { upsertCandidateProfile } from '@/lib/candidate';
 import { setCapAction } from '@/app/actions';
-import { AvatarLibrary } from '@/components/AvatarLibrary';
 import { can } from '@/lib/permissions';
 import type { VoiceTone } from '@/domain/types';
 
@@ -113,19 +112,6 @@ export default async function Settings() {
             <button className="btn primary" type="submit" style={{ alignSelf: 'flex-start' }}>Save profile</button>
           )}
         </form>
-      </div>
-
-      {/* Avatar & video settings */}
-      <div className="card" style={{ marginBottom: 24 }}>
-        <h2 style={{ marginBottom: 4 }}>Avatar & video settings</h2>
-        <p className="muted" style={{ fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>
-          Choose the avatar look and video format used when generating campaign videos.
-        </p>
-        <AvatarLibrary
-          baseAvatarId={profile?.heygenBaseAvatarId}
-          currentAvatarId={profile?.heygenAvatarId}
-          currentAspectRatio={profile?.videoAspectRatio}
-        />
       </div>
 
       <div className="grid cols-2">

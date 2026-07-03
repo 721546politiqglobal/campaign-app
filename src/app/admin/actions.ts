@@ -56,16 +56,6 @@ export async function updateCampaignAction(formData: FormData) {
   revalidatePath('/admin');
 }
 
-export async function assignAvatarAction(formData: FormData) {
-  requireAdmin();
-  const campaignId = String(formData.get('campaignId') ?? '').trim();
-  const heygenBaseAvatarId = String(formData.get('heygen_base_avatar_id') ?? '').trim() || null;
-  if (!campaignId) return;
-  const { upsertCandidateProfile } = await import('@/lib/candidate');
-  await upsertCandidateProfile(campaignId, { heygenBaseAvatarId });
-  revalidatePath(`/admin/campaigns/${campaignId}`);
-}
-
 export async function createCampaignAction(formData: FormData) {
   requireAdmin();
   const name = String(formData.get('name') ?? '').trim();
@@ -82,6 +72,36 @@ export async function createCampaignAction(formData: FormData) {
   revalidatePath('/admin');
   revalidatePath('/admin/campaigns');
   redirect(`/admin/campaigns/${id}`);
+}
+
+export async function assignAvatarAction(formData: FormData) {
+  const s = requireAdmin();
+  const campaignId = String(formData.get('campaignId') ?? '').trim();
+  const heygenGroupId = String(formData.get('heygen_base_avatar_id') ?? '').trim();
+  if (!campaignId || !heygenGroupId) return;
+
+  const { insertAvatar } = await import('@/lib/avatars');
+  const { upsertCandidateProfile } = await import('@/lib/candidate');
+
+  const avatarId = 'av-' + Math.random().toString(36).slice(2, 9);
+  await insertAvatar({
+    id: avatarId,
+    campaignId,
+    name: 'Default avatar',
+    status: 'ready',
+    heygenGroupId,
+    sourcePhotoUrls: [],
+    consentConfirmedBy: s.userId,
+    createdBy: s.userId,
+  });
+  await upsertCandidateProfile(campaignId, {
+    activeAvatarId: avatarId,
+    heygenBaseAvatarId: heygenGroupId,
+    heygenAvatarId: null,
+  });
+
+  revalidatePath(`/admin/campaigns/${campaignId}`);
+  revalidatePath('/avatars');
 }
 
 export async function addUserAction(formData: FormData) {

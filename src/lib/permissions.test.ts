@@ -28,3 +28,10 @@ describe('can – edit_settings', () => {
   it('denies approver', () => expect(can('approver', 'edit_settings')).toBe(false));
   it('denies staff',    () => expect(can('staff',    'edit_settings')).toBe(false));
 });
+
+describe('can – manage_avatars', () => {
+  it('allows owner',    () => expect(can('owner',    'manage_avatars')).toBe(true));
+  it('allows manager',  () => expect(can('manager',  'manage_avatars')).toBe(true));
+  it('denies approver', () => expect(can('approver', 'manage_avatars')).toBe(false));
+  it('denies staff',    () => expect(can('staff',    'manage_avatars')).toBe(false));
+});

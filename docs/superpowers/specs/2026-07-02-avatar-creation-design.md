@@ -94,15 +94,16 @@ UI: `src/app/settings/page.tsx` passes a `canManageAvatars = can(s.role, 'manage
 
 New methods on a `HeyGenPhotoAvatarProvider` in `src/integrations/index.ts`, alongside the existing `HeyGenVideoProvider`, using the same raw-`fetch` style (no new SDK dependency):
 
-- `uploadAsset(imageBuffer)` → HeyGen Upload Asset → `image_key`
-- `createAvatarGroup(name, imageKeys)` → HeyGen Create Photo Avatar Group → `group_id`
-- `trainAvatarGroup(groupId)` → HeyGen Train Photo Avatar Group (async)
-- `getTrainingStatus(groupId)` → `GET /v2/photo_avatar/train/status/{group_id}`
+Built against **HeyGen's v3 API** (legacy v1/v2, which `HeyGenVideoProvider` still uses for video rendering, sunsets 2026-10-31 — v3 fully covers avatar creation, so all new code targets it). There is no separate "train" call in v3 — training is asynchronous and implicit in the create call; readiness is determined purely by polling.
+
+- `uploadAsset(buffer, contentType)` → `POST /v3/assets` (multipart) → `asset_id`
+- `createAvatarLook({ name, assetId, avatarGroupId? })` → `POST /v3/avatars` (`type: 'photo'`) → `{ lookId, groupId }`. Omitting `avatarGroupId` creates a new avatar group (character); passing it adds another look to that group — this is how N uploaded photos become one group with N looks.
+- `getGroupLooks(groupId)` → `GET /v3/avatars/looks?group_id=...` → array of `{ id, status, previewImageUrl?, error? }`, where `status` is HeyGen's real enum: `'processing' | 'pending_consent' | 'completed' | 'failed'`.
 
 New server actions in `src/app/actions.ts`:
 
-- **`createAvatarAction(formData)`** — validates the consent checkbox and photo set (4–10 files, `image/*`, <10MB each — reusing `uploadBackgroundAction`'s existing validation), gated by `manage_avatars`. Uploads photos to Supabase Storage (`media` bucket, path `avatars/{campaignId}/{avatarId}/{n}.{ext}`, following the `uploadBackgroundAction`/`ElevenLabsVoiceProvider` path convention), then calls HeyGen: upload each photo → create group → train. Inserts an `avatars` row with `status='training'` before returning; any HeyGen failure during this sequence still inserts the row with `status='failed'` and `error_message` set, rather than returning an error with no persisted record.
-- **`checkAvatarStatusAction(avatarId)`** — polls HeyGen training status, updates the row's `status`/`error_message` accordingly.
+- **`createAvatarAction(formData)`** — validates the consent checkbox and photo set (4–10 files, `image/*`, <10MB each — reusing `uploadBackgroundAction`'s existing validation), gated by `manage_avatars`. Uploads photos to Supabase Storage (`media` bucket, path `avatars/{campaignId}/{avatarId}/{n}.{ext}`, following the `uploadBackgroundAction`/`ElevenLabsVoiceProvider` path convention) for our own audit trail, then calls HeyGen once per photo: upload asset → create avatar look (first call creates the group; subsequent calls pass the returned `groupId` to add looks to it). Inserts an `avatars` row with `status='training'` before returning; any HeyGen failure during this sequence still inserts the row with `status='failed'` and `error_message` set, rather than returning an error with no persisted record.
+- **`checkAvatarStatusAction(avatarId)`** — calls `getGroupLooks(heygenGroupId)` and derives one aggregate status: `'ready'` once every look is `'completed'`, `'failed'` if any look reports `'failed'` (storing that look's error message), otherwise `'training'`. Updates the row accordingly.
 - **`setActiveAvatarAction(avatarId)`** — gated by `manage_avatars`. Sets `candidate_profiles.active_avatar_id` and `heygen_base_avatar_id` to the chosen avatar, clears `heygen_avatar_id` (the previously selected "look" belonged to the old group and is no longer valid).
 - **`deleteAvatarAction(avatarId)`** — gated by `manage_avatars`. Returns `{ ok: false, error: 'Cannot delete the active avatar' }` if the target is currently active.
 
@@ -163,7 +164,7 @@ No training timeout in v1 — a `training` row with no HeyGen error just stays `
 | `src/domain/types.ts` | Add `Avatar` type; add `activeAvatarId`, remove `heygenLookId` on `CandidateProfile` |
 | `src/lib/permissions.ts` | Add `manage_avatars` action |
 | `src/lib/permissions.test.ts` | Add `manage_avatars` cases |
-| `src/integrations/index.ts` | **New** `HeyGenPhotoAvatarProvider` (upload/create/train/status) |
+| `src/integrations/index.ts` | **New** `HeyGenPhotoAvatarProvider` (v3 API: upload asset / create avatar look / get group looks) |
 | `src/app/actions.ts` | Add `createAvatarAction`, `checkAvatarStatusAction`, `setActiveAvatarAction`, `deleteAvatarAction`; add `can()` gate to `saveVideoSettingsAction` and `uploadBackgroundAction` |
 | `src/app/admin/actions.ts` | Remove `assignAvatarAction` |
 | `src/app/admin/campaigns/[id]/page.tsx` | Remove manual avatar-ID assignment UI |

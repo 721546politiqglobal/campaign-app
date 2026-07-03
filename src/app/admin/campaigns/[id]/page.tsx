@@ -102,9 +102,11 @@ export default async function CampaignDetail({ params }: { params: { id: string 
         <span className="eyebrow">Video</span>
         <h2 style={{ fontSize: 14, fontWeight: 700, margin: '6px 0 8px' }}>Candidate avatar</h2>
         <p className="muted" style={{ fontSize: 12, marginBottom: 16, lineHeight: 1.6 }}>
-          Paste the HeyGen <strong>avatar group ID</strong> for this candidate.
-          Works for both photo avatars (talking photos) and studio avatars — all looks in that group appear for the campaign owner to pick from in their Settings.
-          Find it in HeyGen → Photo Avatars → open the avatar → copy the group ID shown in the URL or identity panel.
+          Paste a HeyGen <strong>avatar group ID</strong> to give this campaign a starting avatar —
+          useful right after a campaign is created, before the owner has made their own.
+          This creates an avatar entry that shows up on the campaign's own Avatars page, where they
+          can pick a look, create additional avatars, or replace this one at any time.
+          Find the ID in HeyGen → Photo Avatars → open the avatar → copy the group ID shown in the URL or identity panel.
         </p>
         <form action={assignAvatarAction} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <input type="hidden" name="campaignId" value={campaign.id} />
@@ -114,22 +116,20 @@ export default async function CampaignDetail({ params }: { params: { id: string 
               name="heygen_base_avatar_id"
               className="input"
               style={{ fontFamily: 'monospace', fontSize: 13 }}
-              defaultValue={profile?.heygenBaseAvatarId ?? ''}
               placeholder="e.g. ee7b9943a5ac4d6e9e986075299dbb02"
             />
           </div>
           <button className="btn primary" type="submit" style={{ fontSize: 13, marginBottom: 1 }}>
-            {profile?.heygenBaseAvatarId ? 'Update avatar' : 'Assign avatar'}
+            Assign avatar
           </button>
         </form>
-        {profile?.heygenBaseAvatarId && (
+        {profile?.heygenBaseAvatarId ? (
           <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ok)', display: 'inline-block' }} />
-            <span style={{ fontSize: 12, color: 'var(--ok)', fontWeight: 600 }}>Avatar assigned</span>
+            <span style={{ fontSize: 12, color: 'var(--ok)', fontWeight: 600 }}>Active avatar assigned</span>
             <code style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 4 }}>{profile.heygenBaseAvatarId}</code>
           </div>
-        )}
-        {!profile?.heygenBaseAvatarId && (
+        ) : (
           <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--text-3)', display: 'inline-block' }} />
             <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600 }}>No avatar assigned yet</span>

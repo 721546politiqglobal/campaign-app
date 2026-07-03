@@ -74,6 +74,22 @@ export interface AuditRepo {
 
 export type VoiceTone = 'formal' | 'conversational' | 'urgent' | 'inspirational';
 
+export type AvatarStatus = 'training' | 'ready' | 'failed';
+
+export interface Avatar {
+  id: string;
+  campaignId: string;
+  name: string;
+  status: AvatarStatus;
+  heygenGroupId?: string | null;
+  sourcePhotoUrls: string[];
+  errorMessage?: string | null;
+  consentConfirmedBy: string;
+  consentConfirmedAt: string;
+  createdBy: string;
+  createdAt: string;
+}
+
 export interface CandidateProfile {
   id: string;
   campaignId: string;
@@ -91,7 +107,7 @@ export interface CandidateProfile {
   opponentName?: string | null;
   heygenBaseAvatarId?: string | null;
   heygenAvatarId?: string | null;
-  heygenLookId?: string | null;
+  activeAvatarId?: string | null;
   elevenLabsVoiceId?: string | null;
   videoAspectRatio: '16:9' | '9:16' | '1:1';
   videoBackground: string;

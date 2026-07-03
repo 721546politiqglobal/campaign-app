@@ -34,6 +34,18 @@ export interface VoiceProvider {
   synthesize(input: { text: string; voiceId?: string }): Promise<{ audioUrl: string }>;
 }
 
+export interface PhotoAvatarProvider {
+  uploadAsset(buffer: Buffer, contentType: string): Promise<{ assetId: string }>;
+  createAvatarLook(input: { name: string; assetId: string; avatarGroupId?: string }):
+    Promise<{ lookId: string; groupId: string }>;
+  getGroupLooks(groupId: string): Promise<{
+    id: string;
+    status: 'processing' | 'pending_consent' | 'completed' | 'failed';
+    previewImageUrl?: string;
+    error?: { code: string; message: string };
+  }[]>;
+}
+
 export interface Publisher {
   publish(input: { platforms: Platform[]; text: string; disclosureText: string; mediaUrl?: string }):
     Promise<{ platform: Platform; status: 'scheduled' | 'failed'; error?: string }[]>;
@@ -140,6 +152,65 @@ export class HeyGenVideoProvider implements VideoProvider {
     if (status === 'completed') return { status: 'completed' as const, url: json.data.video_url };
     if (status === 'failed') return { status: 'failed' as const };
     return { status: 'processing' as const };
+  }
+}
+
+// ── HeyGen photo avatar provider (v3 API) ─────────────────────────────────────
+// Legacy v1/v2 (used by HeyGenVideoProvider above for rendering) sunsets
+// 2026-10-31 — this provider targets v3 only, which fully covers avatar
+// creation. v3 has no separate "train" step: training starts automatically
+// and asynchronously inside createAvatarLook; readiness comes from polling
+// getGroupLooks.
+
+export class HeyGenPhotoAvatarProvider implements PhotoAvatarProvider {
+  constructor(private apiKey: string) {}
+
+  async uploadAsset(buffer: Buffer, contentType: string) {
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(buffer)], { type: contentType }), 'photo');
+    const res = await fetch('https://api.heygen.com/v3/assets', {
+      method: 'POST',
+      headers: { 'X-Api-Key': this.apiKey },
+      body: form,
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(`HeyGen upload error: ${json.error?.message ?? res.status}`);
+    return { assetId: json.data?.asset_id ?? '' };
+  }
+
+  async createAvatarLook({ name, assetId, avatarGroupId }: { name: string; assetId: string; avatarGroupId?: string }) {
+    const res = await fetch('https://api.heygen.com/v3/avatars', {
+      method: 'POST',
+      headers: { 'X-Api-Key': this.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'photo',
+        name,
+        file: { type: 'asset_id', asset_id: assetId },
+        ...(avatarGroupId && { avatar_group_id: avatarGroupId }),
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(`HeyGen create avatar error: ${json.error?.message ?? res.status}`);
+    return {
+      lookId: json.data?.avatar_item?.id ?? '',
+      groupId: json.data?.avatar_group?.id ?? json.data?.avatar_item?.group_id ?? '',
+    };
+  }
+
+  async getGroupLooks(groupId: string) {
+    const res = await fetch(`https://api.heygen.com/v3/avatars/looks?group_id=${encodeURIComponent(groupId)}`, {
+      headers: { 'X-Api-Key': this.apiKey },
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(`HeyGen get looks error: ${json.error?.message ?? res.status}`);
+    const looks: { id: string; status: string; preview_image_url?: string; error?: { code: string; message: string } }[] =
+      json.data?.looks ?? [];
+    return looks.map(l => ({
+      id: l.id,
+      status: l.status as 'processing' | 'pending_consent' | 'completed' | 'failed',
+      previewImageUrl: l.preview_image_url,
+      error: l.error,
+    }));
   }
 }
 
@@ -267,6 +338,14 @@ export class MockVideoProvider implements VideoProvider {
 
 export class MockVoiceProvider implements VoiceProvider {
   async synthesize() { return { audioUrl: 'https://example.com/demo-audio.mp3' }; }
+}
+
+export class MockPhotoAvatarProvider implements PhotoAvatarProvider {
+  async uploadAsset(_buffer: Buffer, _contentType: string) { return { assetId: 'mock-asset-id' }; }
+  async createAvatarLook(_input: { name: string; assetId: string; avatarGroupId?: string }) { return { lookId: 'mock-look-id', groupId: 'mock-group-id' }; }
+  async getGroupLooks(_groupId: string) {
+    return [{ id: 'mock-look-id', status: 'completed' as const, previewImageUrl: 'https://example.com/mock-avatar.jpg' }];
+  }
 }
 
 export class MockMonitoringSource implements MonitoringSource {
