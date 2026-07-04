@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireAdmin } from '@/lib/session';
 import { adminDb } from '@/lib/supabase';
+import { stripe } from '@/lib/stripe';
 
 export async function impersonateAction(userId: string) {
   requireAdmin();
@@ -74,6 +75,80 @@ export async function createCampaignAction(formData: FormData) {
   redirect(`/admin/campaigns/${id}`);
 }
 
+export async function assignPlanAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
+  requireAdmin();
+  if (!stripe) return { ok: false, error: 'STRIPE_SECRET_KEY is not configured on this server.' };
+
+  const campaignId = String(formData.get('campaignId') ?? '');
+  const planId = String(formData.get('planId') ?? '');
+  if (!campaignId || !planId) return { ok: false, error: 'Campaign and plan are required.' };
+
+  const { getCampaign, getBillingPlan } = await import('@/lib/data');
+  const [campaign, plan] = await Promise.all([getCampaign(campaignId), getBillingPlan(planId)]);
+  if (!campaign) return { ok: false, error: 'Campaign not found.' };
+  if (!plan) return { ok: false, error: 'Plan not found.' };
+
+  let customerId = campaign.stripeCustomerId;
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      name: campaign.name,
+      metadata: { campaign_id: campaignId },
+    });
+    customerId = customer.id;
+  }
+
+  // Changing plans cancels the old subscription and starts a fresh one —
+  // simpler than diffing subscription items, and plan changes are an
+  // infrequent admin action, not a self-serve upgrade flow.
+  if (campaign.stripeSubscriptionId) {
+    await stripe.subscriptions.cancel(campaign.stripeSubscriptionId);
+  }
+
+  // With no payment method on the customer yet, Stripe would otherwise
+  // error on subscription creation ("no attached payment source").
+  // payment_behavior: 'default_incomplete' creates it in 'incomplete'
+  // status instead; it becomes 'active' once the campaign pays via the
+  // billing portal, and the webhook (Task 9) syncs that status here.
+  const subscription = await stripe.subscriptions.create({
+    customer: customerId,
+    items: [{ price: plan.stripeFlatPriceId }, { price: plan.stripeMeteredPriceId }],
+    payment_behavior: 'default_incomplete',
+  });
+
+  // Stripe SDK v22 moved current_period_end off the Subscription object and
+  // onto each SubscriptionItem — pull it from the first item instead.
+  const currentPeriodEnd = subscription.items.data[0]?.current_period_end;
+
+  await adminDb.from('campaigns').update({
+    plan_id: plan.id,
+    stripe_customer_id: customerId,
+    stripe_subscription_id: subscription.id,
+    subscription_status: subscription.status,
+    monthly_cost_cap_cents: plan.includedUsageCents * 10,
+    grace_period_ends_at: null,
+    current_period_end: currentPeriodEnd ? new Date(currentPeriodEnd * 1000).toISOString() : null,
+  }).eq('id', campaignId);
+
+  revalidatePath(`/admin/campaigns/${campaignId}`);
+  return { ok: true };
+}
+
+export async function openBillingPortalForCampaignAction(formData: FormData): Promise<void> {
+  requireAdmin();
+  const campaignId = String(formData.get('campaignId') ?? '');
+  if (!stripe || !campaignId) return;
+
+  const { getCampaign } = await import('@/lib/data');
+  const campaign = await getCampaign(campaignId);
+  if (!campaign?.stripeCustomerId) return;
+
+  const session = await stripe.billingPortal.sessions.create({
+    customer: campaign.stripeCustomerId,
+    return_url: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/admin/campaigns/${campaignId}`,
+  });
+  redirect(session.url);
+}
+
 export async function assignAvatarAction(formData: FormData) {
   const s = requireAdmin();
   const campaignId = String(formData.get('campaignId') ?? '').trim();
@@ -81,7 +156,7 @@ export async function assignAvatarAction(formData: FormData) {
   if (!campaignId || !heygenGroupId) return;
 
   const { insertAvatar } = await import('@/lib/avatars');
-  const { upsertCandidateProfile } = await import('@/lib/candidate');
+  const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
 
   const avatarId = 'av-' + Math.random().toString(36).slice(2, 9);
   await insertAvatar({
@@ -94,11 +169,22 @@ export async function assignAvatarAction(formData: FormData) {
     consentConfirmedBy: s.userId,
     createdBy: s.userId,
   });
-  await upsertCandidateProfile(campaignId, {
-    activeAvatarId: avatarId,
-    heygenBaseAvatarId: heygenGroupId,
-    heygenAvatarId: null,
-  });
+
+  // upsertCandidateProfile's insert path requires full_name/preferred_name/office/
+  // district (not-null, no defaults) — fields this action doesn't have. If the
+  // campaign hasn't been through /setup yet, there's no row to update, and
+  // inserting a placeholder one would silently skip that onboarding flow (its
+  // redirect is gated purely on row existence). So: only activate the avatar
+  // when a profile already exists. Otherwise the avatar row still gets created
+  // here, ready for the owner to activate themselves once they've set up.
+  const existingProfile = await getCandidateProfile(campaignId);
+  if (existingProfile) {
+    await upsertCandidateProfile(campaignId, {
+      activeAvatarId: avatarId,
+      heygenBaseAvatarId: heygenGroupId,
+      heygenAvatarId: null,
+    });
+  }
 
   revalidatePath(`/admin/campaigns/${campaignId}`);
   revalidatePath('/avatars');

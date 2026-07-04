@@ -1,9 +1,13 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { StatusPill } from '@/components/StatusPill';
-import { getCampaignWithStats, getUsers, getContentItems, getAuditEntries, getInviteCodes } from '@/lib/data';
-import { updateCampaignAction, addUserAction, removeUserAction, impersonateAction, generateInviteAction, assignAvatarAction } from '../../actions';
+import { getCampaignWithStats, getUsers, getContentItems, getAuditEntries, getInviteCodes, getBillingPlans } from '@/lib/data';
+import {
+  updateCampaignAction, addUserAction, removeUserAction, impersonateAction,
+  generateInviteAction, assignAvatarAction, assignPlanAction, openBillingPortalForCampaignAction,
+} from '../../actions';
 import { getCandidateProfile } from '@/lib/candidate';
+import { listAvatars } from '@/lib/avatars';
 
 function fmt(cents: number) {
   return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -11,18 +15,37 @@ function fmt(cents: number) {
 
 const ROLE_OPTS = ['owner', 'manager', 'staff', 'approver'];
 
-export default async function CampaignDetail({ params }: { params: { id: string } }) {
-  const [campaign, users, content, audit, invites, profile] = await Promise.all([
+export default async function CampaignDetail({
+  params, searchParams,
+}: {
+  params: { id: string };
+  searchParams: { billingError?: string };
+}) {
+  const [campaign, users, content, audit, invites, profile, plans, avatars] = await Promise.all([
     getCampaignWithStats(params.id),
     getUsers(params.id),
     getContentItems(params.id),
     getAuditEntries(params.id),
     getInviteCodes(params.id),
     getCandidateProfile(params.id),
+    getBillingPlans(),
+    listAvatars(params.id),
   ]);
   if (!campaign) notFound();
 
   const recentAudit = audit.slice(0, 10);
+
+  // assignPlanAction returns a result object (for future programmatic
+  // callers) rather than void, so a Server Component form action can't bind
+  // it directly — wrap it the same way src/app/admin/billing/page.tsx wraps
+  // syncBillingPlansAction, redirecting back with the error in the query string.
+  async function assignPlan(formData: FormData) {
+    'use server';
+    const result = await assignPlanAction(formData);
+    if (!result.ok) {
+      redirect(`/admin/campaigns/${params.id}?billingError=${encodeURIComponent(result.error ?? 'Failed to assign plan.')}`);
+    }
+  }
 
   return (
     <div>
@@ -97,6 +120,57 @@ export default async function CampaignDetail({ params }: { params: { id: string 
         </div>
       </div>
 
+      {/* Billing */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <span className="eyebrow">Billing</span>
+        <h2 style={{ fontSize: 14, fontWeight: 700, margin: '6px 0 16px' }}>Subscription</h2>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: campaign.subscriptionStatus === 'active' ? 'var(--ok)' : campaign.subscriptionStatus ? 'var(--warn)' : 'var(--text-3)', display: 'inline-block' }} />
+          <span style={{ fontSize: 12, fontWeight: 600 }}>
+            {campaign.planId
+              ? `${plans.find(p => p.id === campaign.planId)?.name ?? campaign.planId} — ${campaign.subscriptionStatus ?? 'unknown'}`
+              : 'No plan assigned'}
+          </span>
+        </div>
+        {campaign.currentPeriodEnd && (
+          <p className="muted" style={{ fontSize: 12, marginBottom: 16 }}>
+            Current period ends {new Date(campaign.currentPeriodEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          </p>
+        )}
+        {searchParams.billingError && (
+          <p style={{ fontSize: 12, color: 'var(--bad)', marginBottom: 12 }}>{searchParams.billingError}</p>
+        )}
+        <form action={assignPlan} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: campaign.stripeCustomerId ? 12 : 0 }}>
+          <input type="hidden" name="campaignId" value={campaign.id} />
+          <div style={{ minWidth: 200 }}>
+            <label className="field-label">Plan</label>
+            <select name="planId" className="input" defaultValue={campaign.planId ?? ''} required>
+              <option value="" disabled>Select a plan</option>
+              {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <button className="btn primary" type="submit" style={{ fontSize: 13, marginBottom: 1 }}>
+            {campaign.planId ? 'Change plan' : 'Assign plan'}
+          </button>
+        </form>
+        {campaign.stripeCustomerId && (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <form action={openBillingPortalForCampaignAction}>
+              <input type="hidden" name="campaignId" value={campaign.id} />
+              <button className="btn" type="submit" style={{ fontSize: 12 }}>Open billing portal for this customer →</button>
+            </form>
+            <a
+              href={`https://dashboard.stripe.com/customers/${campaign.stripeCustomerId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontSize: 12, color: 'var(--text-3)' }}
+            >
+              View in Stripe Dashboard →
+            </a>
+          </div>
+        )}
+      </div>
+
       {/* Avatar assignment */}
       <div className="card" style={{ marginBottom: 24 }}>
         <span className="eyebrow">Video</span>
@@ -128,6 +202,13 @@ export default async function CampaignDetail({ params }: { params: { id: string 
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ok)', display: 'inline-block' }} />
             <span style={{ fontSize: 12, color: 'var(--ok)', fontWeight: 600 }}>Active avatar assigned</span>
             <code style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 4 }}>{profile.heygenBaseAvatarId}</code>
+          </div>
+        ) : avatars.length > 0 ? (
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--warn)', display: 'inline-block' }} />
+            <span style={{ fontSize: 12, color: 'var(--warn)', fontWeight: 600 }}>
+              Avatar created, not yet active — the campaign hasn&rsquo;t completed setup
+            </span>
           </div>
         ) : (
           <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>

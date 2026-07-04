@@ -38,12 +38,11 @@ export interface PhotoAvatarProvider {
   uploadAsset(buffer: Buffer, contentType: string): Promise<{ assetId: string }>;
   createAvatarLook(input: { name: string; assetId: string; avatarGroupId?: string }):
     Promise<{ lookId: string; groupId: string }>;
-  getGroupLooks(groupId: string): Promise<{
-    id: string;
+  getAvatarGroupStatus(groupId: string): Promise<{
     status: 'processing' | 'pending_consent' | 'completed' | 'failed';
     previewImageUrl?: string;
     error?: { code: string; message: string };
-  }[]>;
+  }>;
 }
 
 export interface Publisher {
@@ -160,7 +159,7 @@ export class HeyGenVideoProvider implements VideoProvider {
 // 2026-10-31 — this provider targets v3 only, which fully covers avatar
 // creation. v3 has no separate "train" step: training starts automatically
 // and asynchronously inside createAvatarLook; readiness comes from polling
-// getGroupLooks.
+// getAvatarGroupStatus.
 
 export class HeyGenPhotoAvatarProvider implements PhotoAvatarProvider {
   constructor(private apiKey: string) {}
@@ -197,20 +196,22 @@ export class HeyGenPhotoAvatarProvider implements PhotoAvatarProvider {
     };
   }
 
-  async getGroupLooks(groupId: string) {
-    const res = await fetch(`https://api.heygen.com/v3/avatars/looks?group_id=${encodeURIComponent(groupId)}`, {
+  // Deliberately polls GET /v3/avatars/{id} (the single-resource endpoint),
+  // not GET /v3/avatars/looks?group_id=... — empirically verified the looks-list
+  // endpoint returns an empty array even for a group HeyGen itself reports as
+  // "completed" with a nonzero looks_count. The single-resource endpoint's
+  // top-level `status` is the reliable signal.
+  async getAvatarGroupStatus(groupId: string) {
+    const res = await fetch(`https://api.heygen.com/v3/avatars/${encodeURIComponent(groupId)}`, {
       headers: { 'X-Api-Key': this.apiKey },
     });
     const json = await res.json();
-    if (!res.ok) throw new Error(`HeyGen get looks error: ${json.error?.message ?? res.status}`);
-    const looks: { id: string; status: string; preview_image_url?: string; error?: { code: string; message: string } }[] =
-      json.data?.looks ?? [];
-    return looks.map(l => ({
-      id: l.id,
-      status: l.status as 'processing' | 'pending_consent' | 'completed' | 'failed',
-      previewImageUrl: l.preview_image_url,
-      error: l.error,
-    }));
+    if (!res.ok) throw new Error(`HeyGen get avatar error: ${json.error?.message ?? res.status}`);
+    return {
+      status: json.data?.status as 'processing' | 'pending_consent' | 'completed' | 'failed',
+      previewImageUrl: json.data?.preview_image_url,
+      error: json.data?.error,
+    };
   }
 }
 
@@ -343,8 +344,8 @@ export class MockVoiceProvider implements VoiceProvider {
 export class MockPhotoAvatarProvider implements PhotoAvatarProvider {
   async uploadAsset(_buffer: Buffer, _contentType: string) { return { assetId: 'mock-asset-id' }; }
   async createAvatarLook(_input: { name: string; assetId: string; avatarGroupId?: string }) { return { lookId: 'mock-look-id', groupId: 'mock-group-id' }; }
-  async getGroupLooks(_groupId: string) {
-    return [{ id: 'mock-look-id', status: 'completed' as const, previewImageUrl: 'https://example.com/mock-avatar.jpg' }];
+  async getAvatarGroupStatus(_groupId: string) {
+    return { status: 'completed' as const, previewImageUrl: 'https://example.com/mock-avatar.jpg' };
   }
 }
 

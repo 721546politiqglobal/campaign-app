@@ -4,7 +4,8 @@
 import { ContentLifecycle } from '@/domain/content-lifecycle';
 import { DisclosureEngine } from '@/domain/disclosure';
 import { UsageMeter } from '@/domain/usage';
-import { contentRepo, approvalRepo, disclosureRepo, auditRepo, rulesRepo, usageRepo } from './repos';
+import { BillingGate } from '@/domain/billing';
+import { contentRepo, approvalRepo, disclosureRepo, auditRepo, rulesRepo, usageRepo, billingRepo } from './repos';
 import {
   ClaudeContentGenerator, MockContentGenerator,
   HeyGenVideoProvider, MockVideoProvider,
@@ -18,6 +19,7 @@ import type { PhotoAvatarProvider } from '@/integrations';
 export const lifecycle = new ContentLifecycle(contentRepo, approvalRepo, disclosureRepo, auditRepo);
 export const disclosureEngine = new DisclosureEngine(rulesRepo);
 export const usageMeter = new UsageMeter(usageRepo);
+export const billingGate = new BillingGate(billingRepo);
 
 export const contentGenerator = process.env.LLM_API_KEY
   ? new ClaudeContentGenerator(process.env.LLM_API_KEY)

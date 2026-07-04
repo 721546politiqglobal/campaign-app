@@ -6,18 +6,19 @@ import { requireSession, signInAs, signOut } from '@/lib/session';
 import { adminDb } from '@/lib/supabase';
 import { uid } from '@/lib/store';
 import { getCampaign } from '@/lib/data';
-import { lifecycle, disclosureEngine, usageMeter, contentGenerator, publisher, videoProvider, voiceProvider, photoAvatarProvider } from '@/lib/services';
+import { lifecycle, disclosureEngine, usageMeter, billingGate, contentGenerator, publisher, videoProvider, voiceProvider, photoAvatarProvider } from '@/lib/services';
 import { contentRepo, approvalRepo, disclosureRepo, auditRepo } from '@/lib/repos';
 import { ContentType, ContentStatus, Platform, VIDEO_CONTENT_TYPES } from '@/domain/types';
 import { GateError } from '@/domain/content-lifecycle';
 import { CapExceeded } from '@/domain/usage';
+import { BillingBlocked } from '@/domain/billing';
 import { can } from '@/lib/permissions';
 
 type Result = { ok: true } | { ok: false; error: string };
 
 function guard<T>(fn: () => Promise<T>): Promise<Result> {
   return fn().then(() => ({ ok: true as const })).catch((e: unknown) => {
-    if (e instanceof GateError || e instanceof CapExceeded) return { ok: false as const, error: e.message };
+    if (e instanceof GateError || e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false as const, error: e.message };
     throw e;
   });
 }
@@ -159,6 +160,7 @@ export async function generateDraftAction(instruction: string, type: string) {
   if (!campaign) throw new Error('Campaign not found');
 
   const cost = CONTENT_COST_CENTS[type] ?? 5_00;
+  await billingGate.check(s.campaignId);
   await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, cost);
   const out = await contentGenerator.draft({
     instruction,
@@ -239,6 +241,20 @@ export async function setCapAction(formData: FormData): Promise<void> {
   revalidatePath('/settings');
 }
 
+export async function openMyBillingPortalAction(): Promise<void> {
+  const s = requireSession();
+  if (!can(s.role, 'edit_settings')) return;
+  const { stripe } = await import('@/lib/stripe');
+  if (!stripe) return;
+  const campaign = await getCampaign(s.campaignId);
+  if (!campaign?.stripeCustomerId) return;
+  const session = await stripe.billingPortal.sessions.create({
+    customer: campaign.stripeCustomerId,
+    return_url: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/settings`,
+  });
+  redirect(session.url);
+}
+
 // ── Video generation ──────────────────────────────────────────────────────────
 
 export async function generateVideoAction(
@@ -255,6 +271,7 @@ export async function generateVideoAction(
   if (!campaign) return { ok: false, error: 'Campaign not found.' };
   const VIDEO_COST_CENTS = 50_00;
   try {
+    await billingGate.check(s.campaignId);
     await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, VIDEO_COST_CENTS);
     const { videoId } = await videoProvider.generateAvatarVideo({
       script,
@@ -271,7 +288,7 @@ export async function generateVideoAction(
     });
     return { ok: true, videoId };
   } catch (e) {
-    if (e instanceof CapExceeded) return { ok: false, error: e.message };
+    if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
     throw e;
   }
 }
@@ -287,12 +304,13 @@ export async function synthesizeVoiceAction(text: string): Promise<Result & { au
   const campaign = await getCampaign(s.campaignId);
   if (!campaign) return { ok: false, error: 'Campaign not found.' };
   try {
+    await billingGate.check(s.campaignId);
     await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, 20_00);
     const { audioUrl } = await voiceProvider.synthesize({ text });
     await usageMeter.record(s.campaignId, 'voice_synthesis', 1, 20_00);
     return { ok: true, audioUrl };
   } catch (e) {
-    if (e instanceof CapExceeded) return { ok: false, error: e.message };
+    if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
     throw e;
   }
 }
@@ -382,6 +400,7 @@ export async function generateFromMonitoringAction(
 
   try {
     const cost = CONTENT_COST_CENTS[contentType] ?? 5_00;
+    await billingGate.check(s.campaignId);
     await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, cost);
 
     const instruction =
@@ -419,7 +438,7 @@ export async function generateFromMonitoringAction(
 
     return { ok: true, contentId: id };
   } catch (e) {
-    if (e instanceof CapExceeded) return { ok: false, error: e.message };
+    if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
     throw e;
   }
 }
@@ -606,11 +625,10 @@ export async function checkAvatarStatusAction(avatarId: string): Promise<Result>
   if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: 'Avatar not found.' };
   if (avatar.status !== 'training' || !avatar.heygenGroupId) return { ok: true };
 
-  const looks = await photoAvatarProvider.getGroupLooks(avatar.heygenGroupId);
-  const failedLook = looks.find(l => l.status === 'failed');
-  if (failedLook) {
-    await updateAvatarStatus(avatarId, 'failed', { errorMessage: failedLook.error?.message ?? 'Avatar training failed.' });
-  } else if (looks.length > 0 && looks.every(l => l.status === 'completed')) {
+  const { status, error } = await photoAvatarProvider.getAvatarGroupStatus(avatar.heygenGroupId);
+  if (status === 'failed') {
+    await updateAvatarStatus(avatarId, 'failed', { errorMessage: error?.message ?? 'Avatar training failed.' });
+  } else if (status === 'completed') {
     await updateAvatarStatus(avatarId, 'ready');
   }
   revalidatePath('/avatars');

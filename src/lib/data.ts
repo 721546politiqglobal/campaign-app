@@ -6,6 +6,12 @@ import { ContentStatus, ContentType } from '@/domain/types';
 
 export interface Campaign {
   id: string; name: string; jurisdictions: string[]; monthlyCostCapCents: number;
+  planId: string | null;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  subscriptionStatus: string | null;
+  gracePeriodEndsAt: string | null;
+  currentPeriodEnd: string | null;
 }
 export interface User { id: string; name: string; role: string; campaignId: string; email: string | null; }
 export interface MonitoringResult {
@@ -18,7 +24,15 @@ export interface MonitoringResult {
 export async function getCampaign(campaignId: string): Promise<Campaign | null> {
   const { data } = await adminDb.from('campaigns').select('*').eq('id', campaignId).single();
   if (!data) return null;
-  return { id: data.id, name: data.name, jurisdictions: data.jurisdictions, monthlyCostCapCents: data.monthly_cost_cap_cents };
+  return {
+    id: data.id, name: data.name, jurisdictions: data.jurisdictions, monthlyCostCapCents: data.monthly_cost_cap_cents,
+    planId: data.plan_id ?? null,
+    stripeCustomerId: data.stripe_customer_id ?? null,
+    stripeSubscriptionId: data.stripe_subscription_id ?? null,
+    subscriptionStatus: data.subscription_status ?? null,
+    gracePeriodEndsAt: data.grace_period_ends_at ?? null,
+    currentPeriodEnd: data.current_period_end ?? null,
+  };
 }
 
 export async function getUser(userId: string): Promise<User | null> {
@@ -137,6 +151,37 @@ export interface DisclosureRule {
   placement: string; blackoutDaysBeforeElection: number | null; needsLegalReview: boolean;
 }
 
+export interface BillingPlan {
+  id: string; name: string; monthlyPriceCents: number; seatLimit: number | null;
+  includedUsageCents: number; overageMultiplier: number;
+  stripeProductId: string; stripeFlatPriceId: string; stripeMeteredPriceId: string;
+  isActive: boolean;
+}
+
+function toBillingPlan(r: Record<string, unknown>): BillingPlan {
+  return {
+    id: r.id as string, name: r.name as string,
+    monthlyPriceCents: r.monthly_price_cents as number,
+    seatLimit: (r.seat_limit as number | null) ?? null,
+    includedUsageCents: r.included_usage_cents as number,
+    overageMultiplier: r.overage_multiplier as number,
+    stripeProductId: r.stripe_product_id as string,
+    stripeFlatPriceId: r.stripe_flat_price_id as string,
+    stripeMeteredPriceId: r.stripe_metered_price_id as string,
+    isActive: r.is_active as boolean,
+  };
+}
+
+export async function getBillingPlans(): Promise<BillingPlan[]> {
+  const { data } = await adminDb.from('billing_plans').select('*').order('monthly_price_cents');
+  return (data ?? []).map(toBillingPlan);
+}
+
+export async function getBillingPlan(id: string): Promise<BillingPlan | null> {
+  const { data } = await adminDb.from('billing_plans').select('*').eq('id', id).single();
+  return data ? toBillingPlan(data) : null;
+}
+
 export async function getAllCampaigns(): Promise<CampaignWithStats[]> {
   const start = new Date(); start.setDate(1); start.setHours(0, 0, 0, 0);
   const [c, u, ci, ue] = await Promise.all([
@@ -152,6 +197,12 @@ export async function getAllCampaigns(): Promise<CampaignWithStats[]> {
   return campaigns.map(camp => ({
     id: camp.id, name: camp.name, jurisdictions: camp.jurisdictions,
     monthlyCostCapCents: camp.monthly_cost_cap_cents, createdAt: camp.created_at,
+    planId: camp.plan_id ?? null,
+    stripeCustomerId: camp.stripe_customer_id ?? null,
+    stripeSubscriptionId: camp.stripe_subscription_id ?? null,
+    subscriptionStatus: camp.subscription_status ?? null,
+    gracePeriodEndsAt: camp.grace_period_ends_at ?? null,
+    currentPeriodEnd: camp.current_period_end ?? null,
     userCount: users.filter(u => u.campaign_id === camp.id).length,
     contentCount: items.filter(i => i.campaign_id === camp.id).length,
     inReviewCount: items.filter(i => i.campaign_id === camp.id && i.status === 'in_review').length,

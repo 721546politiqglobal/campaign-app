@@ -4,6 +4,7 @@ import {
 } from '@/domain/types';
 import { DisclosureRule, DisclosureRulesRepo } from '@/domain/disclosure';
 import { UsageRepo } from '@/domain/usage';
+import { BillingRepo, CampaignBillingInfo } from '@/domain/billing';
 
 // ── row → domain mappers ─────────────────────────────────────────────────────
 
@@ -132,6 +133,21 @@ export const usageRepo: UsageRepo = {
   },
   async record(campaignId, kind, _quantity, costCents) {
     await adminDb.from('usage_events').insert({ campaign_id: campaignId, kind, cost_cents: costCents });
+  },
+};
+
+export const billingRepo: BillingRepo = {
+  async getBillingInfo(campaignId): Promise<CampaignBillingInfo | null> {
+    const { data } = await adminDb
+      .from('campaigns')
+      .select('subscription_status, grace_period_ends_at')
+      .eq('id', campaignId)
+      .single();
+    if (!data) return null;
+    return {
+      subscriptionStatus: (data.subscription_status as string | null) ?? null,
+      gracePeriodEndsAt: (data.grace_period_ends_at as string | null) ?? null,
+    };
   },
 };
 

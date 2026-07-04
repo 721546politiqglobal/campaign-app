@@ -70,27 +70,38 @@ describe('HeyGenPhotoAvatarProvider.createAvatarLook', () => {
   });
 });
 
-describe('HeyGenPhotoAvatarProvider.getGroupLooks', () => {
-  it('normalizes the looks array', async () => {
+describe('HeyGenPhotoAvatarProvider.getAvatarGroupStatus', () => {
+  it('polls the single-resource endpoint and normalizes a completed group', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: { id: 'group_1', status: 'completed', preview_image_url: 'https://example.com/1.jpg', looks_count: 4 },
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+    const result = await provider.getAvatarGroupStatus('group_1');
+
+    expect(result).toEqual({ status: 'completed', previewImageUrl: 'https://example.com/1.jpg', error: undefined });
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://api.heygen.com/v3/avatars/group_1');
+  });
+
+  it('normalizes a failed group', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        data: {
-          looks: [
-            { id: 'look_1', status: 'completed', preview_image_url: 'https://example.com/1.jpg' },
-            { id: 'look_2', status: 'failed', error: { code: 'training_failed', message: 'bad photo' } },
-          ],
-        },
+        data: { id: 'group_2', status: 'failed', error: { code: 'training_failed', message: 'bad photo' } },
       }),
     }));
 
     const provider = new HeyGenPhotoAvatarProvider('test-key');
-    const looks = await provider.getGroupLooks('group_1');
+    const result = await provider.getAvatarGroupStatus('group_2');
 
-    expect(looks).toEqual([
-      { id: 'look_1', status: 'completed', previewImageUrl: 'https://example.com/1.jpg', error: undefined },
-      { id: 'look_2', status: 'failed', previewImageUrl: undefined, error: { code: 'training_failed', message: 'bad photo' } },
-    ]);
+    expect(result).toEqual({
+      status: 'failed', previewImageUrl: undefined, error: { code: 'training_failed', message: 'bad photo' },
+    });
   });
 });
 
@@ -98,8 +109,8 @@ describe('MockPhotoAvatarProvider', () => {
   it('returns immediately-completed mock data', async () => {
     const provider = new MockPhotoAvatarProvider();
     const { assetId } = await provider.uploadAsset(Buffer.from('x'), 'image/jpeg');
-    const { lookId, groupId } = await provider.createAvatarLook({ name: 'n', assetId });
-    const looks = await provider.getGroupLooks(groupId);
-    expect(looks).toEqual([{ id: lookId, status: 'completed', previewImageUrl: 'https://example.com/mock-avatar.jpg' }]);
+    const { groupId } = await provider.createAvatarLook({ name: 'n', assetId });
+    const result = await provider.getAvatarGroupStatus(groupId);
+    expect(result).toEqual({ status: 'completed', previewImageUrl: 'https://example.com/mock-avatar.jpg' });
   });
 });

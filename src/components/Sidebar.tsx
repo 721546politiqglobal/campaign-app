@@ -64,6 +64,16 @@ const NAV = [
       </svg>
     ),
   },
+  {
+    href: '/billing',
+    label: 'Billing',
+    icon: (
+      <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
+        <line x1="1.5" y1="6.5" x2="14.5" y2="6.5" stroke="currentColor" strokeWidth="1.3"/>
+      </svg>
+    ),
+  },
 ];
 
 export function Sidebar({ name, campaign }: { name: string; campaign: string }) {
