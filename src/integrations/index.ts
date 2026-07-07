@@ -38,6 +38,8 @@ export interface PhotoAvatarProvider {
   uploadAsset(buffer: Buffer, contentType: string): Promise<{ assetId: string }>;
   createAvatarLook(input: { name: string; assetId: string; avatarGroupId?: string }):
     Promise<{ lookId: string; groupId: string }>;
+  createPromptLook(input: { name: string; prompt: string; avatarId: string }):
+    Promise<{ lookId: string; groupId: string }>;
   getAvatarGroupStatus(groupId: string): Promise<{
     status: 'processing' | 'pending_consent' | 'completed' | 'failed';
     previewImageUrl?: string;
@@ -196,6 +198,27 @@ export class HeyGenPhotoAvatarProvider implements PhotoAvatarProvider {
     };
   }
 
+  // Generates a new styled look from an EXISTING trained look, preserving the
+  // real person's identity — `avatarId` must be a look id (avatar_item.id),
+  // not a group id, or HeyGen won't have a visual reference to condition on
+  // (avatar_group_id alone stopped conditioning generation as of a June 2026
+  // breaking change on HeyGen's side). Omitting avatar_group_id here is
+  // intentional: passing avatar_id alone auto-saves the new look into that
+  // look's own group, which is exactly the group we want it in.
+  async createPromptLook({ name, prompt, avatarId }: { name: string; prompt: string; avatarId: string }) {
+    const res = await fetch('https://api.heygen.com/v3/avatars', {
+      method: 'POST',
+      headers: { 'X-Api-Key': this.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'prompt', name, prompt, avatar_id: avatarId }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(`HeyGen generate look error: ${json.error?.message ?? res.status}`);
+    return {
+      lookId: json.data?.avatar_item?.id ?? '',
+      groupId: json.data?.avatar_group?.id ?? json.data?.avatar_item?.group_id ?? '',
+    };
+  }
+
   // Deliberately polls GET /v3/avatars/{id} (the single-resource endpoint),
   // not GET /v3/avatars/looks?group_id=... — empirically verified the looks-list
   // endpoint returns an empty array even for a group HeyGen itself reports as
@@ -344,6 +367,7 @@ export class MockVoiceProvider implements VoiceProvider {
 export class MockPhotoAvatarProvider implements PhotoAvatarProvider {
   async uploadAsset(_buffer: Buffer, _contentType: string) { return { assetId: 'mock-asset-id' }; }
   async createAvatarLook(_input: { name: string; assetId: string; avatarGroupId?: string }) { return { lookId: 'mock-look-id', groupId: 'mock-group-id' }; }
+  async createPromptLook(_input: { name: string; prompt: string; avatarId: string }) { return { lookId: 'mock-prompt-look-id', groupId: 'mock-group-id' }; }
   async getAvatarGroupStatus(_groupId: string) {
     return { status: 'completed' as const, previewImageUrl: 'https://example.com/mock-avatar.jpg' };
   }

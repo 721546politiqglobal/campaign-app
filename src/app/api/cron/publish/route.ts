@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/supabase';
 import { publisher } from '@/lib/services';
 import { disclosureRepo } from '@/lib/repos';
+import { combineDisclosureText } from '@/domain/disclosure';
 import type { Platform } from '@/domain/types';
 
 export async function GET(req: NextRequest) {
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
       await publisher.publish({
         platforms: (item.platforms ?? []) as Platform[],
         text: item.body,
-        disclosureText: disclosures[0]?.disclosureText ?? '',
+        disclosureText: combineDisclosureText(disclosures),
         mediaUrl: item.media_url ?? undefined,
       });
       await adminDb.from('content_items')

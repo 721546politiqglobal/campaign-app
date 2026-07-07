@@ -10,6 +10,7 @@ import { lifecycle, disclosureEngine, usageMeter, billingGate, contentGenerator,
 import { contentRepo, approvalRepo, disclosureRepo, auditRepo } from '@/lib/repos';
 import { ContentType, ContentStatus, Platform, VIDEO_CONTENT_TYPES } from '@/domain/types';
 import { GateError } from '@/domain/content-lifecycle';
+import { combineDisclosureText } from '@/domain/disclosure';
 import { CapExceeded } from '@/domain/usage';
 import { BillingBlocked } from '@/domain/billing';
 import { can } from '@/lib/permissions';
@@ -81,24 +82,36 @@ export async function joinAction(formData: FormData) {
   if (invite.used_at)                               redirect(`${base}&error=used`);
   if (new Date(invite.expires_at) < new Date())     redirect(`${base}&error=expired`);
 
+  // A user row may already exist here as a placeholder created by addUserAction
+  // (name/email/role set, no password_hash yet). Only a row that already has a
+  // password_hash represents a real, already-claimed account.
   const { data: existing } = await adminDb
     .from('users')
-    .select('id')
+    .select('id, password_hash')
     .eq('email', email)
     .maybeSingle();
-  if (existing) redirect(`${base}&error=email`);
+  if (existing?.password_hash) redirect(`${base}&error=email`);
 
   const password_hash = await bcrypt.default.hash(password, 10);
-  const userId = 'u-' + Math.random().toString(36).slice(2, 9);
+  const userId = existing?.id ?? 'u-' + Math.random().toString(36).slice(2, 9);
 
-  await adminDb.from('users').insert({
-    id: userId,
-    campaign_id: invite.campaign_id,
-    name,
-    email,
-    password_hash,
-    role: invite.role,
-  });
+  if (existing) {
+    await adminDb.from('users').update({
+      name,
+      password_hash,
+      campaign_id: invite.campaign_id,
+      role: invite.role,
+    }).eq('id', existing.id);
+  } else {
+    await adminDb.from('users').insert({
+      id: userId,
+      campaign_id: invite.campaign_id,
+      name,
+      email,
+      password_hash,
+      role: invite.role,
+    });
+  }
 
   await adminDb.from('invite_codes')
     .update({ used_by: userId, used_at: new Date().toISOString() })
@@ -221,7 +234,7 @@ export async function publishAction(id: string, platforms: Platform[]): Promise<
     await lifecycle.markPublished(id, s.userId);
     await publisher.publish({
       platforms, text: item.body,
-      disclosureText: disc[0]?.disclosureText ?? '',
+      disclosureText: combineDisclosureText(disc),
       mediaUrl: item.mediaUrl ?? undefined,
     });
   });
@@ -531,9 +544,15 @@ export async function scheduleWithTimeAction(
     if (!scheduledAt) throw new GateError('Scheduled time is required');
     if (new Date(scheduledAt) <= new Date()) throw new GateError('Scheduled time must be in the future');
 
+    const item = await contentRepo.get(id);
+    if (!item || item.campaignId !== s.campaignId) throw new GateError('Content not found.');
+
+    // Hard gate: enforces human approval, and disclosure-on-file for AI content,
+    // before status can move to 'scheduled' — same check scheduleAction uses.
+    await lifecycle.schedule(id, s.userId);
+
     await adminDb.from('content_items')
       .update({
-        status: 'scheduled',
         scheduled_at: new Date(scheduledAt).toISOString(),
         timezone,
         platforms,
@@ -544,7 +563,7 @@ export async function scheduleWithTimeAction(
     await auditRepo.append({
       campaignId: s.campaignId,
       actorUserId: s.userId,
-      action: 'schedule',
+      action: 'schedule_with_time',
       entityType: 'content_item',
       entityId: id,
       details: { scheduledAt, timezone, platforms },
@@ -555,6 +574,9 @@ export async function scheduleWithTimeAction(
 }
 
 // ── Avatar creation ───────────────────────────────────────────────────────────
+
+const AVATAR_LOOK_COST_CENTS = 1_00;
+const AVATAR_PROMPT_LOOK_COST_CENTS = 1_00;
 
 export async function createAvatarAction(formData: FormData): Promise<Result & { avatarId?: string }> {
   const s = requireSession();
@@ -569,6 +591,18 @@ export async function createAvatarAction(formData: FormData): Promise<Result & {
   for (const file of files) {
     if (file.size > 10 * 1024 * 1024) return { ok: false, error: 'Each photo must be under 10 MB.' };
     if (!file.type.startsWith('image/')) return { ok: false, error: 'Only image files are allowed.' };
+  }
+
+  const campaign = await getCampaign(s.campaignId);
+  if (!campaign) return { ok: false, error: 'Campaign not found.' };
+
+  const estimatedCost = files.length * AVATAR_LOOK_COST_CENTS;
+  try {
+    await billingGate.check(s.campaignId);
+    await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, estimatedCost);
+  } catch (e) {
+    if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
+    throw e;
   }
 
   const { insertAvatar, updateAvatarStatus } = await import('@/lib/avatars');
@@ -598,20 +632,28 @@ export async function createAvatarAction(formData: FormData): Promise<Result & {
     status: 'training',
   });
 
+  let processedCount = 0;
   try {
     let groupId: string | undefined;
+    let baseLookId: string | undefined;
     for (let i = 0; i < files.length; i++) {
       const { assetId } = await photoAvatarProvider.uploadAsset(buffers[i], files[i].type);
-      const { groupId: newGroupId } = await photoAvatarProvider.createAvatarLook({
+      const { groupId: newGroupId, lookId } = await photoAvatarProvider.createAvatarLook({
         name,
         assetId,
         avatarGroupId: groupId,
       });
+      processedCount++;
       groupId = groupId ?? newGroupId;
+      baseLookId = baseLookId ?? lookId;
     }
-    await updateAvatarStatus(avatarId, 'training', { heygenGroupId: groupId });
+    await updateAvatarStatus(avatarId, 'training', { heygenGroupId: groupId, heygenLookId: baseLookId });
   } catch (e) {
     await updateAvatarStatus(avatarId, 'failed', { errorMessage: e instanceof Error ? e.message : String(e) });
+  } finally {
+    if (processedCount > 0) {
+      await usageMeter.record(s.campaignId, 'avatar_training', processedCount, processedCount * AVATAR_LOOK_COST_CENTS);
+    }
   }
 
   revalidatePath('/avatars');
@@ -663,6 +705,36 @@ export async function deleteAvatarAction(avatarId: string): Promise<Result> {
   const profile = await getCandidateProfile(s.campaignId);
   if (profile?.activeAvatarId === avatarId) return { ok: false, error: 'Cannot delete the active avatar.' };
   await deleteAvatarRow(avatarId);
+  revalidatePath('/avatars');
+  return { ok: true };
+}
+
+export async function generatePromptLookAction(avatarId: string, name: string, prompt: string): Promise<Result> {
+  const s = requireSession();
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+  if (!prompt.trim()) return { ok: false, error: 'Describe how the new look should appear.' };
+
+  const { getAvatar } = await import('@/lib/avatars');
+  const avatar = await getAvatar(avatarId);
+  if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: 'Avatar not found.' };
+  if (avatar.status !== 'ready' || !avatar.heygenLookId) return { ok: false, error: 'Avatar is not ready yet.' };
+
+  const campaign = await getCampaign(s.campaignId);
+  if (!campaign) return { ok: false, error: 'Campaign not found.' };
+
+  try {
+    await billingGate.check(s.campaignId);
+    await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, AVATAR_PROMPT_LOOK_COST_CENTS);
+    await photoAvatarProvider.createPromptLook({
+      name: name.trim() || 'Styled look',
+      prompt: prompt.trim(),
+      avatarId: avatar.heygenLookId,
+    });
+    await usageMeter.record(s.campaignId, 'avatar_look_generation', 1, AVATAR_PROMPT_LOOK_COST_CENTS);
+  } catch (e) {
+    if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
+    return { ok: false, error: e instanceof Error ? e.message : 'Failed to generate look.' };
+  }
   revalidatePath('/avatars');
   return { ok: true };
 }

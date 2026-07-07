@@ -124,7 +124,7 @@ export async function assignPlanAction(formData: FormData): Promise<{ ok: boolea
     stripe_customer_id: customerId,
     stripe_subscription_id: subscription.id,
     subscription_status: subscription.status,
-    monthly_cost_cap_cents: plan.includedUsageCents * 10,
+    monthly_cost_cap_cents: plan.includedUsageCents,
     grace_period_ends_at: null,
     current_period_end: currentPeriodEnd ? new Date(currentPeriodEnd * 1000).toISOString() : null,
   }).eq('id', campaignId);

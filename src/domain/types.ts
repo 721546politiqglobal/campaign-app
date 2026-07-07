@@ -82,6 +82,7 @@ export interface Avatar {
   name: string;
   status: AvatarStatus;
   heygenGroupId?: string | null;
+  heygenLookId?: string | null;
   sourcePhotoUrls: string[];
   errorMessage?: string | null;
   consentConfirmedBy: string;

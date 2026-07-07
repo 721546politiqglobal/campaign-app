@@ -21,6 +21,12 @@ export interface RequiredDisclosure {
 
 const DEFAULT_LABEL = 'This content was generated or substantially altered using AI.';
 
+// Publishing must attach every distinct jurisdiction's required text, not just
+// one — a content item can target multiple jurisdictions with different rules.
+export function combineDisclosureText(records: { disclosureText: string }[]): string {
+  return [...new Set(records.map(r => r.disclosureText).filter(Boolean))].join('\n\n');
+}
+
 export class DisclosureEngine {
   constructor(private rules: DisclosureRulesRepo) {}
 

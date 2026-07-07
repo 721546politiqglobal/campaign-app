@@ -9,6 +9,7 @@ function toAvatar(r: Record<string, unknown>): Avatar {
     name: r.name as string,
     status: r.status as AvatarStatus,
     heygenGroupId: (r.heygen_group_id as string | null) ?? null,
+    heygenLookId: (r.heygen_look_id as string | null) ?? null,
     sourcePhotoUrls: (r.source_photo_urls as string[]) ?? [],
     errorMessage: (r.error_message as string | null) ?? null,
     consentConfirmedBy: r.consent_confirmed_by as string,
@@ -41,6 +42,7 @@ export async function insertAvatar(input: {
   createdBy: string;
   status?: AvatarStatus;
   heygenGroupId?: string | null;
+  heygenLookId?: string | null;
   errorMessage?: string | null;
 }): Promise<void> {
   await adminDb.from('avatars').insert({
@@ -49,6 +51,7 @@ export async function insertAvatar(input: {
     name: input.name,
     status: input.status ?? 'training',
     heygen_group_id: input.heygenGroupId ?? null,
+    heygen_look_id: input.heygenLookId ?? null,
     source_photo_urls: input.sourcePhotoUrls,
     error_message: input.errorMessage ?? null,
     consent_confirmed_by: input.consentConfirmedBy,
@@ -59,11 +62,12 @@ export async function insertAvatar(input: {
 export async function updateAvatarStatus(
   id: string,
   status: AvatarStatus,
-  opts?: { heygenGroupId?: string | null; errorMessage?: string | null },
+  opts?: { heygenGroupId?: string | null; heygenLookId?: string | null; errorMessage?: string | null },
 ): Promise<void> {
   await adminDb.from('avatars').update({
     status,
     ...(opts?.heygenGroupId !== undefined && { heygen_group_id: opts.heygenGroupId }),
+    ...(opts?.heygenLookId !== undefined && { heygen_look_id: opts.heygenLookId }),
     ...(opts?.errorMessage !== undefined && { error_message: opts.errorMessage }),
   }).eq('id', id);
 }

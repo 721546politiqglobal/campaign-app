@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createAvatarAction, checkAvatarStatusAction, setActiveAvatarAction, deleteAvatarAction } from '@/app/actions';
+import {
+  createAvatarAction, checkAvatarStatusAction, setActiveAvatarAction, deleteAvatarAction, generatePromptLookAction,
+} from '@/app/actions';
 import { useToast } from '@/components/Toast';
 import type { Avatar } from '@/domain/types';
 
@@ -29,6 +31,11 @@ export function AvatarManager({
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+
+  const [lookModalAvatarId, setLookModalAvatarId] = useState<string | null>(null);
+  const [lookName, setLookName] = useState('');
+  const [lookPrompt, setLookPrompt] = useState('');
+  const [generatingLook, setGeneratingLook] = useState(false);
 
   const trainingIds = avatars.filter(a => a.status === 'training').map(a => a.id).join(',');
 
@@ -99,6 +106,25 @@ export function AvatarManager({
     else toast(result.error ?? 'Failed to delete avatar', 'error');
   }
 
+  function resetLookModal() {
+    setLookModalAvatarId(null);
+    setLookName('');
+    setLookPrompt('');
+  }
+
+  async function handleGenerateLook() {
+    if (!lookModalAvatarId) return;
+    setGeneratingLook(true);
+    const result = await generatePromptLookAction(lookModalAvatarId, lookName, lookPrompt);
+    setGeneratingLook(false);
+    if (result.ok) {
+      toast('Generating new look — it may take a minute to appear in the look picker below.');
+      resetLookModal();
+    } else {
+      toast(result.error ?? 'Failed to generate look', 'error');
+    }
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
@@ -142,6 +168,11 @@ export function AvatarManager({
                 {a.status === 'ready' && a.id !== activeAvatarId && (
                   <button className="btn" style={{ fontSize: 12 }} onClick={() => handleSetActive(a.id)}>
                     Set active
+                  </button>
+                )}
+                {a.status === 'ready' && a.heygenLookId && (
+                  <button className="btn" style={{ fontSize: 12 }} onClick={() => setLookModalAvatarId(a.id)}>
+                    Generate look
                   </button>
                 )}
                 <button className="admin-delete-btn" onClick={() => handleDelete(a.id)}>Delete</button>
@@ -207,6 +238,33 @@ export function AvatarManager({
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {lookModalAvatarId && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
+        }}>
+          <div className="card" style={{ width: 440, maxWidth: '90vw' }}>
+            <h3 style={{ marginBottom: 12 }}>Generate a new look</h3>
+            <p className="muted" style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>
+              Describe the style or setting — HeyGen generates a new look of the same person, not a different one.
+            </p>
+            <label className="field-label">Name</label>
+            <input className="input" placeholder="e.g. Studio look" value={lookName}
+              onChange={e => setLookName(e.target.value)} style={{ marginBottom: 12 }} />
+            <label className="field-label">Prompt</label>
+            <textarea className="input" style={{ minHeight: 80 }}
+              placeholder="e.g. studio lighting, navy suit, American flag backdrop"
+              value={lookPrompt} onChange={e => setLookPrompt(e.target.value)} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+              <button className="btn" onClick={resetLookModal}>Cancel</button>
+              <button className="btn primary" disabled={generatingLook || !lookPrompt.trim()} onClick={handleGenerateLook}>
+                {generatingLook ? 'Generating…' : 'Generate look'}
+              </button>
+            </div>
           </div>
         </div>
       )}
