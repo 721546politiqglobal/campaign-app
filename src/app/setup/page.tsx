@@ -15,7 +15,7 @@ export default async function SetupPage({
 }: {
   searchParams: { error?: string };
 }) {
-  const s = requireSession();
+  const s = await requireSession();
   const existing = await getCandidateProfile(s.campaignId);
   if (existing) redirect('/dashboard');
 

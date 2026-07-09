@@ -7,7 +7,7 @@ import { adminDb } from '@/lib/supabase';
 import { stripe } from '@/lib/stripe';
 
 export async function impersonateAction(userId: string) {
-  requireAdmin();
+  await requireAdmin();
   const { setSessionCookie } = await import('@/lib/session');
   const { data: user } = await adminDb.from('users').select('*').eq('id', userId).single();
   if (!user) return;
@@ -22,7 +22,7 @@ export async function impersonateAction(userId: string) {
 }
 
 export async function generateInviteAction(formData: FormData) {
-  const s = requireAdmin();
+  const s = await requireAdmin();
   const campaignId = String(formData.get('campaignId'));
   const role = String(formData.get('role') ?? 'staff');
   if (!campaignId) return;
@@ -38,7 +38,7 @@ export async function generateInviteAction(formData: FormData) {
 }
 
 export async function updateCampaignAction(formData: FormData) {
-  requireAdmin();
+  await requireAdmin();
   const id = String(formData.get('id'));
   const name = String(formData.get('name') ?? '').trim();
   const capDollars = Number(formData.get('cap'));
@@ -58,11 +58,15 @@ export async function updateCampaignAction(formData: FormData) {
 }
 
 export async function createCampaignAction(formData: FormData) {
-  requireAdmin();
+  await requireAdmin();
   const name = String(formData.get('name') ?? '').trim();
   const capDollars = Number(formData.get('cap') || 1000);
-  const jurisdictions = String(formData.get('jurisdictions') ?? 'US-FEDERAL')
+  const jurisdictionsInput = String(formData.get('jurisdictions') ?? '')
     .split(',').map(s => s.trim()).filter(Boolean);
+  // A campaign with no jurisdiction silently disables all disclosure
+  // requirements (DisclosureEngine.requiredFor returns [] for an empty list) —
+  // always fall back to a default rather than allowing an empty array through.
+  const jurisdictions = jurisdictionsInput.length ? jurisdictionsInput : ['US-FEDERAL'];
 
   if (!name) return;
   const id = 'camp-' + Math.random().toString(36).slice(2, 8);
@@ -76,7 +80,7 @@ export async function createCampaignAction(formData: FormData) {
 }
 
 export async function assignPlanAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
-  requireAdmin();
+  await requireAdmin();
   if (!stripe) return { ok: false, error: 'STRIPE_SECRET_KEY is not configured on this server.' };
 
   const campaignId = String(formData.get('campaignId') ?? '');
@@ -134,7 +138,7 @@ export async function assignPlanAction(formData: FormData): Promise<{ ok: boolea
 }
 
 export async function openBillingPortalForCampaignAction(formData: FormData): Promise<void> {
-  requireAdmin();
+  await requireAdmin();
   const campaignId = String(formData.get('campaignId') ?? '');
   if (!stripe || !campaignId) return;
 
@@ -150,10 +154,16 @@ export async function openBillingPortalForCampaignAction(formData: FormData): Pr
 }
 
 export async function assignAvatarAction(formData: FormData) {
-  const s = requireAdmin();
+  const s = await requireAdmin();
   const campaignId = String(formData.get('campaignId') ?? '').trim();
   const heygenGroupId = String(formData.get('heygen_base_avatar_id') ?? '').trim();
   if (!campaignId || !heygenGroupId) return;
+
+  // Same explicit-attestation requirement as createAvatarAction — a
+  // super_admin linking a pre-existing HeyGen group must confirm consent was
+  // actually obtained; it must never be auto-stamped just because they hit submit.
+  const consentConfirmed = formData.get('consent') === 'on';
+  if (!consentConfirmed) return;
 
   const { insertAvatar } = await import('@/lib/avatars');
   const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
@@ -191,7 +201,7 @@ export async function assignAvatarAction(formData: FormData) {
 }
 
 export async function addUserAction(formData: FormData) {
-  const s = requireAdmin();
+  const s = await requireAdmin();
   const campaignId = String(formData.get('campaignId'));
   const name      = String(formData.get('name')  ?? '').trim();
   const email     = String(formData.get('email') ?? '').trim().toLowerCase();
@@ -220,14 +230,14 @@ export async function addUserAction(formData: FormData) {
 }
 
 export async function removeUserAction(userId: string, campaignId: string) {
-  requireAdmin();
+  await requireAdmin();
   await adminDb.from('users').delete().eq('id', userId);
   revalidatePath(`/admin/campaigns/${campaignId}`);
   revalidatePath('/admin/users');
 }
 
 export async function updateDisclosureRuleAction(formData: FormData) {
-  requireAdmin();
+  await requireAdmin();
   const jurisdiction = String(formData.get('jurisdiction'));
   const requiredText = String(formData.get('requiredText') ?? '').trim() || null;
   const placement = String(formData.get('placement') ?? 'overlay');

@@ -6,7 +6,7 @@ import { can } from '@/lib/permissions';
 import { formatDate } from '@/lib/formatDate';
 
 export default async function Billing() {
-  const s = requireSession();
+  const s = await requireSession();
   const campaign = await getCampaign(s.campaignId);
   const [plan, monthlySpendCents] = await Promise.all([
     campaign?.planId ? getBillingPlan(campaign.planId) : Promise.resolve(null),

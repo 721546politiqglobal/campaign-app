@@ -15,7 +15,16 @@ const COOKIE = 'cc_session';
 const WEEK_S = 7 * 24 * 60 * 60;
 
 function secret(): string {
-  return process.env.SESSION_SECRET ?? 'dev-only-secret-change-in-production';
+  const s = process.env.SESSION_SECRET;
+  if (s) return s;
+  // The fallback below is checked into source control, so anyone who can read
+  // this repo can forge a session (including a super_admin one) if it's ever
+  // used outside local dev. Refuse to sign/verify sessions in production
+  // rather than silently running with a known secret.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SESSION_SECRET is not set. Refusing to start session handling in production without it.');
+  }
+  return 'dev-only-secret-change-in-production';
 }
 
 function makeToken(data: Session): string {
@@ -56,20 +65,41 @@ export function setSessionCookie(session: Session): void {
   });
 }
 
-export function getSession(): Session | null {
+// Re-checks the user against the DB on every call rather than trusting
+// role/campaignId baked into the (up to 7-day-old) signed cookie — otherwise a
+// removed or demoted user keeps their old access for the rest of the cookie's
+// life, since sessions are otherwise stateless.
+export async function getSession(): Promise<Session | null> {
   const raw = cookies().get(COOKIE)?.value;
   if (!raw) return null;
-  return parseToken(raw);
+  const token = parseToken(raw);
+  if (!token) return null;
+
+  const { adminDb } = await import('./supabase');
+  const { data: user } = await adminDb
+    .from('users')
+    .select('id, name, role, campaign_id')
+    .eq('id', token.userId)
+    .maybeSingle();
+  if (!user) return null;
+
+  return {
+    userId: user.id,
+    name: user.name,
+    role: user.role as Role,
+    campaignId: user.campaign_id,
+    exp: token.exp,
+  };
 }
 
-export function requireSession(): Session {
-  const s = getSession();
+export async function requireSession(): Promise<Session> {
+  const s = await getSession();
   if (!s) redirect('/login');
   return s;
 }
 
-export function requireAdmin(): Session {
-  const s = getSession();
+export async function requireAdmin(): Promise<Session> {
+  const s = await getSession();
   if (!s || s.role !== 'super_admin') redirect('/login');
   return s;
 }

@@ -11,11 +11,16 @@ export async function GET(req: NextRequest) {
   }
   if (!stripe) return NextResponse.json({ error: 'Billing not configured' }, { status: 503 });
 
+  // 'incomplete' is deliberately allowed through BillingGate as a pre-payment
+  // grace window right after plan assignment (see domain/billing.test.ts) — but
+  // that means usage incurred during the window must still be synced here, or
+  // it's tracked internally (counts against monthly_cost_cap_cents) and never
+  // actually billed to Stripe once the subscription completes payment.
   const { data: campaigns } = await adminDb
     .from('campaigns')
     .select('id, stripe_customer_id, subscription_status')
     .not('stripe_customer_id', 'is', null)
-    .in('subscription_status', ['trialing', 'active', 'past_due']);
+    .in('subscription_status', ['trialing', 'active', 'past_due', 'incomplete']);
 
   const results: { campaignId: string; synced: boolean; error?: string }[] = [];
 
@@ -42,10 +47,14 @@ export async function GET(req: NextRequest) {
         key = buildSyncKey(campaign.id, since, until);
       }
 
+      // Exclude in-flight `_reserved` rows (UsageMeter's atomic cap check) —
+      // they're not final spend yet and get replaced by a real row once the
+      // request finishes, which would otherwise risk billing Stripe twice.
       const { data: events } = await adminDb
         .from('usage_events')
         .select('cost_cents')
         .eq('campaign_id', campaign.id)
+        .neq('kind', '_reserved')
         .gt('created_at', since)
         .lte('created_at', until);
 

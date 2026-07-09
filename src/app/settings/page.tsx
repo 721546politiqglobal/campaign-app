@@ -12,7 +12,7 @@ async function saveProfileAction(formData: FormData) {
   'use server';
   const { requireSession } = await import('@/lib/session');
   const { can } = await import('@/lib/permissions');
-  const s = requireSession();
+  const s = await requireSession();
   if (!can(s.role, 'edit_settings')) return;
   const keyPositions = String(formData.get('key_positions') ?? '')
     .split('\n').map((p: string) => p.trim()).filter(Boolean);
@@ -34,7 +34,7 @@ async function saveProfileAction(formData: FormData) {
 }
 
 export default async function Settings() {
-  const s = requireSession();
+  const s = await requireSession();
   const [campaign, rules, users, profile] = await Promise.all([
     getCampaign(s.campaignId),
     getDisclosureRules(),

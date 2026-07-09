@@ -40,6 +40,10 @@ const updateAvatarStatus = vi.fn(() => Promise.resolve());
 const getAvatar = vi.fn();
 vi.mock('@/lib/avatars', () => ({ insertAvatar, updateAvatarStatus, getAvatar }));
 
+const getCandidateProfile = vi.fn<() => Promise<{ activeAvatarId: string } | null>>(() => Promise.resolve(null));
+const upsertCandidateProfile = vi.fn(() => Promise.resolve());
+vi.mock('@/lib/candidate', () => ({ getCandidateProfile, upsertCandidateProfile }));
+
 const billingGate = { check: vi.fn(() => Promise.resolve()) };
 const usageMeter = { guard: vi.fn(() => Promise.resolve()), record: vi.fn(() => Promise.resolve()) };
 const photoAvatarProvider = {
@@ -94,7 +98,7 @@ describe('createAvatarAction billing', () => {
     await createAvatarAction(makePhotos(4));
 
     expect(usageMeter.guard).toHaveBeenCalledWith('c-1', 100_00, 4 * 1_00);
-    expect(usageMeter.record).toHaveBeenCalledWith('c-1', 'avatar_training', 4, 4 * 1_00);
+    expect(usageMeter.record).toHaveBeenCalledWith('c-1', 'avatar_training', 4, 4 * 1_00, 4 * 1_00);
   });
 
   it('records only the cost for photos actually processed when training fails midway', async () => {
@@ -107,7 +111,7 @@ describe('createAvatarAction billing', () => {
 
     await createAvatarAction(makePhotos(4));
 
-    expect(usageMeter.record).toHaveBeenCalledWith('c-1', 'avatar_training', 2, 2 * 1_00);
+    expect(usageMeter.record).toHaveBeenCalledWith('c-1', 'avatar_training', 2, 2 * 1_00, 4 * 1_00);
     expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'failed', expect.objectContaining({ errorMessage: 'HeyGen training failed' }));
   });
 });
@@ -141,5 +145,37 @@ describe('generatePromptLookAction billing', () => {
     expect(result.ok).toBe(true);
     expect(usageMeter.guard).toHaveBeenCalledWith('c-1', 100_00, 1_00);
     expect(usageMeter.record).toHaveBeenCalledWith('c-1', 'avatar_look_generation', 1, 1_00);
+  });
+
+  it('persists the newly generated look id onto the avatar instead of discarding it', async () => {
+    getAvatar.mockResolvedValue(readyAvatar);
+    photoAvatarProvider.createPromptLook.mockResolvedValue({ lookId: 'look-2', groupId: 'group-1' });
+    const { generatePromptLookAction } = await import('./actions');
+
+    await generatePromptLookAction('avatar-1', 'Debate look', 'wearing a navy suit');
+
+    expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'ready', { heygenLookId: 'look-2' });
+  });
+
+  it('updates the candidate profile so video generation picks up the new look when this avatar is active', async () => {
+    getAvatar.mockResolvedValue(readyAvatar);
+    getCandidateProfile.mockResolvedValue({ activeAvatarId: 'avatar-1' });
+    photoAvatarProvider.createPromptLook.mockResolvedValue({ lookId: 'look-2', groupId: 'group-1' });
+    const { generatePromptLookAction } = await import('./actions');
+
+    await generatePromptLookAction('avatar-1', 'Debate look', 'wearing a navy suit');
+
+    expect(upsertCandidateProfile).toHaveBeenCalledWith('c-1', { heygenAvatarId: 'look-2' });
+  });
+
+  it('does not touch the candidate profile when this avatar is not the active one', async () => {
+    getAvatar.mockResolvedValue(readyAvatar);
+    getCandidateProfile.mockResolvedValue({ activeAvatarId: 'some-other-avatar' });
+    photoAvatarProvider.createPromptLook.mockResolvedValue({ lookId: 'look-2', groupId: 'group-1' });
+    const { generatePromptLookAction } = await import('./actions');
+
+    await generatePromptLookAction('avatar-1', 'Debate look', 'wearing a navy suit');
+
+    expect(upsertCandidateProfile).not.toHaveBeenCalled();
   });
 });

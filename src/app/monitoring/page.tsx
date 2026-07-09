@@ -7,7 +7,7 @@ import { revalidatePath } from 'next/cache';
 async function addManualEntryAction(formData: FormData) {
   'use server';
   const { requireSession } = await import('@/lib/session');
-  const s = requireSession();
+  const s = await requireSession();
   const url      = String(formData.get('url')      ?? '').trim();
   const headline = String(formData.get('headline') ?? '').trim();
   const source   = String(formData.get('source')   ?? '').trim();
@@ -29,7 +29,7 @@ async function addManualEntryAction(formData: FormData) {
 }
 
 export default async function Monitoring() {
-  const s = requireSession();
+  const s = await requireSession();
   const results = await getMonitoringResults(s.campaignId);
 
   return (

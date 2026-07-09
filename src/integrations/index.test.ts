@@ -1,8 +1,48 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { HeyGenPhotoAvatarProvider, MockPhotoAvatarProvider } from './index';
+import Anthropic from '@anthropic-ai/sdk';
+import { HeyGenPhotoAvatarProvider, MockPhotoAvatarProvider, ClaudeContentGenerator } from './index';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+vi.mock('@anthropic-ai/sdk', () => {
+  return {
+    default: vi.fn().mockImplementation(function AnthropicMock() {
+      return { messages: { create: vi.fn() } };
+    }),
+  };
+});
+
+function makeGenerator(): { generator: ClaudeContentGenerator; create: ReturnType<typeof vi.fn> } {
+  const generator = new ClaudeContentGenerator('test-key');
+  const MockedAnthropic = Anthropic as unknown as ReturnType<typeof vi.fn>;
+  const instance = MockedAnthropic.mock.results[MockedAnthropic.mock.results.length - 1].value;
+  return { generator, create: instance.messages.create };
+}
+
+describe('ClaudeContentGenerator.draft', () => {
+  it('parses the title and body out of a normal text response', async () => {
+    const { generator, create } = makeGenerator();
+    create.mockResolvedValue({
+      content: [{ type: 'text', text: 'Title: A great headline\n\nBody line one.\nBody line two.' }],
+    });
+
+    const out = await generator.draft({ instruction: 'write something', type: 'social_post' });
+
+    expect(out.title).toBe('A great headline');
+    expect(out.text).toBe('Body line one.\nBody line two.');
+  });
+
+  it('throws a clear error instead of crashing when the response has no text block', async () => {
+    const { generator, create } = makeGenerator();
+    // e.g. Claude refuses the request — content comes back empty.
+    create.mockResolvedValue({ content: [], stop_reason: 'refusal' });
+
+    await expect(generator.draft({ instruction: 'write something', type: 'social_post' }))
+      .rejects.toThrow(/refusal/);
+  });
 });
 
 describe('HeyGenPhotoAvatarProvider.uploadAsset', () => {

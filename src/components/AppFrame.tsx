@@ -9,7 +9,7 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export async function AppFrame({ children }: { children: React.ReactNode }) {
-  const s = requireSession();
+  const s = await requireSession();
 
   // super_admin manages all campaigns — no profile required
   if (s.role !== 'super_admin') {

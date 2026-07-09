@@ -7,7 +7,7 @@ import { stripe } from '@/lib/stripe';
 import { PLAN_DEFINITIONS, METER_EVENT_NAME } from '@/lib/billing-catalog';
 
 export async function syncBillingPlansAction(): Promise<{ ok: boolean; error?: string }> {
-  requireAdmin();
+  await requireAdmin();
   if (!stripe) return { ok: false, error: 'STRIPE_SECRET_KEY is not configured on this server.' };
 
   const meters = await stripe.billing.meters.list({ limit: 100 });

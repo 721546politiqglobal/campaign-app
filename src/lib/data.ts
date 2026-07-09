@@ -121,7 +121,7 @@ export async function getDisclosureRules() {
 export async function getMonthlySpend(campaignId: string): Promise<number> {
   const start = new Date(); start.setDate(1); start.setHours(0, 0, 0, 0);
   const { data } = await adminDb.from('usage_events').select('cost_cents')
-    .eq('campaign_id', campaignId).gte('created_at', start.toISOString());
+    .eq('campaign_id', campaignId).neq('kind', '_reserved').gte('created_at', start.toISOString());
   return (data ?? []).reduce((n, r) => n + (r.cost_cents as number), 0);
 }
 
@@ -188,7 +188,7 @@ export async function getAllCampaigns(): Promise<CampaignWithStats[]> {
     adminDb.from('campaigns').select('*').order('created_at', { ascending: false }),
     adminDb.from('users').select('id, campaign_id'),
     adminDb.from('content_items').select('id, campaign_id, status'),
-    adminDb.from('usage_events').select('campaign_id, cost_cents').gte('created_at', start.toISOString()),
+    adminDb.from('usage_events').select('campaign_id, cost_cents').neq('kind', '_reserved').gte('created_at', start.toISOString()),
   ]);
   const campaigns = c.data ?? [];
   const users = u.data ?? [];
@@ -275,7 +275,7 @@ export async function getSystemStats() {
     adminDb.from('campaigns').select('id', { count: 'exact' }),
     adminDb.from('users').select('id', { count: 'exact' }).neq('role', 'super_admin'),
     adminDb.from('content_items').select('id, status', { count: 'exact' }),
-    adminDb.from('usage_events').select('cost_cents'),
+    adminDb.from('usage_events').select('cost_cents').neq('kind', '_reserved'),
   ]);
   const items = ci.data ?? [];
   return {

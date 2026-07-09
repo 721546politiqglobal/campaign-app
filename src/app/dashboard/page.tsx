@@ -13,7 +13,7 @@ const PLATFORM_ICON: Record<string, string> = {
 };
 
 export default async function Dashboard() {
-  const s = requireSession();
+  const s = await requireSession();
   if (s.role === 'super_admin') redirect('/admin');
 
   const [items, monitoring, spend, campaign, todayScheduled] = await Promise.all([

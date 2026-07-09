@@ -118,8 +118,9 @@ export function AvatarManager({
     const result = await generatePromptLookAction(lookModalAvatarId, lookName, lookPrompt);
     setGeneratingLook(false);
     if (result.ok) {
-      toast('Generating new look — it may take a minute to appear in the look picker below.');
+      toast('New look generated — it replaces this avatar’s current look and will be used for future videos.');
       resetLookModal();
+      router.refresh();
     } else {
       toast(result.error ?? 'Failed to generate look', 'error');
     }

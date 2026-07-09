@@ -12,7 +12,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export default async function ContentList({ searchParams }: { searchParams: { status?: string } }) {
-  const s = requireSession();
+  const s = await requireSession();
   const filter = searchParams.status as ContentStatus | undefined;
   const items = await getContentItems(s.campaignId, filter);
   const filters: (ContentStatus | 'all')[] = ['all', 'draft', 'in_review', 'approved', 'scheduled', 'published'];

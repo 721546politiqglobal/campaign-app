@@ -2,11 +2,22 @@
 
 import { redirect } from 'next/navigation';
 import { requireSession } from '@/lib/session';
-import { upsertCandidateProfile } from '@/lib/candidate';
+import { getCandidateProfile, upsertCandidateProfile } from '@/lib/candidate';
+import { can } from '@/lib/permissions';
 import type { VoiceTone } from '@/domain/types';
 
 export async function upsertProfileAction(formData: FormData) {
-  const s = requireSession();
+  const s = await requireSession();
+
+  // Anyone can complete the one-time initial setup (mirrors the /setup page,
+  // which any session without a profile yet gets redirected to). But once a
+  // profile exists, only owner/manager may overwrite it — same gate every
+  // other settings action uses. Without this, a staff/approver account could
+  // call this action directly and rewrite the profile driving every AI draft.
+  const existing = await getCandidateProfile(s.campaignId);
+  if (existing && !can(s.role, 'edit_settings')) {
+    redirect('/dashboard');
+  }
 
   const fullName       = String(formData.get('full_name')       ?? '').trim();
   const preferredName  = String(formData.get('preferred_name')  ?? '').trim();

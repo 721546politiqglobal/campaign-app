@@ -128,11 +128,35 @@ export const usageRepo: UsageRepo = {
     const { data } = await adminDb.from('usage_events')
       .select('cost_cents')
       .eq('campaign_id', campaignId)
+      .neq('kind', '_reserved')
       .gte('created_at', start.toISOString());
     return (data ?? []).reduce((n, r) => n + (r.cost_cents as number), 0);
   },
-  async record(campaignId, kind, _quantity, costCents) {
-    await adminDb.from('usage_events').insert({ campaign_id: campaignId, kind, cost_cents: costCents });
+  async reserve(campaignId, capCents, estimatedCents) {
+    const { data, error } = await adminDb.rpc('reserve_usage', {
+      p_campaign_id: campaignId,
+      p_cap_cents: capCents,
+      p_cost_cents: estimatedCents,
+    });
+    if (error) throw error;
+    return Boolean(data);
+  },
+  async finalize(campaignId, kind, _quantity, costCents, reservedCents) {
+    const { data: reservation } = await adminDb
+      .from('usage_events')
+      .select('id')
+      .eq('campaign_id', campaignId)
+      .eq('kind', '_reserved')
+      .eq('cost_cents', reservedCents)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (reservation) {
+      await adminDb.from('usage_events').delete().eq('id', reservation.id);
+    }
+    if (costCents > 0) {
+      await adminDb.from('usage_events').insert({ campaign_id: campaignId, kind, cost_cents: costCents });
+    }
   },
 };
 

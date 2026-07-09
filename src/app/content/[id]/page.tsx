@@ -9,7 +9,7 @@ import { getContentItem, getDisclosuresForItem, getAuditEntries } from '@/lib/da
 import { getCandidateProfile } from '@/lib/candidate';
 
 export default async function ContentDetail({ params }: { params: { id: string } }) {
-  const s = requireSession();
+  const s = await requireSession();
   const [item, discs, log, profile] = await Promise.all([
     getContentItem(params.id),
     getDisclosuresForItem(params.id),

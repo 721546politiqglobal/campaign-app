@@ -143,7 +143,7 @@ export async function logoutAction() {
 }
 
 export async function createContentAction(formData: FormData) {
-  const s = requireSession();
+  const s = await requireSession();
   const campaign = await getCampaign(s.campaignId);
   if (!campaign) throw new Error('Campaign not found');
   const id = uid();
@@ -162,7 +162,7 @@ export async function createContentAction(formData: FormData) {
 }
 
 export async function generateDraftAction(instruction: string, type: string) {
-  const s = requireSession();
+  const s = await requireSession();
   const { CONTENT_COST_CENTS } = await import('@/lib/prompt');
   const { getCandidateProfile } = await import('@/lib/candidate');
 
@@ -175,24 +175,28 @@ export async function generateDraftAction(instruction: string, type: string) {
   const cost = CONTENT_COST_CENTS[type] ?? 5_00;
   await billingGate.check(s.campaignId);
   await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, cost);
-  const out = await contentGenerator.draft({
-    instruction,
-    type,
-    candidateProfile: profile ?? undefined,
-  });
-  await usageMeter.record(s.campaignId, 'llm_tokens', 1, cost);
-  return out;
+  try {
+    return await contentGenerator.draft({
+      instruction,
+      type,
+      candidateProfile: profile ?? undefined,
+    });
+  } finally {
+    // Record even if draft() throws — the Anthropic call already happened
+    // (and was billed by Anthropic) regardless of whether we got usable text back.
+    await usageMeter.record(s.campaignId, 'llm_tokens', 1, cost);
+  }
 }
 
 export async function submitAction(id: string): Promise<Result> {
-  const s = requireSession();
+  const s = await requireSession();
   const r = await guard(() => lifecycle.submitForReview(id, s.userId));
   revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
   return r;
 }
 
 export async function decideAction(id: string, decision: 'approve' | 'reject', note: string): Promise<Result> {
-  const s = requireSession();
+  const s = await requireSession();
   const r = await guard(() =>
     decision === 'approve'
       ? lifecycle.approve(id, s.userId, note)
@@ -202,7 +206,7 @@ export async function decideAction(id: string, decision: 'approve' | 'reject', n
 }
 
 export async function attachDisclosureAction(id: string): Promise<Result> {
-  const s = requireSession();
+  const s = await requireSession();
   const item = await contentRepo.get(id);
   if (!item) return { ok: false, error: 'Content not found.' };
   const required = await disclosureEngine.requiredFor(item.targetJurisdictions, item.isAiGenerated);
@@ -217,7 +221,7 @@ export async function attachDisclosureAction(id: string): Promise<Result> {
 }
 
 export async function scheduleAction(id: string): Promise<Result> {
-  const s = requireSession();
+  const s = await requireSession();
   if (!can(s.role, 'schedule')) return { ok: false, error: 'Permission denied.' };
   const r = await guard(() => lifecycle.schedule(id, s.userId));
   revalidatePath(`/content/${id}`); revalidatePath('/');
@@ -225,7 +229,7 @@ export async function scheduleAction(id: string): Promise<Result> {
 }
 
 export async function publishAction(id: string, platforms: Platform[]): Promise<Result> {
-  const s = requireSession();
+  const s = await requireSession();
   if (!can(s.role, 'publish')) return { ok: false, error: 'Permission denied.' };
   const item = await contentRepo.get(id);
   if (!item) return { ok: false, error: 'Content not found.' };
@@ -243,7 +247,7 @@ export async function publishAction(id: string, platforms: Platform[]): Promise<
 }
 
 export async function setCapAction(formData: FormData): Promise<void> {
-  const s = requireSession();
+  const s = await requireSession();
   if (!can(s.role, 'edit_settings')) return;
   const dollars = Number(formData.get('cap'));
   if (Number.isFinite(dollars) && dollars >= 0) {
@@ -255,7 +259,7 @@ export async function setCapAction(formData: FormData): Promise<void> {
 }
 
 export async function openMyBillingPortalAction(): Promise<void> {
-  const s = requireSession();
+  const s = await requireSession();
   if (!can(s.role, 'edit_settings')) return;
   const { stripe } = await import('@/lib/stripe');
   if (!stripe) return;
@@ -275,20 +279,25 @@ export async function generateVideoAction(
   script: string,
   overrides?: { avatarId?: string; voiceId?: string; background?: string; aspectRatio?: '16:9' | '9:16' | '1:1' },
 ): Promise<Result & { videoId?: string }> {
-  const s = requireSession();
+  const s = await requireSession();
   const { getCandidateProfile } = await import('@/lib/candidate');
   const [campaign, profile] = await Promise.all([
     getCampaign(s.campaignId),
     getCandidateProfile(s.campaignId),
   ]);
   if (!campaign) return { ok: false, error: 'Campaign not found.' };
+  const avatarId = overrides?.avatarId ?? profile?.heygenAvatarId ?? undefined;
+  // Never fall through to the provider's own HEYGEN_AVATAR_ID env default here —
+  // that's a single global avatar shared across every tenant, so silently using
+  // it would generate video of the wrong (possibly non-consented) candidate.
+  if (!avatarId) return { ok: false, error: 'No avatar is set up for this campaign yet. Add one on the Avatars page first.' };
   const VIDEO_COST_CENTS = 50_00;
   try {
     await billingGate.check(s.campaignId);
     await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, VIDEO_COST_CENTS);
     const { videoId } = await videoProvider.generateAvatarVideo({
       script,
-      avatarId: overrides?.avatarId ?? profile?.heygenAvatarId ?? undefined,
+      avatarId,
       voiceId: overrides?.voiceId ?? profile?.elevenLabsVoiceId ?? undefined,
       background: overrides?.background ?? profile?.videoBackground ?? 'plain',
       aspectRatio: overrides?.aspectRatio ?? profile?.videoAspectRatio ?? '16:9',
@@ -313,7 +322,7 @@ export async function getVideoStatusAction(videoId: string): Promise<{ status: s
 // ── Voice synthesis ───────────────────────────────────────────────────────────
 
 export async function synthesizeVoiceAction(text: string): Promise<Result & { audioUrl?: string }> {
-  const s = requireSession();
+  const s = await requireSession();
   const campaign = await getCampaign(s.campaignId);
   if (!campaign) return { ok: false, error: 'Campaign not found.' };
   try {
@@ -331,7 +340,7 @@ export async function synthesizeVoiceAction(text: string): Promise<Result & { au
 // ── Wizard actions ────────────────────────────────────────────────────────────
 
 export async function saveBodyAction(id: string, body: string): Promise<Result> {
-  requireSession();
+  await requireSession();
   await adminDb.from('content_items')
     .update({ body, updated_at: new Date().toISOString() })
     .eq('id', id);
@@ -340,7 +349,7 @@ export async function saveBodyAction(id: string, body: string): Promise<Result> 
 }
 
 export async function approveTextAction(id: string): Promise<Result> {
-  const s = requireSession();
+  const s = await requireSession();
   if (!can(s.role, 'approve')) return { ok: false, error: 'Permission denied.' };
   const item = await contentRepo.get(id);
   if (!item) return { ok: false, error: 'Content not found.' };
@@ -373,7 +382,7 @@ export async function approveTextAction(id: string): Promise<Result> {
 }
 
 export async function confirmVideoAction(id: string, videoUrl: string): Promise<Result> {
-  const s = requireSession();
+  const s = await requireSession();
   if (!can(s.role, 'approve')) return { ok: false, error: 'Permission denied.' };
   const item = await contentRepo.get(id);
   if (!item) return { ok: false, error: 'Content not found.' };
@@ -394,7 +403,7 @@ export async function generateFromMonitoringAction(
   monitoringResultId: string,
   contentType: string,
 ): Promise<Result & { contentId?: string }> {
-  const s = requireSession();
+  const s = await requireSession();
   const { getCandidateProfile } = await import('@/lib/candidate');
   const { CONTENT_COST_CENTS } = await import('@/lib/prompt');
 
@@ -424,8 +433,14 @@ export async function generateFromMonitoringAction(
       `\nWrite a ${contentType.replace('_', ' ')} that directly addresses this story. ` +
       `Be factual, on-message, and persuasive.`;
 
-    const out = await contentGenerator.draft({ instruction, type: contentType, candidateProfile: profile ?? undefined });
-    await usageMeter.record(s.campaignId, 'llm_tokens', 1, cost);
+    let out;
+    try {
+      out = await contentGenerator.draft({ instruction, type: contentType, candidateProfile: profile ?? undefined });
+    } finally {
+      // Record even if draft() throws — the Anthropic call already happened
+      // (and was billed by Anthropic) regardless of whether we got usable text back.
+      await usageMeter.record(s.campaignId, 'llm_tokens', 1, cost);
+    }
 
     const id = uid();
     await adminDb.from('content_items').insert({
@@ -457,7 +472,7 @@ export async function generateFromMonitoringAction(
 }
 
 export async function confirmDisclosureAction(id: string): Promise<Result> {
-  const s = requireSession();
+  const s = await requireSession();
   const item = await contentRepo.get(id);
   if (!item) return { ok: false, error: 'Content not found.' };
   const required = await disclosureEngine.requiredFor(item.targetJurisdictions, item.isAiGenerated);
@@ -483,7 +498,7 @@ export async function confirmDisclosureAction(id: string): Promise<Result> {
 
 export async function dismissMonitoringAction(id: string): Promise<Result> {
   return guard(async () => {
-    const s = requireSession();
+    const s = await requireSession();
     await adminDb.from('monitoring_results')
       .update({ dismissed_at: new Date().toISOString() })
       .eq('id', id)
@@ -500,7 +515,7 @@ export async function saveVideoSettingsAction(data: {
   videoBackground?: string;
 }): Promise<Result> {
   return guard(async () => {
-    const s = requireSession();
+    const s = await requireSession();
     if (!can(s.role, 'edit_settings')) throw new GateError('Permission denied.');
     const { upsertCandidateProfile } = await import('@/lib/candidate');
     await upsertCandidateProfile(s.campaignId, data);
@@ -510,7 +525,7 @@ export async function saveVideoSettingsAction(data: {
 
 export async function uploadBackgroundAction(formData: FormData): Promise<Result & { url?: string }> {
   return guard(async () => {
-    const s = requireSession();
+    const s = await requireSession();
     if (!can(s.role, 'edit_settings')) throw new GateError('Permission denied.');
     const file = formData.get('file') as File | null;
     if (!file || !file.size) throw new GateError('No file provided');
@@ -539,7 +554,7 @@ export async function scheduleWithTimeAction(
   timezone: string,
 ): Promise<Result> {
   return guard(async () => {
-    const s = requireSession();
+    const s = await requireSession();
     if (!can(s.role, 'schedule')) throw new GateError('Permission denied.');
     if (!scheduledAt) throw new GateError('Scheduled time is required');
     if (new Date(scheduledAt) <= new Date()) throw new GateError('Scheduled time must be in the future');
@@ -579,7 +594,7 @@ const AVATAR_LOOK_COST_CENTS = 1_00;
 const AVATAR_PROMPT_LOOK_COST_CENTS = 1_00;
 
 export async function createAvatarAction(formData: FormData): Promise<Result & { avatarId?: string }> {
-  const s = requireSession();
+  const s = await requireSession();
   if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
 
   const consent = formData.get('consent') === 'on';
@@ -651,9 +666,10 @@ export async function createAvatarAction(formData: FormData): Promise<Result & {
   } catch (e) {
     await updateAvatarStatus(avatarId, 'failed', { errorMessage: e instanceof Error ? e.message : String(e) });
   } finally {
-    if (processedCount > 0) {
-      await usageMeter.record(s.campaignId, 'avatar_training', processedCount, processedCount * AVATAR_LOOK_COST_CENTS);
-    }
+    // Always finalize (even at processedCount 0) so the reservation from
+    // guard() above is released promptly instead of relying on its 5-minute
+    // auto-expiry.
+    await usageMeter.record(s.campaignId, 'avatar_training', processedCount, processedCount * AVATAR_LOOK_COST_CENTS, estimatedCost);
   }
 
   revalidatePath('/avatars');
@@ -661,7 +677,7 @@ export async function createAvatarAction(formData: FormData): Promise<Result & {
 }
 
 export async function checkAvatarStatusAction(avatarId: string): Promise<Result> {
-  const s = requireSession();
+  const s = await requireSession();
   const { getAvatar, updateAvatarStatus } = await import('@/lib/avatars');
   const avatar = await getAvatar(avatarId);
   if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: 'Avatar not found.' };
@@ -678,7 +694,7 @@ export async function checkAvatarStatusAction(avatarId: string): Promise<Result>
 }
 
 export async function setActiveAvatarAction(avatarId: string): Promise<Result> {
-  const s = requireSession();
+  const s = await requireSession();
   if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
   const { getAvatar } = await import('@/lib/avatars');
   const { upsertCandidateProfile } = await import('@/lib/candidate');
@@ -689,32 +705,48 @@ export async function setActiveAvatarAction(avatarId: string): Promise<Result> {
   await upsertCandidateProfile(s.campaignId, {
     activeAvatarId: avatarId,
     heygenBaseAvatarId: avatar.heygenGroupId,
-    heygenAvatarId: null,
+    // avatar.heygenLookId is the specific trained look HeyGen returns when
+    // training finishes (see createAvatarAction) — this is what video
+    // generation actually needs. Losing it here silently falls back to
+    // whatever HEYGEN_AVATAR_ID is set to at the environment level, which may
+    // not even belong to this campaign's candidate.
+    heygenAvatarId: avatar.heygenLookId ?? null,
   });
   revalidatePath('/avatars');
   return { ok: true };
 }
 
 export async function deleteAvatarAction(avatarId: string): Promise<Result> {
-  const s = requireSession();
+  const s = await requireSession();
   if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
   const { getAvatar, deleteAvatarRow } = await import('@/lib/avatars');
-  const { getCandidateProfile } = await import('@/lib/candidate');
+  const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
   const avatar = await getAvatar(avatarId);
   if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: 'Avatar not found.' };
   const profile = await getCandidateProfile(s.campaignId);
-  if (profile?.activeAvatarId === avatarId) return { ok: false, error: 'Cannot delete the active avatar.' };
+  if (profile?.activeAvatarId === avatarId) {
+    // Previously this just blocked deletion outright, which meant a campaign
+    // with only one avatar could never delete it (no way to "deactivate"
+    // without activating a different one first). Clear the reference instead
+    // — the campaign falls back to "no avatar configured", which
+    // generateVideoAction already reports clearly rather than erroring oddly.
+    await upsertCandidateProfile(s.campaignId, {
+      activeAvatarId: null,
+      heygenBaseAvatarId: null,
+      heygenAvatarId: null,
+    });
+  }
   await deleteAvatarRow(avatarId);
   revalidatePath('/avatars');
   return { ok: true };
 }
 
 export async function generatePromptLookAction(avatarId: string, name: string, prompt: string): Promise<Result> {
-  const s = requireSession();
+  const s = await requireSession();
   if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
   if (!prompt.trim()) return { ok: false, error: 'Describe how the new look should appear.' };
 
-  const { getAvatar } = await import('@/lib/avatars');
+  const { getAvatar, updateAvatarStatus } = await import('@/lib/avatars');
   const avatar = await getAvatar(avatarId);
   if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: 'Avatar not found.' };
   if (avatar.status !== 'ready' || !avatar.heygenLookId) return { ok: false, error: 'Avatar is not ready yet.' };
@@ -725,11 +757,23 @@ export async function generatePromptLookAction(avatarId: string, name: string, p
   try {
     await billingGate.check(s.campaignId);
     await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, AVATAR_PROMPT_LOOK_COST_CENTS);
-    await photoAvatarProvider.createPromptLook({
+    const { lookId } = await photoAvatarProvider.createPromptLook({
       name: name.trim() || 'Styled look',
       prompt: prompt.trim(),
       avatarId: avatar.heygenLookId,
     });
+    // The avatars table only tracks one heygen_look_id per row (see
+    // migration 012) — a newly generated look replaces it so video generation
+    // (which reads heygenAvatarId/heygenLookId) actually picks it up. Without
+    // this, the HeyGen asset we just paid for is created and then discarded.
+    if (lookId) {
+      await updateAvatarStatus(avatarId, avatar.status, { heygenLookId: lookId });
+      const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
+      const profile = await getCandidateProfile(s.campaignId);
+      if (profile?.activeAvatarId === avatarId) {
+        await upsertCandidateProfile(s.campaignId, { heygenAvatarId: lookId });
+      }
+    }
     await usageMeter.record(s.campaignId, 'avatar_look_generation', 1, AVATAR_PROMPT_LOOK_COST_CENTS);
   } catch (e) {
     if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };

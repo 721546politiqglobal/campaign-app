@@ -7,7 +7,7 @@ import { AvatarManager } from '@/components/AvatarManager';
 import { can } from '@/lib/permissions';
 
 export default async function AvatarsPage() {
-  const s = requireSession();
+  const s = await requireSession();
   const [profile, avatars] = await Promise.all([
     getCandidateProfile(s.campaignId),
     listAvatars(s.campaignId),

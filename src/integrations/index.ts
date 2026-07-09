@@ -91,7 +91,13 @@ Write the content now. Start with "Title: [your title here]" on the first line, 
       }],
     });
 
-    const raw = (msg.content[0] as { type: string; text: string }).text;
+    const block = msg.content[0];
+    if (!block || block.type !== 'text') {
+      // e.g. stop_reason 'refusal' returns an empty content array — the API
+      // call still happened (and was billed) even though there's no usable text.
+      throw new Error(`Claude returned no usable text (stop_reason: ${msg.stop_reason ?? 'unknown'}).`);
+    }
+    const raw = block.text;
     const lines = raw.split('\n');
     const titleLine = lines.find(l => l.toLowerCase().startsWith('title:'));
     const title = titleLine ? titleLine.replace(/^title:\s*/i, '').trim() : instruction.slice(0, 60);

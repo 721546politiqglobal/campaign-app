@@ -182,20 +182,26 @@ export default async function CampaignDetail({
           can pick a look, create additional avatars, or replace this one at any time.
           Find the ID in HeyGen → Photo Avatars → open the avatar → copy the group ID shown in the URL or identity panel.
         </p>
-        <form action={assignAvatarAction} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <form action={assignAvatarAction} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <input type="hidden" name="campaignId" value={campaign.id} />
-          <div style={{ flex: 1, minWidth: 240 }}>
-            <label className="field-label">HeyGen avatar group ID</label>
-            <input
-              name="heygen_base_avatar_id"
-              className="input"
-              style={{ fontFamily: 'monospace', fontSize: 13 }}
-              placeholder="e.g. ee7b9943a5ac4d6e9e986075299dbb02"
-            />
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <label className="field-label">HeyGen avatar group ID</label>
+              <input
+                name="heygen_base_avatar_id"
+                className="input"
+                style={{ fontFamily: 'monospace', fontSize: 13 }}
+                placeholder="e.g. ee7b9943a5ac4d6e9e986075299dbb02"
+              />
+            </div>
+            <button className="btn primary" type="submit" style={{ fontSize: 13, marginBottom: 1 }}>
+              Assign avatar
+            </button>
           </div>
-          <button className="btn primary" type="submit" style={{ fontSize: 13, marginBottom: 1 }}>
-            Assign avatar
-          </button>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, color: 'var(--text-3)' }}>
+            <input type="checkbox" name="consent" required style={{ marginTop: 2 }} />
+            I confirm the candidate has given consent for this HeyGen avatar to be used to generate video on their behalf.
+          </label>
         </form>
         {profile?.heygenBaseAvatarId ? (
           <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
