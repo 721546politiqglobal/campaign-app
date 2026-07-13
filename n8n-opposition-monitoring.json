@@ -9,53 +9,58 @@
       "name": "Every 2 Hours",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [200, 580]
+      "position": [200, 700]
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "f1",  "name": "campaign_id",              "value": "camp-1",                          "type": "string" },
-            { "id": "f2",  "name": "campaign_name",            "value": "Rivera for Assembly",             "type": "string" },
-            { "id": "f3",  "name": "opponent_names",           "value": "John Smith, Smith Campaign",      "type": "string" },
-            { "id": "f4",  "name": "keywords",                 "value": "Rivera, District 12, California Assembly", "type": "string" },
-            { "id": "f5",  "name": "newsdata_api_key",         "value": "YOUR_NEWSDATA_API_KEY",           "type": "string" },
-            { "id": "f6",  "name": "app_base_url",             "value": "http://localhost:3001",           "type": "string" },
-            { "id": "f7",  "name": "app_auth_key",             "value": "YOUR_SUPABASE_SERVICE_ROLE_KEY",  "type": "string" },
-            { "id": "f8",  "name": "twitter_bearer_token",     "value": "YOUR_TWITTER_BEARER_TOKEN_HERE",  "type": "string" },
-            { "id": "f9",  "name": "youtube_api_key",          "value": "YOUR_YOUTUBE_API_KEY_HERE",       "type": "string" },
-            { "id": "f10", "name": "apify_api_key",            "value": "YOUR_APIFY_API_KEY_HERE",         "type": "string" },
-            { "id": "f11", "name": "opponent_twitter_handle",  "value": "OPPONENT_TWITTER_HANDLE",         "type": "string" },
-            { "id": "f12", "name": "opponent_instagram_handle","value": "OPPONENT_INSTAGRAM_HANDLE",        "type": "string" },
-            { "id": "f13", "name": "opponent_facebook_page",   "value": "OPPONENT_FACEBOOK_PAGE_SLUG",     "type": "string" },
-            { "id": "f14", "name": "google_alerts_rss_url",   "value": "YOUR_GOOGLE_ALERTS_RSS_URL_HERE", "type": "string" }
+            { "id": "f1", "name": "app_base_url", "value": "http://localhost:3001", "type": "string" }
           ]
         },
         "options": {}
       },
       "id": "22222222-2222-2222-2222-222222222222",
-      "name": "Campaign Config",
+      "name": "App Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [420, 580]
+      "position": [420, 700]
     },
     {
       "parameters": {
-        "jsCode": "const c = $input.first().json;\nconst opp = c.opponent_names.split(',').map(s => s.trim()).filter(Boolean);\nconst kw  = c.keywords.split(',').map(s => s.trim()).filter(Boolean);\nconst terms = [...opp, ...kw].slice(0, 5);\nconst gdeltTerms = terms.map(t => t.includes(' ') ? '\"' + t + '\"' : t);\nreturn [{ json: { ...c, opponent_names_array: opp, keywords_array: kw, query_string: terms.join(' OR '), gdelt_query_string: gdeltTerms.join(' OR ') } }];"
+        "method": "GET",
+        "url": "={{ $json.app_base_url + '/api/monitoring/campaigns' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "22222222-2222-2222-2222-222222222299",
+      "name": "Get Campaigns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 700],
+      "credentials": {
+        "httpHeaderAuth": { "id": "1", "name": "Campaign App Service Auth" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const appCfg = $('App Config').first().json;\nconst campaigns = $input.first().json;\nconst list = Array.isArray(campaigns) ? campaigns : [];\nreturn list.map(c => {\n  const opp = [c.opponent_name, ...(c.opponent_aliases || [])].filter(Boolean);\n  const kw = c.monitoring_keywords || [];\n  const terms = [...opp, ...kw].slice(0, 5);\n  // Quote multi-word terms so Twitter/NewsData/YouTube treat them as phrases,\n  // not an ambiguous mix of implicit AND/OR on bare words.\n  const quoted = terms.map(t => t.includes(' ') ? '\"' + t + '\"' : t);\n  return { json: {\n    ...c,\n    app_base_url: appCfg.app_base_url,\n    opponent_names_array: opp,\n    keywords_array: kw,\n    query_string: quoted.join(' OR '),\n    gdelt_query_string: quoted.join(' OR '),\n  }};\n});"
       },
       "id": "33333333-3333-3333-3333-333333333333",
       "name": "Prepare Query",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [640, 580]
+      "position": [860, 700]
     },
     {
       "parameters": {
         "url": "https://newsdata.io/api/1/news",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "apikey",   "value": "={{ $json.newsdata_api_key }}" },
             { "name": "q",        "value": "={{ $json.query_string }}" },
             { "name": "language", "value": "en" },
             { "name": "country",  "value": "us" },
@@ -68,25 +73,28 @@
       "name": "NewsData: Fetch",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [880, 300],
-      "continueOnFail": true
+      "position": [1100, 300],
+      "continueOnFail": true,
+      "credentials": {
+        "httpQueryAuth": { "id": "2", "name": "NewsData API Key" }
+      }
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Prepare Query').first().json;\nconst res = $input.first().json;\nif (!res || !Array.isArray(res.results)) return [];\nreturn res.results\n  .filter(a => a && a.link)\n  .slice(0, 15)\n  .map(a => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: String(a.source_id || 'NewsData'),\n    opponent: cfg.opponent_names_array.find(o =>\n      (String(a.title || '') + ' ' + String(a.description || '')).toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(a.description || a.title || '').substring(0, 500),\n    url: String(a.link)\n  }}));"
+        "jsCode": "const cfg = $('Prepare Query').item.json;\nconst res = $input.first().json;\nif (!res || !Array.isArray(res.results)) return [];\nreturn res.results\n  .filter(a => a && a.link)\n  .slice(0, 15)\n  .map(a => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: String(a.source_id || 'NewsData'),\n    opponent: cfg.opponent_names_array.find(o =>\n      (String(a.title || '') + ' ' + String(a.description || '')).toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(a.description || a.title || '').substring(0, 500),\n    url: String(a.link)\n  }}));"
       },
       "id": "55555555-5555-5555-5555-555555555555",
       "name": "NewsData: Format",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 300]
+      "position": [1320, 300]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Prepare Query').first().json.app_base_url + '/api/monitoring/ingest' }}",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "={{ 'Bearer ' + $('Prepare Query').first().json.app_auth_key }}" }] },
+        "url": "={{ $('Prepare Query').item.json.app_base_url + '/api/monitoring/ingest' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "contentType": "json",
         "bodyParameters": { "parameters": [
@@ -102,8 +110,11 @@
       "name": "NewsData: Send to App",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1320, 300],
-      "continueOnFail": true
+      "position": [1540, 300],
+      "continueOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": { "id": "1", "name": "Campaign App Service Auth" }
+      }
     },
     {
       "parameters": {
@@ -126,25 +137,25 @@
       "name": "GDELT: Fetch",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [880, 580],
+      "position": [1100, 580],
       "continueOnFail": true
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Prepare Query').first().json;\nconst res = $input.first().json;\nif (!res || typeof res.data === 'string') return [];\nif (!Array.isArray(res.articles)) return [];\nreturn res.articles\n  .filter(a => a && a.url)\n  .slice(0, 15)\n  .map(a => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'GDELT',\n    opponent: cfg.opponent_names_array.find(o =>\n      String(a.title || '').toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(a.title || '').substring(0, 500),\n    url: String(a.url)\n  }}));"
+        "jsCode": "const cfg = $('Prepare Query').item.json;\nconst res = $input.first().json;\n// GDELT returns a plain-text error body (not JSON) on a malformed query —\n// catch that case explicitly instead of the previous no-op `res.data` check.\nif (!res || typeof res === 'string' || !Array.isArray(res.articles)) return [];\nreturn res.articles\n  .filter(a => a && a.url)\n  .slice(0, 15)\n  .map(a => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'GDELT',\n    opponent: cfg.opponent_names_array.find(o =>\n      String(a.title || '').toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(a.title || '').substring(0, 500),\n    url: String(a.url)\n  }}));"
       },
       "id": "88888888-8888-8888-8888-888888888888",
       "name": "GDELT: Format",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 580]
+      "position": [1320, 580]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Prepare Query').first().json.app_base_url + '/api/monitoring/ingest' }}",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "={{ 'Bearer ' + $('Prepare Query').first().json.app_auth_key }}" }] },
+        "url": "={{ $('Prepare Query').item.json.app_base_url + '/api/monitoring/ingest' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "contentType": "json",
         "bodyParameters": { "parameters": [
@@ -160,14 +171,39 @@
       "name": "GDELT: Send to App",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1320, 580],
-      "continueOnFail": true
+      "position": [1540, 580],
+      "continueOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": { "id": "1", "name": "Campaign App Service Auth" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "twh1",
+              "leftValue": "={{ $json.opponent_twitter_handle }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-e5f6-4789-abcd-000000000000",
+      "name": "Twitter: Has Handle?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [1100, 40]
     },
     {
       "parameters": {
         "url": "https://api.twitter.com/2/tweets/search/recent",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "={{ 'Bearer ' + $json.twitter_bearer_token }}" }] },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
@@ -182,25 +218,28 @@
       "name": "Twitter: Fetch",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [880, 40],
-      "continueOnFail": true
+      "position": [1320, 40],
+      "continueOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": { "id": "3", "name": "Twitter Bearer Token" }
+      }
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Prepare Query').first().json;\nconst res = $input.first().json;\nif (!res || !Array.isArray(res.data)) return [];\nreturn res.data\n  .filter(t => t && t.text)\n  .slice(0, 15)\n  .map(t => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'Twitter/X',\n    opponent: cfg.opponent_names_array.find(o =>\n      t.text.toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(t.text || '').substring(0, 500),\n    url: 'https://twitter.com/i/web/status/' + t.id\n  }}));"
+        "jsCode": "const cfg = $('Prepare Query').item.json;\nconst res = $input.first().json;\nif (!res || !Array.isArray(res.data)) return [];\nreturn res.data\n  .filter(t => t && t.text)\n  .slice(0, 15)\n  .map(t => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'Twitter/X',\n    opponent: cfg.opponent_names_array.find(o =>\n      t.text.toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(t.text || '').substring(0, 500),\n    url: 'https://twitter.com/i/web/status/' + t.id\n  }}));"
       },
       "id": "a1b2c3d4-e5f6-4789-abcd-000000000002",
       "name": "Twitter: Format",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 40]
+      "position": [1540, 40]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Prepare Query').first().json.app_base_url + '/api/monitoring/ingest' }}",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "={{ 'Bearer ' + $('Prepare Query').first().json.app_auth_key }}" }] },
+        "url": "={{ $('Prepare Query').item.json.app_base_url + '/api/monitoring/ingest' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "contentType": "json",
         "bodyParameters": { "parameters": [
@@ -216,16 +255,20 @@
       "name": "Twitter: Send to App",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1320, 40],
-      "continueOnFail": true
+      "position": [1760, 40],
+      "continueOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": { "id": "1", "name": "Campaign App Service Auth" }
+      }
     },
     {
       "parameters": {
         "url": "https://www.googleapis.com/youtube/v3/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "key",        "value": "={{ $json.youtube_api_key }}" },
             { "name": "q",          "value": "={{ $json.query_string }}" },
             { "name": "type",       "value": "video" },
             { "name": "order",      "value": "date" },
@@ -239,25 +282,28 @@
       "name": "YouTube: Fetch",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [880, 860],
-      "continueOnFail": true
+      "position": [1100, 860],
+      "continueOnFail": true,
+      "credentials": {
+        "httpQueryAuth": { "id": "4", "name": "YouTube Data API Key" }
+      }
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Prepare Query').first().json;\nconst res = $input.first().json;\nif (!res || !Array.isArray(res.items)) return [];\nreturn res.items\n  .filter(v => v && v.id && v.id.videoId)\n  .slice(0, 10)\n  .map(v => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'YouTube',\n    opponent: cfg.opponent_names_array.find(o =>\n      (String((v.snippet || {}).title || '') + ' ' + String((v.snippet || {}).description || '')).toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String((v.snippet || {}).title || '') + ' — ' + String((v.snippet || {}).description || '').substring(0, 300),\n    url: 'https://www.youtube.com/watch?v=' + v.id.videoId\n  }}));"
+        "jsCode": "const cfg = $('Prepare Query').item.json;\nconst res = $input.first().json;\nif (!res || !Array.isArray(res.items)) return [];\nreturn res.items\n  .filter(v => v && v.id && v.id.videoId)\n  .slice(0, 10)\n  .map(v => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'YouTube',\n    opponent: cfg.opponent_names_array.find(o =>\n      (String((v.snippet || {}).title || '') + ' ' + String((v.snippet || {}).description || '')).toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String((v.snippet || {}).title || '') + ' — ' + String((v.snippet || {}).description || '').substring(0, 300),\n    url: 'https://www.youtube.com/watch?v=' + v.id.videoId\n  }}));"
       },
       "id": "b2c3d4e5-f6a7-4891-bcde-000000000002",
       "name": "YouTube: Format",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 860]
+      "position": [1320, 860]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Prepare Query').first().json.app_base_url + '/api/monitoring/ingest' }}",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "={{ 'Bearer ' + $('Prepare Query').first().json.app_auth_key }}" }] },
+        "url": "={{ $('Prepare Query').item.json.app_base_url + '/api/monitoring/ingest' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "contentType": "json",
         "bodyParameters": { "parameters": [
@@ -273,17 +319,43 @@
       "name": "YouTube: Send to App",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1320, 860],
-      "continueOnFail": true
+      "position": [1540, 860],
+      "continueOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": { "id": "1", "name": "Campaign App Service Auth" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "igh1",
+              "leftValue": "={{ $json.opponent_instagram_handle }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c3d4e5f6-a7b8-4912-cdef-000000000000",
+      "name": "Instagram: Has Handle?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [1100, 1140]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "https://api.apify.com/v2/acts/apify~instagram-profile-scraper/run-sync-get-dataset-items",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "token",   "value": "={{ $json.apify_api_key }}" },
             { "name": "memory",  "value": "256" },
             { "name": "timeout", "value": "60" }
           ]
@@ -301,25 +373,28 @@
       "name": "Instagram: Fetch",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [880, 1140],
-      "continueOnFail": true
+      "position": [1320, 1140],
+      "continueOnFail": true,
+      "credentials": {
+        "httpQueryAuth": { "id": "5", "name": "Apify API Token" }
+      }
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Prepare Query').first().json;\nconst res = $input.first().json;\nconst items = Array.isArray(res) ? res : (res && Array.isArray(res.items) ? res.items : []);\nif (!items.length) return [];\nreturn items\n  .filter(p => p && (p.url || p.shortCode))\n  .slice(0, 15)\n  .map(p => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'Instagram',\n    opponent: cfg.opponent_names_array.find(o =>\n      String(p.caption || p.text || '').toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(p.caption || p.text || '').substring(0, 500),\n    url: p.url || ('https://www.instagram.com/p/' + p.shortCode + '/')\n  }}));"
+        "jsCode": "const cfg = $('Prepare Query').item.json;\nconst res = $input.first().json;\nconst items = Array.isArray(res) ? res : (res && Array.isArray(res.items) ? res.items : []);\nif (!items.length) return [];\nreturn items\n  .filter(p => p && (p.url || p.shortCode))\n  .slice(0, 15)\n  .map(p => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'Instagram',\n    opponent: cfg.opponent_names_array.find(o =>\n      String(p.caption || p.text || '').toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(p.caption || p.text || '').substring(0, 500),\n    url: p.url || ('https://www.instagram.com/p/' + p.shortCode + '/')\n  }}));"
       },
       "id": "c3d4e5f6-a7b8-4912-cdef-000000000002",
       "name": "Instagram: Format",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 1140]
+      "position": [1540, 1140]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Prepare Query').first().json.app_base_url + '/api/monitoring/ingest' }}",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "={{ 'Bearer ' + $('Prepare Query').first().json.app_auth_key }}" }] },
+        "url": "={{ $('Prepare Query').item.json.app_base_url + '/api/monitoring/ingest' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "contentType": "json",
         "bodyParameters": { "parameters": [
@@ -335,17 +410,43 @@
       "name": "Instagram: Send to App",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1320, 1140],
-      "continueOnFail": true
+      "position": [1760, 1140],
+      "continueOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": { "id": "1", "name": "Campaign App Service Auth" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "fbp1",
+              "leftValue": "={{ $json.opponent_facebook_page }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d4e5f6a7-b8c9-4023-def0-000000000000",
+      "name": "Facebook: Has Page?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [1100, 1420]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "https://api.apify.com/v2/acts/apify~facebook-posts-scraper/run-sync-get-dataset-items",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "token",   "value": "={{ $json.apify_api_key }}" },
             { "name": "memory",  "value": "256" },
             { "name": "timeout", "value": "60" }
           ]
@@ -362,25 +463,28 @@
       "name": "Facebook: Fetch",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [880, 1420],
-      "continueOnFail": true
+      "position": [1320, 1420],
+      "continueOnFail": true,
+      "credentials": {
+        "httpQueryAuth": { "id": "5", "name": "Apify API Token" }
+      }
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Prepare Query').first().json;\nconst res = $input.first().json;\nconst items = Array.isArray(res) ? res : (res && Array.isArray(res.items) ? res.items : []);\nif (!items.length) return [];\nreturn items\n  .filter(p => p && p.url)\n  .slice(0, 15)\n  .map(p => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'Facebook',\n    opponent: cfg.opponent_names_array.find(o =>\n      String(p.text || p.message || '').toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(p.text || p.message || '').substring(0, 500),\n    url: String(p.url)\n  }}));"
+        "jsCode": "const cfg = $('Prepare Query').item.json;\nconst res = $input.first().json;\nconst items = Array.isArray(res) ? res : (res && Array.isArray(res.items) ? res.items : []);\nif (!items.length) return [];\nreturn items\n  .filter(p => p && p.url)\n  .slice(0, 15)\n  .map(p => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'Facebook',\n    opponent: cfg.opponent_names_array.find(o =>\n      String(p.text || p.message || '').toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(p.text || p.message || '').substring(0, 500),\n    url: String(p.url)\n  }}));"
       },
       "id": "d4e5f6a7-b8c9-4023-def0-000000000002",
       "name": "Facebook: Format",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 1420]
+      "position": [1540, 1420]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Prepare Query').first().json.app_base_url + '/api/monitoring/ingest' }}",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "={{ 'Bearer ' + $('Prepare Query').first().json.app_auth_key }}" }] },
+        "url": "={{ $('Prepare Query').item.json.app_base_url + '/api/monitoring/ingest' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "contentType": "json",
         "bodyParameters": { "parameters": [
@@ -396,8 +500,33 @@
       "name": "Facebook: Send to App",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1320, 1420],
-      "continueOnFail": true
+      "position": [1760, 1420],
+      "continueOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": { "id": "1", "name": "Campaign App Service Auth" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "gau1",
+              "leftValue": "={{ $json.google_alerts_rss_url }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e5f6a7b8-c9d0-4134-ef01-000000000000",
+      "name": "Google Alerts: Has URL?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [1100, 1700]
     },
     {
       "parameters": {
@@ -407,25 +536,25 @@
       "name": "Google Alerts: Fetch",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.1,
-      "position": [880, 1700],
+      "position": [1320, 1700],
       "continueOnFail": true
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Prepare Query').first().json;\nconst items = $input.all();\nif (!items.length) return [];\nreturn items\n  .filter(item => item.json && item.json.link)\n  .slice(0, 15)\n  .map(item => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'Google Alerts',\n    opponent: cfg.opponent_names_array.find(o =>\n      (String(item.json.title || '') + ' ' + String(item.json.contentSnippet || item.json.content || '')).toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(item.json.contentSnippet || item.json.content || item.json.title || '').substring(0, 500),\n    url: String(item.json.link)\n  }}));"
+        "jsCode": "const cfg = $('Prepare Query').item.json;\nconst items = $input.all();\nif (!items.length) return [];\nreturn items\n  .filter(item => item.json && item.json.link)\n  .slice(0, 15)\n  .map(item => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'Google Alerts',\n    opponent: cfg.opponent_names_array.find(o =>\n      (String(item.json.title || '') + ' ' + String(item.json.contentSnippet || item.json.content || '')).toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(item.json.contentSnippet || item.json.content || item.json.title || '').substring(0, 500),\n    url: String(item.json.link)\n  }}));"
       },
       "id": "e5f6a7b8-c9d0-4134-ef01-000000000002",
       "name": "Google Alerts: Format",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 1700]
+      "position": [1540, 1700]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Prepare Query').first().json.app_base_url + '/api/monitoring/ingest' }}",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "={{ 'Bearer ' + $('Prepare Query').first().json.app_auth_key }}" }] },
+        "url": "={{ $('Prepare Query').item.json.app_base_url + '/api/monitoring/ingest' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "contentType": "json",
         "bodyParameters": { "parameters": [
@@ -441,40 +570,50 @@
       "name": "Google Alerts: Send to App",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1320, 1700],
-      "continueOnFail": true
+      "position": [1760, 1700],
+      "continueOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": { "id": "1", "name": "Campaign App Service Auth" }
+      }
     }
   ],
   "connections": {
     "Every 2 Hours": {
-      "main": [[{ "node": "Campaign Config", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "App Config", "type": "main", "index": 0 }]]
     },
-    "Campaign Config": {
+    "App Config": {
+      "main": [[{ "node": "Get Campaigns", "type": "main", "index": 0 }]]
+    },
+    "Get Campaigns": {
       "main": [[{ "node": "Prepare Query", "type": "main", "index": 0 }]]
     },
     "Prepare Query": {
       "main": [[
-        { "node": "NewsData: Fetch",   "type": "main", "index": 0 },
-        { "node": "GDELT: Fetch",      "type": "main", "index": 0 },
-        { "node": "Twitter: Fetch",    "type": "main", "index": 0 },
-        { "node": "YouTube: Fetch",    "type": "main", "index": 0 },
-        { "node": "Instagram: Fetch",      "type": "main", "index": 0 },
-        { "node": "Facebook: Fetch",       "type": "main", "index": 0 },
-        { "node": "Google Alerts: Fetch",  "type": "main", "index": 0 }
+        { "node": "NewsData: Fetch",         "type": "main", "index": 0 },
+        { "node": "GDELT: Fetch",             "type": "main", "index": 0 },
+        { "node": "Twitter: Has Handle?",     "type": "main", "index": 0 },
+        { "node": "YouTube: Fetch",           "type": "main", "index": 0 },
+        { "node": "Instagram: Has Handle?",   "type": "main", "index": 0 },
+        { "node": "Facebook: Has Page?",      "type": "main", "index": 0 },
+        { "node": "Google Alerts: Has URL?",  "type": "main", "index": 0 }
       ]]
     },
     "NewsData: Fetch":   { "main": [[{ "node": "NewsData: Format",   "type": "main", "index": 0 }]] },
     "NewsData: Format":  { "main": [[{ "node": "NewsData: Send to App",   "type": "main", "index": 0 }]] },
     "GDELT: Fetch":      { "main": [[{ "node": "GDELT: Format",      "type": "main", "index": 0 }]] },
     "GDELT: Format":     { "main": [[{ "node": "GDELT: Send to App",      "type": "main", "index": 0 }]] },
+    "Twitter: Has Handle?":   { "main": [[{ "node": "Twitter: Fetch",    "type": "main", "index": 0 }]] },
     "Twitter: Fetch":    { "main": [[{ "node": "Twitter: Format",    "type": "main", "index": 0 }]] },
     "Twitter: Format":   { "main": [[{ "node": "Twitter: Send to App",    "type": "main", "index": 0 }]] },
     "YouTube: Fetch":    { "main": [[{ "node": "YouTube: Format",    "type": "main", "index": 0 }]] },
     "YouTube: Format":   { "main": [[{ "node": "YouTube: Send to App",    "type": "main", "index": 0 }]] },
+    "Instagram: Has Handle?": { "main": [[{ "node": "Instagram: Fetch",  "type": "main", "index": 0 }]] },
     "Instagram: Fetch":  { "main": [[{ "node": "Instagram: Format",  "type": "main", "index": 0 }]] },
     "Instagram: Format": { "main": [[{ "node": "Instagram: Send to App",  "type": "main", "index": 0 }]] },
+    "Facebook: Has Page?":    { "main": [[{ "node": "Facebook: Fetch",   "type": "main", "index": 0 }]] },
     "Facebook: Fetch":   { "main": [[{ "node": "Facebook: Format",   "type": "main", "index": 0 }]] },
     "Facebook: Format":       { "main": [[{ "node": "Facebook: Send to App",       "type": "main", "index": 0 }]] },
+    "Google Alerts: Has URL?": { "main": [[{ "node": "Google Alerts: Fetch",   "type": "main", "index": 0 }]] },
     "Google Alerts: Fetch":   { "main": [[{ "node": "Google Alerts: Format",   "type": "main", "index": 0 }]] },
     "Google Alerts: Format":  { "main": [[{ "node": "Google Alerts: Send to App", "type": "main", "index": 0 }]] }
   },

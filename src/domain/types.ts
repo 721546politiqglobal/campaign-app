@@ -106,6 +106,12 @@ export interface CandidateProfile {
   tagline: string;
   photoUrl?: string | null;
   opponentName?: string | null;
+  opponentAliases: string[];
+  monitoringKeywords: string[];
+  opponentTwitterHandle?: string | null;
+  opponentInstagramHandle?: string | null;
+  opponentFacebookPage?: string | null;
+  googleAlertsRssUrl?: string | null;
   heygenBaseAvatarId?: string | null;
   heygenAvatarId?: string | null;
   activeAvatarId?: string | null;

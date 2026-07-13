@@ -16,6 +16,10 @@ async function saveProfileAction(formData: FormData) {
   if (!can(s.role, 'edit_settings')) return;
   const keyPositions = String(formData.get('key_positions') ?? '')
     .split('\n').map((p: string) => p.trim()).filter(Boolean);
+  const opponentAliases = String(formData.get('opponent_aliases') ?? '')
+    .split(',').map((a: string) => a.trim()).filter(Boolean);
+  const monitoringKeywords = String(formData.get('monitoring_keywords') ?? '')
+    .split(',').map((k: string) => k.trim()).filter(Boolean);
   await upsertCandidateProfile(s.campaignId, {
     fullName:       String(formData.get('full_name')       ?? '').trim(),
     preferredName:  String(formData.get('preferred_name')  ?? '').trim(),
@@ -29,6 +33,12 @@ async function saveProfileAction(formData: FormData) {
     tagline:        String(formData.get('tagline')         ?? '').trim(),
     photoUrl:       String(formData.get('photo_url')       ?? '').trim() || null,
     opponentName:   String(formData.get('opponent_name')   ?? '').trim() || null,
+    opponentAliases,
+    monitoringKeywords,
+    opponentTwitterHandle:   String(formData.get('opponent_twitter_handle')   ?? '').trim() || null,
+    opponentInstagramHandle: String(formData.get('opponent_instagram_handle') ?? '').trim() || null,
+    opponentFacebookPage:    String(formData.get('opponent_facebook_page')    ?? '').trim() || null,
+    googleAlertsRssUrl:      String(formData.get('google_alerts_rss_url')    ?? '').trim() || null,
   });
   revalidatePath('/settings');
 }
@@ -107,6 +117,39 @@ export default async function Settings() {
               <option value="urgent">Urgent</option>
               <option value="inspirational">Inspirational</option>
             </select>
+          </div>
+          <div className="eyebrow" style={{ marginTop: 8 }}>Opposition monitoring</div>
+          <div>
+            <label className="field-label">Opponent aliases (comma-separated)</label>
+            <input name="opponent_aliases" className="input"
+              defaultValue={profile?.opponentAliases.join(', ') ?? ''} disabled={!canEdit} />
+          </div>
+          <div>
+            <label className="field-label">Extra keywords to track (comma-separated)</label>
+            <input name="monitoring_keywords" className="input"
+              defaultValue={profile?.monitoringKeywords.join(', ') ?? ''} disabled={!canEdit} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <div>
+              <label className="field-label">Opponent Twitter/X handle</label>
+              <input name="opponent_twitter_handle" className="input"
+                defaultValue={profile?.opponentTwitterHandle ?? ''} disabled={!canEdit} />
+            </div>
+            <div>
+              <label className="field-label">Opponent Instagram handle</label>
+              <input name="opponent_instagram_handle" className="input"
+                defaultValue={profile?.opponentInstagramHandle ?? ''} disabled={!canEdit} />
+            </div>
+            <div>
+              <label className="field-label">Opponent Facebook page slug</label>
+              <input name="opponent_facebook_page" className="input"
+                defaultValue={profile?.opponentFacebookPage ?? ''} disabled={!canEdit} />
+            </div>
+          </div>
+          <div>
+            <label className="field-label">Google Alerts RSS feed URL</label>
+            <input name="google_alerts_rss_url" className="input"
+              defaultValue={profile?.googleAlertsRssUrl ?? ''} disabled={!canEdit} />
           </div>
           {canEdit && (
             <button className="btn primary" type="submit" style={{ alignSelf: 'flex-start' }}>Save profile</button>

@@ -16,6 +16,8 @@ const profile: CandidateProfile = {
   targetAudience: 'Working families in the San Fernando Valley',
   tagline: 'A Voice for District 12',
   opponentName: 'John Smith',
+  opponentAliases: [],
+  monitoringKeywords: [],
   videoAspectRatio: '16:9',
   videoBackground: 'plain',
   createdAt: '2026-01-01T00:00:00Z',
