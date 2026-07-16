@@ -4,7 +4,7 @@ import { StatusPill } from '@/components/StatusPill';
 import { getCampaignWithStats, getUsers, getContentItems, getAuditEntries, getInviteCodes, getBillingPlans } from '@/lib/data';
 import {
   updateCampaignAction, addUserAction, removeUserAction, impersonateAction,
-  generateInviteAction, assignAvatarAction, assignPlanAction, openBillingPortalForCampaignAction,
+  generateInviteAction, assignAvatarAction, assignVoiceAction, assignPlanAction, openBillingPortalForCampaignAction,
 } from '../../actions';
 import { getCandidateProfile } from '@/lib/candidate';
 import { listAvatars } from '@/lib/avatars';
@@ -220,6 +220,50 @@ export default async function CampaignDetail({
           <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--text-3)', display: 'inline-block' }} />
             <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600 }}>No avatar assigned yet</span>
+          </div>
+        )}
+      </div>
+
+      {/* Candidate voice */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <span className="eyebrow">Video</span>
+        <h2 style={{ fontSize: 14, fontWeight: 700, margin: '6px 0 8px' }}>Candidate voice</h2>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 16, lineHeight: 1.6 }}>
+          Paste a HeyGen <strong>voice ID</strong> for this candidate's cloned voice — cloning happens
+          in HeyGen directly (native cloning or a third-party import), this just links the result to
+          this campaign so avatar video generation has a voice to use.
+        </p>
+        <form action={assignVoiceAction} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <input type="hidden" name="campaignId" value={campaign.id} />
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <label className="field-label">HeyGen voice ID</label>
+              <input
+                name="heygen_voice_id"
+                className="input"
+                style={{ fontFamily: 'monospace', fontSize: 13 }}
+                placeholder="e.g. 32e35b6753d94b61963bf8d0d2f15980"
+              />
+            </div>
+            <button className="btn primary" type="submit" style={{ fontSize: 13, marginBottom: 1 }}>
+              Assign voice
+            </button>
+          </div>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, color: 'var(--text-3)' }}>
+            <input type="checkbox" name="consent" required style={{ marginTop: 2 }} />
+            I confirm the candidate has given consent for this HeyGen voice to be used to generate video on their behalf.
+          </label>
+        </form>
+        {profile?.heygenVoiceId ? (
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ok)', display: 'inline-block' }} />
+            <span style={{ fontSize: 12, color: 'var(--ok)', fontWeight: 600 }}>Voice assigned</span>
+            <code style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 4 }}>{profile.heygenVoiceId}</code>
+          </div>
+        ) : (
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--text-3)', display: 'inline-block' }} />
+            <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600 }}>No voice assigned yet</span>
           </div>
         )}
       </div>

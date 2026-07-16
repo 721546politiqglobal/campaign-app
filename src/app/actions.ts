@@ -349,7 +349,7 @@ export async function generateVideoAction(
   // Do not fall back to the global HEYGEN_VOICE_ID — that narrates every
   // tenant's video with one shared voice. And never pass the ElevenLabs id
   // here: HeyGen uses a different voice-id namespace and 400s on it (INT-7).
-  if (!heygenVoiceId) return { ok: false, error: 'No video voice is set up for this campaign yet. Choose a HeyGen voice in Settings → Avatar.' };
+  if (!heygenVoiceId) return { ok: false, error: 'No video voice is set up for this campaign yet. Contact your platform admin to assign one.' };
   const VIDEO_COST_CENTS = 50_00;
   try {
     await billingGate.check(s.campaignId);

@@ -233,6 +233,31 @@ export async function assignAvatarAction(formData: FormData) {
   revalidatePath('/avatars');
 }
 
+export async function assignVoiceAction(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const campaignId = String(formData.get('campaignId') ?? '').trim();
+  const heygenVoiceId = String(formData.get('heygen_voice_id') ?? '').trim();
+  if (!campaignId || !heygenVoiceId) return;
+
+  // Same explicit-attestation requirement as assignAvatarAction — a
+  // super_admin linking a pre-cloned HeyGen voice must confirm consent was
+  // actually obtained; it must never be auto-stamped just because they hit submit.
+  const consentConfirmed = formData.get('consent') === 'on';
+  if (!consentConfirmed) return;
+
+  const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
+
+  // Same guard as assignAvatarAction: upsertCandidateProfile's insert path
+  // requires full_name/preferred_name/office/district (not-null, no defaults)
+  // this action doesn't have. Only update when a profile already exists.
+  const existingProfile = await getCandidateProfile(campaignId);
+  if (existingProfile) {
+    await upsertCandidateProfile(campaignId, { heygenVoiceId });
+  }
+
+  revalidatePath(`/admin/campaigns/${campaignId}`);
+}
+
 export async function addUserAction(formData: FormData) {
   const s = await requireAdmin();
   const campaignId = String(formData.get('campaignId'));
