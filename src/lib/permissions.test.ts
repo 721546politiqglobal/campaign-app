@@ -35,3 +35,15 @@ describe('can – manage_avatars', () => {
   it('denies approver', () => expect(can('approver', 'manage_avatars')).toBe(false));
   it('denies staff',    () => expect(can('staff',    'manage_avatars')).toBe(false));
 });
+
+describe('can – super_admin is intentionally denied every campaign-level action', () => {
+  // super_admin operates admin surfaces via requireAdmin/requireAdminSession,
+  // NOT via can(). It must never appear in any PERMISSIONS list, or it would
+  // gain campaign-scoped approve/schedule/publish rights it is not meant to hold.
+  const actions = ['approve', 'schedule', 'publish', 'edit_settings', 'manage_avatars'] as const;
+  for (const action of actions) {
+    it(`denies super_admin '${action}'`, () => {
+      expect(can('super_admin', action)).toBe(false);
+    });
+  }
+});

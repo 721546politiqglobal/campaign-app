@@ -1,12 +1,19 @@
 import type { Metadata } from 'next';
-import { Manrope } from 'next/font/google';
+import localFont from 'next/font/local';
 import { ToastProvider } from '@/components/Toast';
 import './globals.css';
 
-const manrope = Manrope({
-  subsets: ['latin'],
+// Self-hosted so the build has no network dependency on Google Fonts — an
+// air-gapped CI/build environment would otherwise fail (TEST-BUILD-1).
+const manrope = localFont({
+  src: [
+    { path: './fonts/Manrope-400.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/Manrope-500.woff2', weight: '500', style: 'normal' },
+    { path: './fonts/Manrope-600.woff2', weight: '600', style: 'normal' },
+    { path: './fonts/Manrope-700.woff2', weight: '700', style: 'normal' },
+    { path: './fonts/Manrope-800.woff2', weight: '800', style: 'normal' },
+  ],
   variable: '--font',
-  weight: ['400', '500', '600', '700', '800'],
   display: 'swap',
 });
 

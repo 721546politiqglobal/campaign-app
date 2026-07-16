@@ -16,7 +16,7 @@ export default async function ContentDetail({ params }: { params: { id: string }
     getAuditEntries(params.id),
     getCandidateProfile(s.campaignId),
   ]);
-  if (!item) notFound();
+  if (!item || item.campaignId !== s.campaignId) notFound();
 
   const hasDisclosure = discs.length > 0;
   const requiredDisclosures =

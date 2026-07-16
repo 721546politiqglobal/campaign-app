@@ -84,8 +84,10 @@ export function ContentWizard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [platforms, setPlatforms] = useState<Platform[]>(CONTENT_TYPE_PLATFORMS[item.type] ?? []);
-  const [videoId, setVideoId] = useState<string | null>(null);
-  const [videoStatus, setVideoStatus] = useState<'idle' | 'generating' | 'ready' | 'failed'>('idle');
+  const [videoId, setVideoId] = useState<string | null>(item.videoJobId ?? null);
+  const [videoStatus, setVideoStatus] = useState<'idle' | 'generating' | 'ready' | 'failed' | 'timed_out'>(
+    item.videoStatus === 'processing' && !item.mediaUrl ? 'generating' : 'idle',
+  );
   const [videoUrl, setVideoUrl] = useState<string | null>(item.mediaUrl ?? null);
   const [scheduleMode, setScheduleMode] = useState<'now' | 'later'>('now');
   const [scheduledAt, setScheduledAt] = useState('');
@@ -118,7 +120,10 @@ export function ContentWizard({
 
   useEffect(() => {
     if (!videoId || videoStatus !== 'generating') return;
+    const MAX_ATTEMPTS = 60; // 60 × 5s = 5 minutes, then surface a "check later" state
+    let attempts = 0;
     const interval = setInterval(async () => {
+      attempts += 1;
       const result = await getVideoStatusAction(videoId);
       if (result.status === 'completed' && result.url) {
         setVideoStatus('ready');
@@ -126,6 +131,9 @@ export function ContentWizard({
         clearInterval(interval);
       } else if (result.status === 'failed') {
         setVideoStatus('failed');
+        clearInterval(interval);
+      } else if (attempts >= MAX_ATTEMPTS) {
+        setVideoStatus('timed_out');
         clearInterval(interval);
       }
     }, 5000);
@@ -155,10 +163,11 @@ export function ContentWizard({
       <div className="card" style={{ textAlign: 'center', padding: '48px 32px' }}>
         <div style={{
           width: 48, height: 48, borderRadius: '50%',
-          background: 'var(--accent)', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', margin: '0 auto 16px', color: '#fff', fontSize: 22,
+          background: 'var(--accent-grad)', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', margin: '0 auto 16px', color: 'var(--accent-ink)', fontSize: 22,
+          boxShadow: '0 4px 16px rgba(249,115,22,0.35), inset 0 1px 0 rgba(255,255,255,0.35)',
         }}>✓</div>
-        <h2 style={{ margin: '0 0 8px' }}>Published</h2>
+        <h3 style={{ margin: '0 0 8px', fontSize: 18 }}>Published</h3>
         <p className="muted">This content is live on all selected platforms.</p>
       </div>
     );
@@ -176,39 +185,18 @@ export function ContentWizard({
   return (
     <div>
       {/* Stepper */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 28, gap: 0 }}>
+      <div className="stepper">
         {steps.map((step, i) => {
           const done = i < stepIndex;
           const active = i === stepIndex;
           return (
             <div key={step} style={{ display: 'flex', alignItems: 'center' }}>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '7px 14px', borderRadius: 20,
-                background: active ? 'var(--accent)' : 'transparent',
-                color: active ? '#fff' : done ? 'var(--text-2)' : 'var(--text-3)',
-                fontSize: 13,
-                fontWeight: active ? 700 : 500,
-                transition: 'all 0.2s',
-              }}>
-                <span style={{
-                  width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 10, fontWeight: 700,
-                  border: `1.5px solid ${active ? '#fff' : done ? 'var(--accent)' : 'var(--line)'}`,
-                  background: done ? 'var(--accent)' : 'transparent',
-                  color: done ? '#fff' : 'inherit',
-                }}>
-                  {done ? '✓' : i + 1}
-                </span>
+              <div className={`step${active ? ' active' : done ? ' done' : ''}`}>
+                <span className="marker">{done ? '✓' : i + 1}</span>
                 {STEP_LABELS[step]}
               </div>
               {i < steps.length - 1 && (
-                <div style={{
-                  width: 28, height: 1.5,
-                  background: i < stepIndex ? 'var(--accent)' : 'var(--line)',
-                  margin: '0 2px',
-                }} />
+                <div className={`connector${i < stepIndex ? ' done' : ''}`} />
               )}
             </div>
           );
@@ -301,9 +289,8 @@ export function ContentWizard({
                   <div className="eyebrow" style={{ marginBottom: 10 }}>Video settings</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                     {(['16:9', '9:16', '1:1'] as const).map(r => (
-                      <button key={r} type="button" className="btn"
+                      <button key={r} type="button" className={`btn${videoOverride.aspectRatio === r ? ' active' : ''}`}
                         onClick={() => setVideoOverride(v => ({ ...v, aspectRatio: r }))}
-                        style={videoOverride.aspectRatio === r ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}
                       >{r}</button>
                     ))}
                   </div>
@@ -384,6 +371,17 @@ export function ContentWizard({
                 <div className="error">Video generation failed. Try again.</div>
                 <button className="btn" style={{ marginTop: 12 }} onClick={handleGenerateVideo}>
                   Retry
+                </button>
+              </div>
+            )}
+            {videoStatus === 'timed_out' && (
+              <div>
+                <div className="error">
+                  This is taking longer than expected. Your video may still be processing —
+                  leave this page and check back in a few minutes.
+                </div>
+                <button className="btn" style={{ marginTop: 12 }} onClick={() => router.refresh()}>
+                  Refresh
                 </button>
               </div>
             )}
@@ -478,16 +476,7 @@ export function ContentWizard({
               {(CONTENT_TYPE_PLATFORMS[item.type] ?? []).map(p => {
                 const selected = platforms.includes(p);
                 return (
-                  <label key={p} style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '7px 14px', borderRadius: 20,
-                    border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--line)'}`,
-                    cursor: 'pointer', fontSize: 13,
-                    fontWeight: selected ? 600 : 400,
-                    background: selected ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent',
-                    color: selected ? 'var(--accent)' : 'var(--text-2)',
-                    userSelect: 'none', transition: 'all 0.15s',
-                  }}>
+                  <label key={p} className={`chip${selected ? ' on' : ''}`}>
                     <input type="checkbox" checked={selected} onChange={() => togglePlatform(p)} style={{ display: 'none' }} />
                     {p.charAt(0).toUpperCase() + p.slice(1)}
                   </label>
@@ -499,9 +488,8 @@ export function ContentWizard({
             <div className="eyebrow" style={{ marginBottom: 8 }}>Timing</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
               {(['now', 'later'] as const).map(m => (
-                <button key={m} type="button" className="btn"
-                  onClick={() => setScheduleMode(m)}
-                  style={scheduleMode === m ? { borderColor: 'var(--accent)', color: 'var(--accent)', fontWeight: 600 } : {}}>
+                <button key={m} type="button" className={`btn${scheduleMode === m ? ' active' : ''}`}
+                  onClick={() => setScheduleMode(m)}>
                   {m === 'now' ? 'Publish now' : 'Schedule for later'}
                 </button>
               ))}

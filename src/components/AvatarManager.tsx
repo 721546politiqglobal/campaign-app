@@ -129,10 +129,10 @@ export function AvatarManager({
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div className="eyebrow">Avatars</div>
+        <div className="eyebrow">{avatars.length} {avatars.length === 1 ? 'avatar' : 'avatars'}</div>
         {canManage && (
           <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setModalOpen(true)}>
-            + Create Avatar
+            + Create avatar
           </button>
         )}
       </div>
@@ -151,17 +151,34 @@ export function AvatarManager({
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '12px 14px', border: '1px solid var(--line)', borderRadius: 10,
           }}>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-                {a.name}
-                {a.id === activeAvatarId && (
-                  <span className="pill approved" style={{ fontSize: 10 }}>Active</span>
-                )}
-              </div>
-              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-                {a.status === 'training' && 'Training… (usually a few minutes)'}
-                {a.status === 'ready' && 'Ready'}
-                {a.status === 'failed' && `Failed: ${a.errorMessage ?? 'Unknown error'}`}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+              {a.sourcePhotoUrls[0] ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={a.sourcePhotoUrls[0]} alt=""
+                  style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover', flexShrink: 0, background: 'var(--bg-hover)' }} />
+              ) : (
+                <div style={{ width: 44, height: 44, borderRadius: 8, background: 'var(--bg-elevated)', display: 'grid', placeItems: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
+              )}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
+                  {a.id === activeAvatarId && (
+                    <span className="pill published">Active</span>
+                  )}
+                </div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{
+                    width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                    background: a.status === 'ready' ? 'var(--ok)' : a.status === 'failed' ? 'var(--bad)' : 'var(--warn)',
+                    boxShadow: `0 0 6px ${a.status === 'ready' ? 'var(--ok)' : a.status === 'failed' ? 'var(--bad)' : 'var(--warn)'}`,
+                  }} />
+                  <span>
+                    {a.status === 'training' && 'Training — usually a few minutes'}
+                    {a.status === 'ready' && 'Ready'}
+                    {a.status === 'failed' && `Failed: ${a.errorMessage ?? 'Unknown error'}`}
+                    <span className="mono" style={{ color: 'var(--text-3)' }}> · created {new Date(a.createdAt).toLocaleDateString()}</span>
+                  </span>
+                </div>
               </div>
             </div>
             {canManage && (
@@ -184,14 +201,12 @@ export function AvatarManager({
       </div>
 
       {modalOpen && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
-        }}>
-          <div className="card" style={{ width: 440, maxWidth: '90vw' }}>
+        <div className="modal-backdrop">
+          <div className="modal">
             {step === 1 && (
               <>
-                <h3 style={{ marginBottom: 12 }}>Step 1 of 3: Consent</h3>
+                <div className="modal-step">Step 1 of 3 · Consent</div>
+                <h3 style={{ marginBottom: 14, fontSize: 16 }}>Confirm permission</h3>
                 <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, lineHeight: 1.5 }}>
                   <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
                   I confirm I have the candidate&rsquo;s permission to use these photos to create an AI avatar of them.
@@ -204,7 +219,8 @@ export function AvatarManager({
             )}
             {step === 2 && (
               <>
-                <h3 style={{ marginBottom: 12 }}>Step 2 of 3: Upload photos</h3>
+                <div className="modal-step">Step 2 of 3 · Photos</div>
+                <h3 style={{ marginBottom: 12, fontSize: 16 }}>Upload photos</h3>
                 <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
                   Upload {MIN_PHOTOS}–{MAX_PHOTOS} recent, high-resolution photos. Mix of angles and expressions gives the best result.
                 </p>
@@ -229,11 +245,16 @@ export function AvatarManager({
             )}
             {step === 3 && (
               <>
-                <h3 style={{ marginBottom: 12 }}>Step 3 of 3: Name this avatar</h3>
-                <input className="input" placeholder="e.g. Studio look" value={name} onChange={e => setName(e.target.value)} />
+                <div className="modal-step">Step 3 of 3 · Name</div>
+                <h3 style={{ marginBottom: 12, fontSize: 16 }}>Name this avatar</h3>
+                <input className="input" placeholder="e.g. Alex — studio look" value={name}
+                  onChange={e => setName(e.target.value)} maxLength={60} />
+                <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+                  Give it a name you&apos;ll recognize later — e.g. the look or setting.
+                </p>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
                   <button className="btn" onClick={() => setStep(2)}>← Back</button>
-                  <button className="btn primary" disabled={submitting} onClick={handleSubmit}>
+                  <button className="btn primary" disabled={submitting || !name.trim()} onClick={handleSubmit}>
                     {submitting ? 'Creating…' : 'Create Avatar'}
                   </button>
                 </div>
@@ -244,12 +265,10 @@ export function AvatarManager({
       )}
 
       {lookModalAvatarId && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
-        }}>
-          <div className="card" style={{ width: 440, maxWidth: '90vw' }}>
-            <h3 style={{ marginBottom: 12 }}>Generate a new look</h3>
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="modal-step">New look</div>
+            <h3 style={{ marginBottom: 12, fontSize: 16 }}>Generate a new look</h3>
             <p className="muted" style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>
               Describe the style or setting — HeyGen generates a new look of the same person, not a different one.
             </p>

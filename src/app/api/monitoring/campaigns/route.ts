@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/supabase';
+import { monitoringBearerOk } from '@/lib/monitoring-auth';
 
 // Campaigns actively configured for opponent monitoring — consumed by the
 // n8n opposition-monitoring workflow so it can loop over every campaign
 // instead of hardcoding a single campaign_id.
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get('authorization');
-  if (!auth || auth !== `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`) {
+  if (!monitoringBearerOk(req.headers.get('authorization'))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

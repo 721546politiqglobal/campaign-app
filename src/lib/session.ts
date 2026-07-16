@@ -7,7 +7,7 @@ export interface Session {
   userId: string;
   name: string;
   role: Role;
-  campaignId: string;
+  campaignId: string | null;   // null for super_admin (no tenant)
   exp: number;
 }
 
@@ -92,15 +92,24 @@ export async function getSession(): Promise<Session | null> {
   };
 }
 
-export async function requireSession(): Promise<Session> {
+// Tenant contexts (all non-admin pages and server actions) require a campaign.
+// super_admin carries campaignId === null, so send them to the admin console
+// rather than letting a null tenant id flow into campaign-scoped queries
+// (audit finding DATA-18). The narrowed return type frees every tenant call
+// site from re-checking for null.
+export async function requireSession(): Promise<Session & { campaignId: string }> {
   const s = await getSession();
   if (!s) redirect('/login');
-  return s;
+  if (s.campaignId === null) redirect('/admin');
+  return s as Session & { campaignId: string };
 }
 
 export async function requireAdmin(): Promise<Session> {
   const s = await getSession();
-  if (!s || s.role !== 'super_admin') redirect('/login');
+  if (!s) redirect('/login');
+  // A valid session that simply lacks admin rights is NOT a logout — send them
+  // back to their own dashboard rather than the login screen (FLOW-1).
+  if (s.role !== 'super_admin') redirect('/dashboard');
   return s;
 }
 

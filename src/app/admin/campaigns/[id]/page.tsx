@@ -92,10 +92,10 @@ export default async function CampaignDetail({
         <div className="card">
           <span className="eyebrow">Spend</span>
           <h2 style={{ fontSize: 14, fontWeight: 700, margin: '6px 0 16px' }}>This month</h2>
-          <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)', marginBottom: 6 }}>
+          <div className="data" style={{ fontSize: 28, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
             {fmt(campaign.monthlySpendCents)}
           </div>
-          <div style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 14 }}>
+          <div className="data" style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 14 }}>
             of {fmt(campaign.monthlyCostCapCents)} cap
           </div>
           <div style={{ height: 6, background: 'var(--bg-hover)', borderRadius: 3 }}>
@@ -112,8 +112,8 @@ export default async function CampaignDetail({
               { label: 'In review', value: campaign.inReviewCount },
             ].map(({ label, value }) => (
               <div key={label} style={{ textAlign: 'center', padding: '10px 0', background: 'var(--bg-hover)', borderRadius: 'var(--r)' }}>
-                <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{value}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{label}</div>
+                <div className="data" style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)' }}>{value}</div>
+                <div className="eyebrow" style={{ marginTop: 4 }}>{label}</div>
               </div>
             ))}
           </div>
@@ -240,8 +240,8 @@ export default async function CampaignDetail({
                     {u.email ?? <span style={{ color: 'var(--bad)', fontSize: 11 }}>No email</span>}
                   </td>
                   <td>
-                    <span className="pill"
-                      style={u.role === 'owner' ? { borderColor: 'rgba(249,115,22,0.3)', color: 'var(--accent)' } : {}}>
+                    <span className="tag"
+                      style={u.role === 'owner' ? { color: 'var(--accent)', borderColor: 'rgba(249,115,22,0.28)', background: 'var(--accent-dim)' } : undefined}>
                       {u.role}
                     </span>
                   </td>
@@ -331,17 +331,17 @@ export default async function CampaignDetail({
                   return (
                     <tr key={inv.code}>
                       <td className="mono" style={{ fontSize: 12 }}>{inv.code}</td>
-                      <td><span className="pill">{inv.role}</span></td>
+                      <td><span className="tag">{inv.role}</span></td>
                       <td className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
                         {new Date(inv.expiresAt).toLocaleDateString()}
                       </td>
                       <td>
                         {inv.usedAt ? (
-                          <span style={{ fontSize: 12, color: 'var(--ok)', fontWeight: 600 }}>Used</span>
+                          <span className="tag cred-high"><span className="dot" />Used</span>
                         ) : expired ? (
-                          <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600 }}>Expired</span>
+                          <span className="tag">Expired</span>
                         ) : (
-                          <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>Active</span>
+                          <span className="tag trending"><span className="dot" />Active</span>
                         )}
                       </td>
                       <td>

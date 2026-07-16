@@ -40,10 +40,10 @@ export default async function AdminUsers() {
                   {u.email ?? <span style={{ color: 'var(--bad)', fontWeight: 500 }}>No email — can&apos;t log in</span>}
                 </td>
                 <td>
-                  <span className="pill"
+                  <span className="tag"
                     style={u.role === 'owner'
-                      ? { borderColor: 'rgba(249,115,22,0.3)', color: 'var(--accent)' }
-                      : {}}>
+                      ? { color: 'var(--accent)', borderColor: 'rgba(249,115,22,0.28)', background: 'var(--accent-dim)' }
+                      : undefined}>
                     {u.role}
                   </span>
                 </td>

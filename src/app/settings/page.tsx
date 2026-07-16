@@ -6,14 +6,35 @@ import { getCandidateProfile } from '@/lib/candidate';
 import { upsertCandidateProfile } from '@/lib/candidate';
 import { setCapAction } from '@/app/actions';
 import { can } from '@/lib/permissions';
+import { PARTIES } from '@/lib/profile-validation';
 import type { VoiceTone } from '@/domain/types';
 
 async function saveProfileAction(formData: FormData) {
   'use server';
   const { requireSession } = await import('@/lib/session');
   const { can } = await import('@/lib/permissions');
+  const { validateCandidateProfile } = await import('@/lib/profile-validation');
+  const { redirect } = await import('next/navigation');
   const s = await requireSession();
   if (!can(s.role, 'edit_settings')) return;
+
+  const fields = {
+    fullName:       String(formData.get('full_name')       ?? '').trim(),
+    preferredName:  String(formData.get('preferred_name')  ?? '').trim(),
+    office:         String(formData.get('office')          ?? '').trim(),
+    district:       String(formData.get('district')        ?? '').trim(),
+    party:          String(formData.get('party')           ?? '').trim(),
+    bio:            String(formData.get('bio')             ?? '').trim(),
+    tagline:        String(formData.get('tagline')         ?? '').trim(),
+    targetAudience: String(formData.get('target_audience') ?? '').trim(),
+    voiceTone:      String(formData.get('voice_tone') ?? 'conversational'),
+    googleAlertsRssUrl: String(formData.get('google_alerts_rss_url') ?? '').trim(),
+    photoUrl:       String(formData.get('photo_url') ?? '').trim(),
+  };
+  // Reject garbage before it reaches AI-drafting prompts (UX-3).
+  const check = validateCandidateProfile(fields);
+  if (!check.ok) redirect('/settings?error=validation');
+
   const keyPositions = String(formData.get('key_positions') ?? '')
     .split('\n').map((p: string) => p.trim()).filter(Boolean);
   const opponentAliases = String(formData.get('opponent_aliases') ?? '')
@@ -21,12 +42,12 @@ async function saveProfileAction(formData: FormData) {
   const monitoringKeywords = String(formData.get('monitoring_keywords') ?? '')
     .split(',').map((k: string) => k.trim()).filter(Boolean);
   await upsertCandidateProfile(s.campaignId, {
-    fullName:       String(formData.get('full_name')       ?? '').trim(),
-    preferredName:  String(formData.get('preferred_name')  ?? '').trim(),
-    office:         String(formData.get('office')          ?? '').trim(),
-    district:       String(formData.get('district')        ?? '').trim(),
-    party:          String(formData.get('party')           ?? '').trim(),
-    bio:            String(formData.get('bio')             ?? '').trim(),
+    fullName:       fields.fullName,
+    preferredName:  fields.preferredName,
+    office:         fields.office,
+    district:       fields.district,
+    party:          fields.party,
+    bio:            fields.bio,
     keyPositions,
     voiceTone:      (String(formData.get('voice_tone') ?? 'conversational')) as VoiceTone,
     targetAudience: String(formData.get('target_audience') ?? '').trim(),
@@ -83,7 +104,10 @@ export default async function Settings() {
             </div>
             <div>
               <label className="field-label">Party</label>
-              <input name="party" className="input" defaultValue={profile?.party ?? ''} disabled={!canEdit} />
+              <select name="party" className="input" defaultValue={profile?.party ?? ''} disabled={!canEdit}>
+                <option value="">—</option>
+                {PARTIES.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
             </div>
             <div>
               <label className="field-label">Primary opponent</label>
@@ -118,7 +142,10 @@ export default async function Settings() {
               <option value="inspirational">Inspirational</option>
             </select>
           </div>
-          <div className="eyebrow" style={{ marginTop: 8 }}>Opposition monitoring</div>
+          <div style={{ borderTop: '1px solid var(--border)', margin: '8px 0 2px', paddingTop: 16 }}>
+            <span className="eyebrow">Opposition monitoring</span>
+            <p className="muted" style={{ fontSize: 12, margin: '4px 0 0' }}>Who and what the war room watches for you.</p>
+          </div>
           <div>
             <label className="field-label">Opponent aliases (comma-separated)</label>
             <input name="opponent_aliases" className="input"

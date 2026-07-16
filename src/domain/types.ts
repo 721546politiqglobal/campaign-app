@@ -1,5 +1,5 @@
 export type ContentStatus =
-  | 'draft' | 'in_review' | 'approved' | 'scheduled' | 'published' | 'rejected' | 'archived';
+  | 'draft' | 'in_review' | 'approved' | 'scheduled' | 'publishing' | 'published' | 'rejected' | 'archived';
 
 export type Role = 'owner' | 'manager' | 'staff' | 'approver' | 'super_admin';
 
@@ -9,6 +9,15 @@ export type ContentType =
   | 'reel' | 'social_post' | 'press_release' | 'ad_copy' | 'talking_points';
 
 export const VIDEO_CONTENT_TYPES: ContentType[] = ['reel'];
+
+// Single source of truth for valid content types at runtime — used to reject
+// client-supplied values before they hit the DB (audit finding DATA-16).
+export const CONTENT_TYPES: readonly ContentType[] =
+  ['reel', 'social_post', 'press_release', 'ad_copy', 'talking_points'] as const;
+
+export function isContentType(value: string): value is ContentType {
+  return (CONTENT_TYPES as readonly string[]).includes(value);
+}
 
 export interface ContentItem {
   id: string;
@@ -20,6 +29,8 @@ export interface ContentItem {
   isAiGenerated: boolean;
   targetJurisdictions: string[];
   mediaUrl?: string | null;
+  videoJobId?: string | null;
+  videoStatus?: 'processing' | 'completed' | 'failed' | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -116,6 +127,7 @@ export interface CandidateProfile {
   heygenAvatarId?: string | null;
   activeAvatarId?: string | null;
   elevenLabsVoiceId?: string | null;
+  heygenVoiceId?: string | null;
   videoAspectRatio: '16:9' | '9:16' | '1:1';
   videoBackground: string;
   createdAt: string;

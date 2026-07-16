@@ -1,4 +1,4 @@
-import { adminDb } from './supabase';
+import { adminDb, throwOnError } from './supabase';
 import {
   ContentItem, ContentStatus, ContentRepo, ApprovalRepo, DisclosureRepo, AuditRepo,
 } from '@/domain/types';
@@ -19,6 +19,8 @@ function toContentItem(r: Record<string, unknown>): ContentItem {
     isAiGenerated: r.is_ai_generated as boolean,
     targetJurisdictions: r.target_jurisdictions as string[],
     mediaUrl: r.media_url as string | null,
+    videoJobId: (r.video_job_id as string | null) ?? null,
+    videoStatus: (r.video_status as 'processing' | 'completed' | 'failed' | null) ?? null,
     createdBy: r.created_by as string,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
@@ -44,21 +46,27 @@ export const contentRepo: ContentRepo = {
     return data ? toContentItem(data) : null;
   },
   async setStatus(id, status: ContentStatus) {
-    await adminDb.from('content_items')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', id);
+    await throwOnError(
+      adminDb.from('content_items')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', id),
+      'content_items.setStatus',
+    );
   },
 };
 
 export const approvalRepo: ApprovalRepo = {
   async add(rec) {
-    await adminDb.from('approval_records').insert({
-      content_item_id: rec.contentItemId,
-      campaign_id: rec.campaignId,
-      approver_user_id: rec.approverUserId,
-      decision: rec.decision,
-      note: rec.note ?? null,
-    });
+    await throwOnError(
+      adminDb.from('approval_records').insert({
+        content_item_id: rec.contentItemId,
+        campaign_id: rec.campaignId,
+        approver_user_id: rec.approverUserId,
+        decision: rec.decision,
+        note: rec.note ?? null,
+      }),
+      'approval_records.add',
+    );
   },
   async hasApproval(contentItemId) {
     const { data } = await adminDb.from('approval_records')
@@ -72,13 +80,16 @@ export const approvalRepo: ApprovalRepo = {
 
 export const disclosureRepo: DisclosureRepo = {
   async add(rec) {
-    await adminDb.from('disclosure_records').insert({
-      content_item_id: rec.contentItemId,
-      campaign_id: rec.campaignId,
-      jurisdiction: rec.jurisdiction,
-      disclosure_text: rec.disclosureText,
-      placement: rec.placement,
-    });
+    await throwOnError(
+      adminDb.from('disclosure_records').insert({
+        content_item_id: rec.contentItemId,
+        campaign_id: rec.campaignId,
+        jurisdiction: rec.jurisdiction,
+        disclosure_text: rec.disclosureText,
+        placement: rec.placement,
+      }),
+      'disclosure_records.add',
+    );
   },
   async listFor(contentItemId) {
     const { data } = await adminDb.from('disclosure_records')
@@ -98,14 +109,17 @@ export const disclosureRepo: DisclosureRepo = {
 
 export const auditRepo: AuditRepo = {
   async append(entry) {
-    await adminDb.from('audit_entries').insert({
-      campaign_id: entry.campaignId,
-      actor_user_id: entry.actorUserId ?? null,
-      action: entry.action,
-      entity_type: entry.entityType,
-      entity_id: entry.entityId ?? null,
-      details: entry.details ?? null,
-    });
+    await throwOnError(
+      adminDb.from('audit_entries').insert({
+        campaign_id: entry.campaignId,
+        actor_user_id: entry.actorUserId ?? null,
+        action: entry.action,
+        entity_type: entry.entityType,
+        entity_id: entry.entityId ?? null,
+        details: entry.details ?? null,
+      }),
+      'audit_entries.append',
+    );
   },
 };
 
@@ -139,24 +153,18 @@ export const usageRepo: UsageRepo = {
       p_cost_cents: estimatedCents,
     });
     if (error) throw error;
-    return Boolean(data);
+    return (data as string | null) ?? null;
   },
-  async finalize(campaignId, kind, _quantity, costCents, reservedCents) {
-    const { data: reservation } = await adminDb
-      .from('usage_events')
-      .select('id')
-      .eq('campaign_id', campaignId)
-      .eq('kind', '_reserved')
-      .eq('cost_cents', reservedCents)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (reservation) {
-      await adminDb.from('usage_events').delete().eq('id', reservation.id);
-    }
-    if (costCents > 0) {
-      await adminDb.from('usage_events').insert({ campaign_id: campaignId, kind, cost_cents: costCents });
-    }
+  async finalize(reservationId, kind, _quantity, costCents) {
+    // Atomic delete-reservation + insert-real-row in one plpgsql transaction,
+    // keyed on the exact reservation id (migration 019) — no cost-match race,
+    // no crash-between-statements spend loss.
+    const { error } = await adminDb.rpc('finalize_usage', {
+      p_reservation_id: reservationId,
+      p_kind: kind,
+      p_cost_cents: costCents,
+    });
+    if (error) throw error;
   },
 };
 

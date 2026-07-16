@@ -31,11 +31,22 @@ function getDomain(url: string): string | null {
 
 export function scoreCredibility(url: string): 'high' | 'medium' | 'low' {
   const domain = getDomain(url);
-  if (!domain) return 'medium';
-  if (domain.endsWith('.gov')) return 'high';
+  if (!domain) return 'low';                        // a missing/broken URL is not trustworthy (was 'medium')
+  if (domain.endsWith('.gov') || domain.endsWith('.edu')) return 'high';
   if (HIGH_CREDIBILITY_DOMAINS.has(domain)) return 'high';
   if (LOW_CREDIBILITY_DOMAINS.has(domain)) return 'low';
-  return 'medium';
+  if ([...SOCIAL_DOMAINS].some(d => domain.includes(d))) return 'low'; // unattributed social posts
+  if (PRESS_RELEASE_KEYWORDS.some(k => domain.includes(k))) return 'medium';
+  return 'medium';                                  // unknown editorial site — neutral, distinct from social/broken
+}
+
+// Keep an item only if it mentions at least one campaign entity/geo term.
+// No terms configured → keep everything (don't silently blackhole a feed) (UX-5).
+export function isRelevant(text: string, terms: string[]): boolean {
+  const cleaned = terms.map(t => t.trim().toLowerCase()).filter(Boolean);
+  if (cleaned.length === 0) return true;
+  const hay = text.toLowerCase();
+  return cleaned.some(t => hay.includes(t));
 }
 
 export function categorizeSource(

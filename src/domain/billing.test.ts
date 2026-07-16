@@ -1,4 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import { INACTIVE_STATUSES } from './billing';
+
+describe('INACTIVE_STATUSES is the shared block set', () => {
+  it('includes every status the gate blocks', () => {
+    expect([...INACTIVE_STATUSES].sort()).toEqual(['canceled', 'incomplete_expired', 'paused', 'unpaid']);
+  });
+});
 import { BillingGate, BillingBlocked, type BillingRepo, type CampaignBillingInfo } from './billing';
 
 function fakeRepo(info: CampaignBillingInfo | null): BillingRepo {

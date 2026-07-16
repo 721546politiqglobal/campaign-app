@@ -25,3 +25,12 @@ export function computeSubscriptionUpdate(
   }
   return { subscriptionStatus: status, gracePeriodEndsAt: null };
 }
+
+// Stripe redelivers subscription events without ordering guarantees; a stale
+// `active` arriving after a `past_due` must not overwrite the newer status
+// (BILL-7). Compare the incoming event's `created` (unix seconds) against the
+// newest one already applied for this campaign.
+export function isNewerEvent(eventCreatedSec: number, lastSeenSec: number | null): boolean {
+  if (lastSeenSec == null) return true;
+  return eventCreatedSec > lastSeenSec;
+}
