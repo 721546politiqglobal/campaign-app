@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { logoutAction } from '@/app/actions';
 
-const NAV = [
+export const NAV = [
   {
     href: '/dashboard',
     label: 'Dashboard',

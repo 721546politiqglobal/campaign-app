@@ -20,12 +20,21 @@ export default async function SetupPage({
   if (existing) redirect('/dashboard');
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '48px 24px' }}>
+    <div className="setup-wrap">
       <div style={{ width: '100%', maxWidth: 640 }}>
+        <div className="setup-brand">
+          <div className="login-logo-icon">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
+              <path d="M3 9L9 3L15 9L9 15L3 9Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+              <circle cx="9" cy="9" r="2.5" fill="currentColor" />
+            </svg>
+          </div>
+          <span className="login-title">Command Center</span>
+        </div>
         <div style={{ marginBottom: 32 }}>
-          <span className="eyebrow">Welcome</span>
-          <h1 style={{ margin: '4px 0 8px' }}>Set up your campaign</h1>
-          <p className="muted" style={{ fontSize: 14 }}>
+          <span className="eyebrow">Welcome · Step 1 of 1</span>
+          <h1 style={{ margin: '6px 0 8px' }}>Set up your campaign</h1>
+          <p className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>
             This takes about 3 minutes. Every AI draft will be written specifically for your candidate from this point on.
           </p>
         </div>
@@ -100,9 +109,9 @@ export default async function SetupPage({
             <h2 style={{ marginBottom: 12 }}>Tone</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {TONES.map(([value, label]) => (
-                <label key={value} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--line)' }}>
+                <label key={value} className="tone-option">
                   <input type="radio" name="voice_tone" value={value} defaultChecked={value === 'conversational'} />
-                  <span style={{ fontSize: 14 }}>{label}</span>
+                  <span style={{ fontSize: 14, color: 'var(--text-2)' }}>{label}</span>
                 </label>
               ))}
             </div>

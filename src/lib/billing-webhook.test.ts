@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { computeSubscriptionUpdate } from './billing-webhook';
+import { computeSubscriptionUpdate, isNewerEvent } from './billing-webhook';
+
+describe('isNewerEvent', () => {
+  it('accepts any event when none seen yet', () => { expect(isNewerEvent(1000, null)).toBe(true); });
+  it('accepts a strictly newer event', () => { expect(isNewerEvent(1001, 1000)).toBe(true); });
+  it('rejects an equal-or-older (stale/replayed) event', () => {
+    expect(isNewerEvent(1000, 1000)).toBe(false);
+    expect(isNewerEvent(999, 1000)).toBe(false);
+  });
+});
 
 describe('computeSubscriptionUpdate', () => {
   it('sets a 7-day grace period when a subscription goes past_due', () => {

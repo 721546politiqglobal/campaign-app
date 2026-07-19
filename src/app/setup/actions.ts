@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { requireSession } from '@/lib/session';
 import { getCandidateProfile, upsertCandidateProfile } from '@/lib/candidate';
 import { can } from '@/lib/permissions';
+import { validateCandidateProfile } from '@/lib/profile-validation';
 import type { VoiceTone } from '@/domain/types';
 
 export async function upsertProfileAction(formData: FormData) {
@@ -33,8 +34,14 @@ export async function upsertProfileAction(formData: FormData) {
   const photoUrl       = String(formData.get('photo_url')       ?? '').trim() || null;
   const opponentName   = String(formData.get('opponent_name')   ?? '').trim() || null;
 
-  if (!fullName || !preferredName || !office || !district) {
-    redirect('/setup?error=required');
+  // Validate against the shared rules so garbage (e.g. party 'congress') can't
+  // reach the AI-drafting prompts (UX-3).
+  const check = validateCandidateProfile({
+    fullName, preferredName, office, district, party, bio, tagline, targetAudience,
+    voiceTone, googleAlertsRssUrl: '', photoUrl: photoUrl ?? '',
+  });
+  if (!check.ok) {
+    redirect(check.errors.party ? '/setup?error=party' : '/setup?error=required');
   }
 
   await upsertCandidateProfile(s.campaignId, {

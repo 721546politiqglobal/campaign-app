@@ -20,17 +20,9 @@ export default async function AdminDisclosureRules() {
         {rules.map(rule => (
           <div key={rule.jurisdiction} className="card">
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <span className="pill" style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.04em' }}>
-                {rule.jurisdiction}
-              </span>
+              <span className="tag" style={{ fontSize: 11 }}>{rule.jurisdiction}</span>
               {rule.needsLegalReview && (
-                <span style={{
-                  fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4,
-                  background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.25)',
-                  color: 'var(--warn)', letterSpacing: '0.06em',
-                }}>
-                  NEEDS LEGAL REVIEW
-                </span>
+                <span className="tag cred-medium">Needs legal review</span>
               )}
             </div>
 
@@ -49,7 +41,7 @@ export default async function AdminDisclosureRules() {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label className="field-label">Placement</label>
                   <select name="placement" className="input" defaultValue={rule.placement}>
@@ -58,17 +50,6 @@ export default async function AdminDisclosureRules() {
                     <option value="hashtag">Hashtag</option>
                     <option value="footer">Footer</option>
                   </select>
-                </div>
-                <div>
-                  <label className="field-label">Blackout days before election</label>
-                  <input
-                    name="blackoutDays"
-                    type="number"
-                    className="input"
-                    defaultValue={rule.blackoutDaysBeforeElection ?? ''}
-                    placeholder="None"
-                    min="0"
-                  />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, justifyContent: 'flex-end', paddingBottom: 2 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>

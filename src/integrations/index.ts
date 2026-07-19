@@ -138,27 +138,37 @@ export class HeyGenVideoProvider implements VideoProvider {
           voice: {
             type: 'text',
             input_text: script,
-            voice_id: voiceId ?? process.env.HEYGEN_VOICE_ID ?? '',
+            // No global HEYGEN_VOICE_ID fallback — the caller guarantees a
+            // per-campaign voice id (INT-7); refuse rather than narrate with a
+            // shared/absent voice.
+            voice_id: voiceId ?? (() => { throw new Error('HeyGen voice_id is required.'); })(),
           },
           background: bgConfig,
         }],
         dimension,
       }),
     });
-    const json = await res.json();
-    if (!res.ok) throw new Error(`HeyGen error: ${json.message ?? res.status}`);
-    return { videoId: json.data?.video_id ?? '', url: undefined };
+    const json = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (!res.ok) throw new Error(`HeyGen error: ${(json as { message?: string }).message ?? res.status}`);
+    const videoId = (json as { data?: { video_id?: string } }).data?.video_id;
+    if (!videoId) throw new Error('HeyGen did not return a video id.');
+    return { videoId, url: undefined };
   }
 
   async getVideoStatus(videoId: string) {
-    const res = await fetch(`https://api.heygen.com/v1/video_status.get?video_id=${videoId}`, {
+    const res = await fetch(`https://api.heygen.com/v1/video_status.get?video_id=${encodeURIComponent(videoId)}`, {
       headers: { 'X-Api-Key': this.apiKey },
     });
-    const json = await res.json();
-    const status = json.data?.status;
+    // A 401/404/429/5xx is a real error, not "still working" — never let it
+    // masquerade as processing or the client polls forever (INT-4).
+    if (!res.ok) return { status: 'failed' as const };
+    const json = await res.json().catch(() => null);
+    const status = json?.data?.status;
     if (status === 'completed') return { status: 'completed' as const, url: json.data.video_url };
+    if (status === 'processing' || status === 'pending' || status === 'waiting') return { status: 'processing' as const };
     if (status === 'failed') return { status: 'failed' as const };
-    return { status: 'processing' as const };
+    // Unknown / missing status: fail rather than spin indefinitely.
+    return { status: 'failed' as const };
   }
 }
 
@@ -180,9 +190,11 @@ export class HeyGenPhotoAvatarProvider implements PhotoAvatarProvider {
       headers: { 'X-Api-Key': this.apiKey },
       body: form,
     });
-    const json = await res.json();
-    if (!res.ok) throw new Error(`HeyGen upload error: ${json.error?.message ?? res.status}`);
-    return { assetId: json.data?.asset_id ?? '' };
+    const json = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (!res.ok) throw new Error(`HeyGen upload error: ${(json as { error?: { message?: string } }).error?.message ?? res.status}`);
+    const assetId = (json as { data?: { asset_id?: string } }).data?.asset_id;
+    if (!assetId) throw new Error('HeyGen did not return an asset id.');
+    return { assetId };
   }
 
   async createAvatarLook({ name, assetId, avatarGroupId }: { name: string; assetId: string; avatarGroupId?: string }) {
@@ -198,10 +210,10 @@ export class HeyGenPhotoAvatarProvider implements PhotoAvatarProvider {
     });
     const json = await res.json();
     if (!res.ok) throw new Error(`HeyGen create avatar error: ${json.error?.message ?? res.status}`);
-    return {
-      lookId: json.data?.avatar_item?.id ?? '',
-      groupId: json.data?.avatar_group?.id ?? json.data?.avatar_item?.group_id ?? '',
-    };
+    const lookId = json.data?.avatar_item?.id;
+    const groupId = json.data?.avatar_group?.id ?? json.data?.avatar_item?.group_id;
+    if (!lookId || !groupId) throw new Error('HeyGen did not return a look/group id.');
+    return { lookId, groupId };
   }
 
   // Generates a new styled look from an EXISTING trained look, preserving the
@@ -219,10 +231,10 @@ export class HeyGenPhotoAvatarProvider implements PhotoAvatarProvider {
     });
     const json = await res.json();
     if (!res.ok) throw new Error(`HeyGen generate look error: ${json.error?.message ?? res.status}`);
-    return {
-      lookId: json.data?.avatar_item?.id ?? '',
-      groupId: json.data?.avatar_group?.id ?? json.data?.avatar_item?.group_id ?? '',
-    };
+    const lookId = json.data?.avatar_item?.id;
+    const groupId = json.data?.avatar_group?.id ?? json.data?.avatar_item?.group_id;
+    if (!lookId || !groupId) throw new Error('HeyGen did not return a look/group id.');
+    return { lookId, groupId };
   }
 
   // Deliberately polls GET /v3/avatars/{id} (the single-resource endpoint),
@@ -236,8 +248,13 @@ export class HeyGenPhotoAvatarProvider implements PhotoAvatarProvider {
     });
     const json = await res.json();
     if (!res.ok) throw new Error(`HeyGen get avatar error: ${json.error?.message ?? res.status}`);
+    // Validate against the known set — an unrecognized HeyGen status must not
+    // be cast straight through, or an avatar strands in "training" forever (INT-14).
+    const raw = json.data?.status;
+    const KNOWN = ['processing', 'pending_consent', 'completed', 'failed'] as const;
+    const status = (KNOWN as readonly string[]).includes(raw) ? raw as typeof KNOWN[number] : 'failed';
     return {
-      status: json.data?.status as 'processing' | 'pending_consent' | 'completed' | 'failed',
+      status,
       previewImageUrl: json.data?.preview_image_url,
       error: json.data?.error,
     };
@@ -250,7 +267,10 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   constructor(private apiKey: string) {}
 
   async synthesize({ text, voiceId }: { text: string; voiceId?: string }) {
-    const vid = voiceId ?? process.env.ELEVENLABS_VOICE_ID ?? 'EXAVITQu4vr4xnSDxMaL';
+    // No hardcoded stock-voice fallback — the only sources are the per-request
+    // voiceId or the operator's ELEVENLABS_VOICE_ID (INT-6).
+    const vid = voiceId ?? process.env.ELEVENLABS_VOICE_ID;
+    if (!vid) throw new Error('No ElevenLabs voice id configured for this request.');
     const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${vid}`, {
       method: 'POST',
       headers: { 'xi-api-key': this.apiKey, 'Content-Type': 'application/json' },
@@ -261,7 +281,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       }),
     });
     if (!res.ok) throw new Error(`ElevenLabs error: ${res.status}`);
-    // Upload the audio blob to Supabase Storage and return a public URL
+    // Upload the audio blob to Supabase Storage and return a public URL.
     const buffer = Buffer.from(await res.arrayBuffer());
     const { createClient } = await import('@supabase/supabase-js');
     const storage = createClient(
@@ -269,7 +289,10 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     );
     const filename = `voice/${Date.now()}.mp3`;
-    await storage.storage.from('media').upload(filename, buffer, { contentType: 'audio/mpeg' });
+    // Check the upload error instead of fabricating a URL to a file that may
+    // not exist and billing for a dead link (INT-8).
+    const { error: uploadError } = await storage.storage.from('media').upload(filename, buffer, { contentType: 'audio/mpeg' });
+    if (uploadError) throw new Error(`Voice upload failed: ${uploadError.message}`);
     const { data } = storage.storage.from('media').getPublicUrl(filename);
     return { audioUrl: data.publicUrl };
   }

@@ -102,36 +102,9 @@ create index if not exists idx_audit_entity       on audit_entries(entity_id);
 create index if not exists idx_monitoring_campaign on monitoring_results(campaign_id);
 create index if not exists idx_usage_campaign     on usage_events(campaign_id);
 
--- ── Seed data ────────────────────────────────────────────────────────────────
-
-insert into campaigns (id, name, jurisdictions, monthly_cost_cap_cents)
-values ('camp-1', 'Rivera for Assembly — District 12', array['US-FEDERAL','US-CA'], 100000)
-on conflict (id) do nothing;
-
-insert into users (id, campaign_id, name, role)
-values ('u-alex', 'camp-1', 'Alex Rivera', 'owner')
-on conflict (id) do nothing;
-
-insert into content_items
-  (id, campaign_id, type, title, body, status, is_ai_generated, target_jurisdictions, created_by)
-values
-  ('ct-1','camp-1','reel','Healthcare plan reel',
-   'A 30-second reel explaining how our healthcare plan lowers premiums.',
-   'in_review', true, array['US-FEDERAL','US-CA'], 'u-alex'),
-  ('ct-2','camp-1','social_post','Town hall recap',
-   'Thanks to everyone who came out last night. Here''s what we heard.',
-   'approved', true, array['US-FEDERAL','US-CA'], 'u-alex'),
-  ('ct-3','camp-1','press_release','Response on transit funding',
-   'Statement on the new transit funding proposal.',
-   'draft', true, array['US-FEDERAL','US-CA'], 'u-alex'),
-  ('ct-4','camp-1','social_post','Volunteer thank-you',
-   'Our volunteers knocked 4,000 doors this weekend.',
-   'published', false, array['US-FEDERAL','US-CA'], 'u-alex')
-on conflict (id) do nothing;
-
-insert into approval_records (content_item_id, campaign_id, approver_user_id, decision)
-values ('ct-2','camp-1','u-alex','approve')
-on conflict do nothing;
+-- ── Reference config (required by the app, not tenant data) ──────────────────
+-- The disclosure engine reads these rules. Wording/timing are PLACEHOLDERS
+-- flagged needs_legal_review — confirm with counsel before relying on them.
 
 insert into disclosure_rules (jurisdiction, requires_ai_label, required_text, placement, blackout_days_before_election, needs_legal_review)
 values
@@ -140,18 +113,8 @@ values
    'overlay', 60, true)
 on conflict (jurisdiction) do nothing;
 
-insert into monitoring_results (campaign_id, source, opponent, excerpt, url)
-values
-  ('camp-1','NewsData','Opponent campaign',
-   'Opponent announced a new position on transit funding at a press event.',
-   'https://example.com/news/transit'),
-  ('camp-1','GDELT','Opponent campaign',
-   'Local coverage compares the two candidates'' healthcare proposals.',
-   'https://example.com/news/healthcare')
-on conflict do nothing;
-
-insert into usage_events (campaign_id, kind, cost_cents)
-values
-  ('camp-1','video_minutes', 4200),
-  ('camp-1','llm_tokens', 900)
-on conflict do nothing;
+-- NOTE: Demo tenant data (campaigns, users, content, approvals, monitoring,
+-- usage) and default login credentials are NOT seeded here — that would create
+-- known-credential accounts and fake stats in production. They live in
+-- supabase/seed.dev.sql for local/dev use only. Bootstrap the first production
+-- super-admin explicitly (see docs/audit/PRODUCTION-REMEDIATION.md).

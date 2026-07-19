@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getSession } from '@/lib/session';
 
 interface NormalizedAvatar {
   avatar_id: string;
@@ -8,6 +9,11 @@ interface NormalizedAvatar {
 }
 
 export async function GET(req: NextRequest) {
+  // Was unauthenticated — anyone could probe HeyGen avatar groups and burn the
+  // app's provider rate limits (INT-10).
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const apiKey = process.env.HEYGEN_API_KEY;
   if (!apiKey) return NextResponse.json({ avatars: [] });
 

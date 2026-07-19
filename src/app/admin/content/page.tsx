@@ -34,9 +34,8 @@ export default async function AdminContent({
           return (
             <Link
               key={f}
-              className="btn"
-              href={f === 'all' ? '/admin/content' : `/admin/content?status=${f}`}
-              style={active ? { borderColor: 'var(--accent)', color: 'var(--accent-ink)' } : {}}>
+              className={`btn${active ? ' active' : ''}`}
+              href={f === 'all' ? '/admin/content' : `/admin/content?status=${f}`}>
               {f === 'all' ? 'All' : f.replace('_', ' ')}
             </Link>
           );

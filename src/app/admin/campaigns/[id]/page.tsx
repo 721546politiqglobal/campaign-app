@@ -4,7 +4,7 @@ import { StatusPill } from '@/components/StatusPill';
 import { getCampaignWithStats, getUsers, getContentItems, getAuditEntries, getInviteCodes, getBillingPlans } from '@/lib/data';
 import {
   updateCampaignAction, addUserAction, removeUserAction, impersonateAction,
-  generateInviteAction, assignAvatarAction, assignPlanAction, openBillingPortalForCampaignAction,
+  generateInviteAction, assignAvatarAction, assignVoiceAction, assignPlanAction, openBillingPortalForCampaignAction,
 } from '../../actions';
 import { getCandidateProfile } from '@/lib/candidate';
 import { listAvatars } from '@/lib/avatars';
@@ -92,10 +92,10 @@ export default async function CampaignDetail({
         <div className="card">
           <span className="eyebrow">Spend</span>
           <h2 style={{ fontSize: 14, fontWeight: 700, margin: '6px 0 16px' }}>This month</h2>
-          <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)', marginBottom: 6 }}>
+          <div className="data" style={{ fontSize: 28, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
             {fmt(campaign.monthlySpendCents)}
           </div>
-          <div style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 14 }}>
+          <div className="data" style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 14 }}>
             of {fmt(campaign.monthlyCostCapCents)} cap
           </div>
           <div style={{ height: 6, background: 'var(--bg-hover)', borderRadius: 3 }}>
@@ -112,8 +112,8 @@ export default async function CampaignDetail({
               { label: 'In review', value: campaign.inReviewCount },
             ].map(({ label, value }) => (
               <div key={label} style={{ textAlign: 'center', padding: '10px 0', background: 'var(--bg-hover)', borderRadius: 'var(--r)' }}>
-                <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{value}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{label}</div>
+                <div className="data" style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)' }}>{value}</div>
+                <div className="eyebrow" style={{ marginTop: 4 }}>{label}</div>
               </div>
             ))}
           </div>
@@ -224,6 +224,50 @@ export default async function CampaignDetail({
         )}
       </div>
 
+      {/* Candidate voice */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <span className="eyebrow">Video</span>
+        <h2 style={{ fontSize: 14, fontWeight: 700, margin: '6px 0 8px' }}>Candidate voice</h2>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 16, lineHeight: 1.6 }}>
+          Paste a HeyGen <strong>voice ID</strong> for this candidate's cloned voice — cloning happens
+          in HeyGen directly (native cloning or a third-party import), this just links the result to
+          this campaign so avatar video generation has a voice to use.
+        </p>
+        <form action={assignVoiceAction} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <input type="hidden" name="campaignId" value={campaign.id} />
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <label className="field-label">HeyGen voice ID</label>
+              <input
+                name="heygen_voice_id"
+                className="input"
+                style={{ fontFamily: 'monospace', fontSize: 13 }}
+                placeholder="e.g. 32e35b6753d94b61963bf8d0d2f15980"
+              />
+            </div>
+            <button className="btn primary" type="submit" style={{ fontSize: 13, marginBottom: 1 }}>
+              Assign voice
+            </button>
+          </div>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, color: 'var(--text-3)' }}>
+            <input type="checkbox" name="consent" required style={{ marginTop: 2 }} />
+            I confirm the candidate has given consent for this HeyGen voice to be used to generate video on their behalf.
+          </label>
+        </form>
+        {profile?.heygenVoiceId ? (
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ok)', display: 'inline-block' }} />
+            <span style={{ fontSize: 12, color: 'var(--ok)', fontWeight: 600 }}>Voice assigned</span>
+            <code style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 4 }}>{profile.heygenVoiceId}</code>
+          </div>
+        ) : (
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--text-3)', display: 'inline-block' }} />
+            <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600 }}>No voice assigned yet</span>
+          </div>
+        )}
+      </div>
+
       {/* Users */}
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>Users</h2>
@@ -240,8 +284,8 @@ export default async function CampaignDetail({
                     {u.email ?? <span style={{ color: 'var(--bad)', fontSize: 11 }}>No email</span>}
                   </td>
                   <td>
-                    <span className="pill"
-                      style={u.role === 'owner' ? { borderColor: 'rgba(249,115,22,0.3)', color: 'var(--accent)' } : {}}>
+                    <span className="tag"
+                      style={u.role === 'owner' ? { color: 'var(--accent)', borderColor: 'rgba(249,115,22,0.28)', background: 'var(--accent-dim)' } : undefined}>
                       {u.role}
                     </span>
                   </td>
@@ -331,17 +375,17 @@ export default async function CampaignDetail({
                   return (
                     <tr key={inv.code}>
                       <td className="mono" style={{ fontSize: 12 }}>{inv.code}</td>
-                      <td><span className="pill">{inv.role}</span></td>
+                      <td><span className="tag">{inv.role}</span></td>
                       <td className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
                         {new Date(inv.expiresAt).toLocaleDateString()}
                       </td>
                       <td>
                         {inv.usedAt ? (
-                          <span style={{ fontSize: 12, color: 'var(--ok)', fontWeight: 600 }}>Used</span>
+                          <span className="tag cred-high"><span className="dot" />Used</span>
                         ) : expired ? (
-                          <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600 }}>Expired</span>
+                          <span className="tag">Expired</span>
                         ) : (
-                          <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>Active</span>
+                          <span className="tag trending"><span className="dot" />Active</span>
                         )}
                       </td>
                       <td>

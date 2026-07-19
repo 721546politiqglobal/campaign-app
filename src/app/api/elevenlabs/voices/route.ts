@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
+import { getSession } from '@/lib/session';
 
 export async function GET() {
+  // Was unauthenticated — anyone could enumerate the ElevenLabs voice list (INT-10).
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ voices: [], message: 'ELEVENLABS_API_KEY not configured' }, { status: 200 });

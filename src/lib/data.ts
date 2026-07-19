@@ -13,7 +13,7 @@ export interface Campaign {
   gracePeriodEndsAt: string | null;
   currentPeriodEnd: string | null;
 }
-export interface User { id: string; name: string; role: string; campaignId: string; email: string | null; }
+export interface User { id: string; name: string; role: string; campaignId: string | null; email: string | null; }
 export interface MonitoringResult {
   id: string; campaignId: string; source: string; opponent?: string;
   excerpt: string; url: string; capturedAt: string;
@@ -119,7 +119,11 @@ export async function getDisclosureRules() {
 }
 
 export async function getMonthlySpend(campaignId: string): Promise<number> {
-  const start = new Date(); start.setDate(1); start.setHours(0, 0, 0, 0);
+  // Window on the Stripe billing period (falling back to UTC month) so this
+  // matches the cap guard (reserve_usage) and both spend displays (BILL-11/UX-1).
+  const { billingPeriodStart } = await import('./billing-period');
+  const { data: camp } = await adminDb.from('campaigns').select('current_period_end').eq('id', campaignId).single();
+  const start = billingPeriodStart((camp?.current_period_end as string | null) ?? null);
   const { data } = await adminDb.from('usage_events').select('cost_cents')
     .eq('campaign_id', campaignId).neq('kind', '_reserved').gte('created_at', start.toISOString());
   return (data ?? []).reduce((n, r) => n + (r.cost_cents as number), 0);
@@ -183,31 +187,53 @@ export async function getBillingPlan(id: string): Promise<BillingPlan | null> {
 }
 
 export async function getAllCampaigns(): Promise<CampaignWithStats[]> {
-  const start = new Date(); start.setDate(1); start.setHours(0, 0, 0, 0);
-  const [c, u, ci, ue] = await Promise.all([
+  const { billingPeriodStart } = await import('./billing-period');
+
+  const [c, u, ci] = await Promise.all([
     adminDb.from('campaigns').select('*').order('created_at', { ascending: false }),
     adminDb.from('users').select('id, campaign_id'),
     adminDb.from('content_items').select('id, campaign_id, status'),
-    adminDb.from('usage_events').select('campaign_id, cost_cents').neq('kind', '_reserved').gte('created_at', start.toISOString()),
   ]);
   const campaigns = c.data ?? [];
   const users = u.data ?? [];
   const items = ci.data ?? [];
-  const spend = ue.data ?? [];
-  return campaigns.map(camp => ({
-    id: camp.id, name: camp.name, jurisdictions: camp.jurisdictions,
-    monthlyCostCapCents: camp.monthly_cost_cap_cents, createdAt: camp.created_at,
-    planId: camp.plan_id ?? null,
-    stripeCustomerId: camp.stripe_customer_id ?? null,
-    stripeSubscriptionId: camp.stripe_subscription_id ?? null,
-    subscriptionStatus: camp.subscription_status ?? null,
-    gracePeriodEndsAt: camp.grace_period_ends_at ?? null,
-    currentPeriodEnd: camp.current_period_end ?? null,
-    userCount: users.filter(u => u.campaign_id === camp.id).length,
-    contentCount: items.filter(i => i.campaign_id === camp.id).length,
-    inReviewCount: items.filter(i => i.campaign_id === camp.id && i.status === 'in_review').length,
-    monthlySpendCents: spend.filter(e => e.campaign_id === camp.id).reduce((n, e) => n + e.cost_cents, 0),
-  }));
+
+  // Each campaign's spend window is anchored on its own Stripe billing period
+  // (matching the cap guard and the campaign's own dashboard/billing page —
+  // see billing-period.ts), not a shared calendar month. Fetch the union of
+  // all windows in one query, then re-filter per campaign below.
+  const windowStarts = new Map(
+    campaigns.map(camp => [camp.id, billingPeriodStart((camp.current_period_end as string | null) ?? null)]),
+  );
+  const earliestStart = windowStarts.size > 0
+    ? new Date(Math.min(...Array.from(windowStarts.values(), d => d.getTime())))
+    : new Date(0);
+
+  const { data: usageData } = await adminDb.from('usage_events')
+    .select('campaign_id, cost_cents, created_at')
+    .neq('kind', '_reserved')
+    .gte('created_at', earliestStart.toISOString());
+  const spend = usageData ?? [];
+
+  return campaigns.map(camp => {
+    const campaignStart = windowStarts.get(camp.id)!;
+    return {
+      id: camp.id, name: camp.name, jurisdictions: camp.jurisdictions,
+      monthlyCostCapCents: camp.monthly_cost_cap_cents, createdAt: camp.created_at,
+      planId: camp.plan_id ?? null,
+      stripeCustomerId: camp.stripe_customer_id ?? null,
+      stripeSubscriptionId: camp.stripe_subscription_id ?? null,
+      subscriptionStatus: camp.subscription_status ?? null,
+      gracePeriodEndsAt: camp.grace_period_ends_at ?? null,
+      currentPeriodEnd: camp.current_period_end ?? null,
+      userCount: users.filter(u => u.campaign_id === camp.id).length,
+      contentCount: items.filter(i => i.campaign_id === camp.id).length,
+      inReviewCount: items.filter(i => i.campaign_id === camp.id && i.status === 'in_review').length,
+      monthlySpendCents: spend
+        .filter(e => e.campaign_id === camp.id && new Date(e.created_at as string) >= campaignStart)
+        .reduce((n, e) => n + (e.cost_cents as number), 0),
+    };
+  });
 }
 
 export async function getCampaignWithStats(id: string): Promise<CampaignWithStats | null> {
@@ -358,4 +384,18 @@ function toItem(r: Record<string, unknown>) {
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
   };
+}
+
+// Seat usage for a campaign: how many non-super_admin members it has vs the
+// seat_limit of its plan (null = unlimited). Enforced on add-user/invite so a
+// plan's paid seat count is meaningful (audit finding BILL-10).
+export async function getCampaignSeatUsage(campaignId: string): Promise<{ used: number; limit: number | null }> {
+  const { data: camp } = await adminDb.from('campaigns').select('plan_id').eq('id', campaignId).single();
+  let limit: number | null = null;
+  if (camp?.plan_id) {
+    const { data: plan } = await adminDb.from('billing_plans').select('seat_limit').eq('id', camp.plan_id).single();
+    limit = (plan?.seat_limit as number | null) ?? null;
+  }
+  const { data: users } = await adminDb.from('users').select('id').eq('campaign_id', campaignId).neq('role', 'super_admin');
+  return { used: users?.length ?? 0, limit };
 }

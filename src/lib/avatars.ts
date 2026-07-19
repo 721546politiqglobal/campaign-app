@@ -1,5 +1,5 @@
 // src/lib/avatars.ts
-import { adminDb } from './supabase';
+import { adminDb, throwOnError } from './supabase';
 import { Avatar, AvatarStatus } from '@/domain/types';
 
 function toAvatar(r: Record<string, unknown>): Avatar {
@@ -45,18 +45,21 @@ export async function insertAvatar(input: {
   heygenLookId?: string | null;
   errorMessage?: string | null;
 }): Promise<void> {
-  await adminDb.from('avatars').insert({
-    id: input.id,
-    campaign_id: input.campaignId,
-    name: input.name,
-    status: input.status ?? 'training',
-    heygen_group_id: input.heygenGroupId ?? null,
-    heygen_look_id: input.heygenLookId ?? null,
-    source_photo_urls: input.sourcePhotoUrls,
-    error_message: input.errorMessage ?? null,
-    consent_confirmed_by: input.consentConfirmedBy,
-    created_by: input.createdBy,
-  });
+  await throwOnError(
+    adminDb.from('avatars').insert({
+      id: input.id,
+      campaign_id: input.campaignId,
+      name: input.name,
+      status: input.status ?? 'training',
+      heygen_group_id: input.heygenGroupId ?? null,
+      heygen_look_id: input.heygenLookId ?? null,
+      source_photo_urls: input.sourcePhotoUrls,
+      error_message: input.errorMessage ?? null,
+      consent_confirmed_by: input.consentConfirmedBy,
+      created_by: input.createdBy,
+    }),
+    'avatars.insert',
+  );
 }
 
 export async function updateAvatarStatus(
@@ -64,14 +67,20 @@ export async function updateAvatarStatus(
   status: AvatarStatus,
   opts?: { heygenGroupId?: string | null; heygenLookId?: string | null; errorMessage?: string | null },
 ): Promise<void> {
-  await adminDb.from('avatars').update({
-    status,
-    ...(opts?.heygenGroupId !== undefined && { heygen_group_id: opts.heygenGroupId }),
-    ...(opts?.heygenLookId !== undefined && { heygen_look_id: opts.heygenLookId }),
-    ...(opts?.errorMessage !== undefined && { error_message: opts.errorMessage }),
-  }).eq('id', id);
+  await throwOnError(
+    adminDb.from('avatars').update({
+      status,
+      ...(opts?.heygenGroupId !== undefined && { heygen_group_id: opts.heygenGroupId }),
+      ...(opts?.heygenLookId !== undefined && { heygen_look_id: opts.heygenLookId }),
+      ...(opts?.errorMessage !== undefined && { error_message: opts.errorMessage }),
+    }).eq('id', id),
+    'avatars.updateStatus',
+  );
 }
 
 export async function deleteAvatarRow(id: string): Promise<void> {
-  await adminDb.from('avatars').delete().eq('id', id);
+  await throwOnError(
+    adminDb.from('avatars').delete().eq('id', id),
+    'avatars.delete',
+  );
 }

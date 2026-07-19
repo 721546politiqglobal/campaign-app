@@ -67,14 +67,14 @@ export default async function CampaignsPage() {
                 <td>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                     {c.jurisdictions.map(j => (
-                      <span key={j} className="pill" style={{ fontSize: 10 }}>{j}</span>
+                      <span key={j} className="tag">{j}</span>
                     ))}
                   </div>
                 </td>
-                <td className="muted" style={{ fontVariantNumeric: 'tabular-nums' }}>{c.userCount}</td>
-                <td className="muted" style={{ fontVariantNumeric: 'tabular-nums' }}>{c.contentCount}</td>
+                <td className="data" style={{ color: 'var(--text-2)' }}>{c.userCount}</td>
+                <td className="data" style={{ color: 'var(--text-2)' }}>{c.contentCount}</td>
                 <td style={{ minWidth: 160 }}>
-                  <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4 }}>
+                  <div className="data" style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4 }}>
                     {fmt(c.monthlySpendCents)}{' '}
                     <span style={{ color: 'var(--text-3)' }}>/ {fmt(c.monthlyCostCapCents)}</span>
                   </div>

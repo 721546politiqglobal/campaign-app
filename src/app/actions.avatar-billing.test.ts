@@ -45,7 +45,7 @@ const upsertCandidateProfile = vi.fn(() => Promise.resolve());
 vi.mock('@/lib/candidate', () => ({ getCandidateProfile, upsertCandidateProfile }));
 
 const billingGate = { check: vi.fn(() => Promise.resolve()) };
-const usageMeter = { guard: vi.fn(() => Promise.resolve()), record: vi.fn(() => Promise.resolve()) };
+const usageMeter = { guard: vi.fn(() => Promise.resolve('res-1')), record: vi.fn(() => Promise.resolve()) };
 const photoAvatarProvider = {
   uploadAsset: vi.fn(),
   createAvatarLook: vi.fn(),
@@ -73,7 +73,7 @@ function makePhotos(count: number): FormData {
 beforeEach(() => {
   vi.clearAllMocks();
   billingGate.check.mockResolvedValue(undefined);
-  usageMeter.guard.mockResolvedValue(undefined);
+  usageMeter.guard.mockResolvedValue('res-1'); // guard now returns the reservation id
   usageMeter.record.mockResolvedValue(undefined);
 });
 
@@ -98,7 +98,7 @@ describe('createAvatarAction billing', () => {
     await createAvatarAction(makePhotos(4));
 
     expect(usageMeter.guard).toHaveBeenCalledWith('c-1', 100_00, 4 * 1_00);
-    expect(usageMeter.record).toHaveBeenCalledWith('c-1', 'avatar_training', 4, 4 * 1_00, 4 * 1_00);
+    expect(usageMeter.record).toHaveBeenCalledWith('res-1', 'avatar_training', 4, 4 * 1_00);
   });
 
   it('records only the cost for photos actually processed when training fails midway', async () => {
@@ -111,8 +111,17 @@ describe('createAvatarAction billing', () => {
 
     await createAvatarAction(makePhotos(4));
 
-    expect(usageMeter.record).toHaveBeenCalledWith('c-1', 'avatar_training', 2, 2 * 1_00, 4 * 1_00);
+    expect(usageMeter.record).toHaveBeenCalledWith('res-1', 'avatar_training', 2, 2 * 1_00);
     expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'failed', expect.objectContaining({ errorMessage: 'HeyGen training failed' }));
+  });
+
+  it('returns ok:false when the HeyGen creation loop fails', async () => {
+    photoAvatarProvider.uploadAsset.mockRejectedValue(new Error('HeyGen upload error: bad file'));
+    const { createAvatarAction } = await import('./actions');
+    const result = await createAvatarAction(makePhotos(4));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bad file|failed/i);
+    expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'failed', expect.objectContaining({ errorMessage: expect.any(String) }));
   });
 });
 
@@ -144,7 +153,7 @@ describe('generatePromptLookAction billing', () => {
 
     expect(result.ok).toBe(true);
     expect(usageMeter.guard).toHaveBeenCalledWith('c-1', 100_00, 1_00);
-    expect(usageMeter.record).toHaveBeenCalledWith('c-1', 'avatar_look_generation', 1, 1_00);
+    expect(usageMeter.record).toHaveBeenCalledWith('res-1', 'avatar_look_generation', 1, 1_00);
   });
 
   it('persists the newly generated look id onto the avatar instead of discarding it', async () => {

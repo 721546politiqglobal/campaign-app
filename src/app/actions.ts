@@ -3,14 +3,15 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireSession, signInAs, signOut } from '@/lib/session';
-import { adminDb } from '@/lib/supabase';
-import { uid } from '@/lib/store';
+import { adminDb, throwOnError } from '@/lib/supabase';
+import { uid, prefixedId } from '@/lib/store';
 import { getCampaign } from '@/lib/data';
 import { lifecycle, disclosureEngine, usageMeter, billingGate, contentGenerator, publisher, videoProvider, voiceProvider, photoAvatarProvider } from '@/lib/services';
 import { contentRepo, approvalRepo, disclosureRepo, auditRepo } from '@/lib/repos';
-import { ContentType, ContentStatus, Platform, VIDEO_CONTENT_TYPES } from '@/domain/types';
+import { ContentType, ContentStatus, ContentItem, Platform, VIDEO_CONTENT_TYPES, isContentType } from '@/domain/types';
 import { GateError } from '@/domain/content-lifecycle';
 import { combineDisclosureText } from '@/domain/disclosure';
+import { zonedNaiveToUtc } from '@/lib/timezone';
 import { CapExceeded } from '@/domain/usage';
 import { BillingBlocked } from '@/domain/billing';
 import { can } from '@/lib/permissions';
@@ -24,16 +25,46 @@ function guard<T>(fn: () => Promise<T>): Promise<Result> {
   });
 }
 
+// Every content server action must confirm the item belongs to the caller's
+// campaign before acting on it — the DB has no RLS, so this is the tenant boundary.
+async function requireOwnedItem(id: string, campaignId: string): Promise<ContentItem | null> {
+  const item = await contentRepo.get(id);
+  if (!item || item.campaignId !== campaignId) return null;
+  return item;
+}
+
+const NOT_FOUND = { ok: false as const, error: 'Content not found.' };
+
+// super_admin sessions carry no campaign (campaignId === null). Tenant-scoped
+// actions must refuse rather than silently query `campaign_id = null`
+// (audit finding DATA-18).
+function tenantId(s: { campaignId: string | null }): string | null {
+  return s.campaignId ?? null;
+}
+
 const DUMMY_HASH = '$2a$10$abcdefghijklmnopqrstuuabcdefghijklmnopqrstuuabcdefghijk';
 
 export async function loginAction(formData: FormData) {
   const bcrypt = await import('bcryptjs');
   const { setSessionCookie } = await import('@/lib/session');
+  const { headers } = await import('next/headers');
+  const { isLockedOut, getAttempts, recordFailure, clearAttempts } = await import('@/lib/login-throttle');
 
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
   const password = String(formData.get('password') ?? '');
 
   if (!email || !password) redirect('/login?error=1');
+
+  const now = Date.now();
+  const ip = (headers().get('x-forwarded-for') ?? '').split(',')[0].trim() || 'unknown';
+  const ipKey = `ip:${ip}`;
+  const emailKey = `email:${email}`;
+
+  // Fail closed on lockout before touching bcrypt (SEC-10).
+  const [ipState, emailState] = await Promise.all([getAttempts(ipKey), getAttempts(emailKey)]);
+  if (isLockedOut(ipState, now) || isLockedOut(emailState, now)) {
+    redirect('/login?error=locked');
+  }
 
   const { data: user } = await adminDb
     .from('users')
@@ -45,8 +76,12 @@ export async function loginAction(formData: FormData) {
   const hash = user?.password_hash ?? DUMMY_HASH;
   const valid = await bcrypt.default.compare(password, hash);
 
-  if (!valid || !user) redirect('/login?error=1');
+  if (!valid || !user) {
+    await Promise.all([recordFailure(ipKey, now), recordFailure(emailKey, now)]);
+    redirect('/login?error=1');
+  }
 
+  await Promise.all([clearAttempts(ipKey), clearAttempts(emailKey)]);
   setSessionCookie({
     userId: user.id,
     name: user.name,
@@ -93,38 +128,43 @@ export async function joinAction(formData: FormData) {
   if (existing?.password_hash) redirect(`${base}&error=email`);
 
   const password_hash = await bcrypt.default.hash(password, 10);
-  const userId = existing?.id ?? 'u-' + Math.random().toString(36).slice(2, 9);
+  const userId = existing?.id ?? prefixedId('u-');
+
+  // Atomically claim the invite: only one concurrent redemption can flip
+  // used_at from null. If no row comes back, someone else already claimed it
+  // (audit finding DATA-11) — bail before creating any user.
+  const { data: claimed } = await adminDb.from('invite_codes')
+    .update({ used_by: userId, used_at: new Date().toISOString() })
+    .eq('code', code)
+    .is('used_at', null)
+    .select()
+    .maybeSingle();
+  if (!claimed) redirect(`${base}&error=used`);
 
   if (existing) {
-    await adminDb.from('users').update({
-      name,
-      password_hash,
-      campaign_id: invite.campaign_id,
-      role: invite.role,
-    }).eq('id', existing.id);
+    await throwOnError(
+      adminDb.from('users').update({
+        name, password_hash, campaign_id: invite.campaign_id, role: invite.role,
+      }).eq('id', existing.id),
+      'users.join.update',
+    );
   } else {
-    await adminDb.from('users').insert({
-      id: userId,
-      campaign_id: invite.campaign_id,
-      name,
-      email,
-      password_hash,
-      role: invite.role,
-    });
+    await throwOnError(
+      adminDb.from('users').insert({
+        id: userId, campaign_id: invite.campaign_id, name, email, password_hash, role: invite.role,
+      }),
+      'users.join.insert',
+    );
   }
 
-  await adminDb.from('invite_codes')
-    .update({ used_by: userId, used_at: new Date().toISOString() })
-    .eq('code', code);
-
-  await adminDb.from('audit_entries').insert({
-    campaign_id: invite.campaign_id,
-    actor_user_id: userId,
-    action: 'user_joined',
-    entity_type: 'user',
-    entity_id: userId,
-    details: { via_invite: code },
-  });
+  await throwOnError(
+    adminDb.from('audit_entries').insert({
+      campaign_id: invite.campaign_id, actor_user_id: userId,
+      action: 'user_joined', entity_type: 'user', entity_id: userId,
+      details: { via_invite: code },
+    }),
+    'audit_entries.join',
+  );
 
   setSessionCookie({
     userId,
@@ -146,18 +186,23 @@ export async function createContentAction(formData: FormData) {
   const s = await requireSession();
   const campaign = await getCampaign(s.campaignId);
   if (!campaign) throw new Error('Campaign not found');
+  const rawType = String(formData.get('type') ?? '');
+  const type: ContentType = isContentType(rawType) ? rawType : 'social_post';
   const id = uid();
-  await adminDb.from('content_items').insert({
-    id,
-    campaign_id: s.campaignId,
-    type: (formData.get('type') as ContentType) || 'social_post',
-    title: String(formData.get('title') || 'Untitled'),
-    body: String(formData.get('body') || ''),
-    status: 'draft',
-    is_ai_generated: formData.get('isAiGenerated') === 'on',
-    target_jurisdictions: campaign.jurisdictions,
-    created_by: s.userId,
-  });
+  await throwOnError(
+    adminDb.from('content_items').insert({
+      id,
+      campaign_id: s.campaignId,
+      type,
+      title: String(formData.get('title') || 'Untitled'),
+      body: String(formData.get('body') || ''),
+      status: 'draft',
+      is_ai_generated: formData.get('isAiGenerated') === 'on',
+      target_jurisdictions: campaign.jurisdictions,
+      created_by: s.userId,
+    }),
+    'content_items.create',
+  );
   redirect(`/content/${id}`);
 }
 
@@ -174,7 +219,7 @@ export async function generateDraftAction(instruction: string, type: string) {
 
   const cost = CONTENT_COST_CENTS[type] ?? 5_00;
   await billingGate.check(s.campaignId);
-  await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, cost);
+  const reservationId = await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, cost);
   try {
     return await contentGenerator.draft({
       instruction,
@@ -184,12 +229,13 @@ export async function generateDraftAction(instruction: string, type: string) {
   } finally {
     // Record even if draft() throws — the Anthropic call already happened
     // (and was billed by Anthropic) regardless of whether we got usable text back.
-    await usageMeter.record(s.campaignId, 'llm_tokens', 1, cost);
+    await usageMeter.record(reservationId, 'llm_tokens', 1, cost);
   }
 }
 
 export async function submitAction(id: string): Promise<Result> {
   const s = await requireSession();
+  if (!(await requireOwnedItem(id, s.campaignId))) return NOT_FOUND;
   const r = await guard(() => lifecycle.submitForReview(id, s.userId));
   revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
   return r;
@@ -197,6 +243,8 @@ export async function submitAction(id: string): Promise<Result> {
 
 export async function decideAction(id: string, decision: 'approve' | 'reject', note: string): Promise<Result> {
   const s = await requireSession();
+  if (decision === 'approve' && !can(s.role, 'approve')) return { ok: false, error: 'Permission denied.' };
+  if (!(await requireOwnedItem(id, s.campaignId))) return NOT_FOUND;
   const r = await guard(() =>
     decision === 'approve'
       ? lifecycle.approve(id, s.userId, note)
@@ -207,8 +255,8 @@ export async function decideAction(id: string, decision: 'approve' | 'reject', n
 
 export async function attachDisclosureAction(id: string): Promise<Result> {
   const s = await requireSession();
-  const item = await contentRepo.get(id);
-  if (!item) return { ok: false, error: 'Content not found.' };
+  const item = await requireOwnedItem(id, s.campaignId);
+  if (!item) return NOT_FOUND;
   const required = await disclosureEngine.requiredFor(item.targetJurisdictions, item.isAiGenerated);
   for (const req of required) {
     await disclosureRepo.add({
@@ -223,6 +271,7 @@ export async function attachDisclosureAction(id: string): Promise<Result> {
 export async function scheduleAction(id: string): Promise<Result> {
   const s = await requireSession();
   if (!can(s.role, 'schedule')) return { ok: false, error: 'Permission denied.' };
+  if (!(await requireOwnedItem(id, s.campaignId))) return NOT_FOUND;
   const r = await guard(() => lifecycle.schedule(id, s.userId));
   revalidatePath(`/content/${id}`); revalidatePath('/');
   return r;
@@ -231,18 +280,23 @@ export async function scheduleAction(id: string): Promise<Result> {
 export async function publishAction(id: string, platforms: Platform[]): Promise<Result> {
   const s = await requireSession();
   if (!can(s.role, 'publish')) return { ok: false, error: 'Permission denied.' };
-  const item = await contentRepo.get(id);
-  if (!item) return { ok: false, error: 'Content not found.' };
+  const item = await requireOwnedItem(id, s.campaignId);
+  if (!item) return NOT_FOUND;
   const disc = await disclosureRepo.listFor(id);
-  const r = await guard(async () => {
-    await lifecycle.markPublished(id, s.userId);
-    await publisher.publish({
-      platforms, text: item.body,
-      disclosureText: combineDisclosureText(disc),
-      mediaUrl: item.mediaUrl ?? undefined,
-    });
+  // Publish first, inspect the per-platform results, and only mark the item
+  // published if at least one platform actually accepted the post.
+  const results = await publisher.publish({
+    platforms, text: item.body,
+    disclosureText: combineDisclosureText(disc),
+    mediaUrl: item.mediaUrl ?? undefined,
   });
+  const failed = results.filter(r => r.status === 'failed');
+  if (failed.length === results.length) {
+    return { ok: false, error: `Publishing failed: ${failed.map(f => `${f.platform} (${f.error ?? 'unknown'})`).join(', ')}` };
+  }
+  const r = await guard(() => lifecycle.markPublished(id, s.userId));
   revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
+  if (r.ok && failed.length) return { ok: false, error: `Published, but failed on: ${failed.map(f => f.platform).join(', ')}` };
   return r;
 }
 
@@ -291,24 +345,46 @@ export async function generateVideoAction(
   // that's a single global avatar shared across every tenant, so silently using
   // it would generate video of the wrong (possibly non-consented) candidate.
   if (!avatarId) return { ok: false, error: 'No avatar is set up for this campaign yet. Add one on the Avatars page first.' };
+  const heygenVoiceId = overrides?.voiceId ?? profile?.heygenVoiceId ?? undefined;
+  // Do not fall back to the global HEYGEN_VOICE_ID — that narrates every
+  // tenant's video with one shared voice. And never pass the ElevenLabs id
+  // here: HeyGen uses a different voice-id namespace and 400s on it (INT-7).
+  if (!heygenVoiceId) return { ok: false, error: 'No video voice is set up for this campaign yet. Contact your platform admin to assign one.' };
   const VIDEO_COST_CENTS = 50_00;
   try {
     await billingGate.check(s.campaignId);
-    await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, VIDEO_COST_CENTS);
-    const { videoId } = await videoProvider.generateAvatarVideo({
-      script,
-      avatarId,
-      voiceId: overrides?.voiceId ?? profile?.elevenLabsVoiceId ?? undefined,
-      background: overrides?.background ?? profile?.videoBackground ?? 'plain',
-      aspectRatio: overrides?.aspectRatio ?? profile?.videoAspectRatio ?? '16:9',
-    });
-    await usageMeter.record(s.campaignId, 'video_generation', 1, VIDEO_COST_CENTS);
-    await adminDb.from('audit_entries').insert({
-      campaign_id: s.campaignId, actor_user_id: s.userId,
-      action: 'generate_video', entity_type: 'content_item', entity_id: contentId,
-      details: { videoId },
-    });
-    return { ok: true, videoId };
+    const reservationId = await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, VIDEO_COST_CENTS);
+    let cost = 0;
+    try {
+      const { videoId } = await videoProvider.generateAvatarVideo({
+        script,
+        avatarId,
+        voiceId: heygenVoiceId,
+        background: overrides?.background ?? profile?.videoBackground ?? 'plain',
+        aspectRatio: overrides?.aspectRatio ?? profile?.videoAspectRatio ?? '16:9',
+      });
+      cost = VIDEO_COST_CENTS; // provider accepted the job — this is billable
+      // Persist the job on the content row so a page refresh resumes polling
+      // instead of orphaning this paid ($50) render (INT-5).
+      await throwOnError(
+        adminDb.from('content_items')
+          .update({ video_job_id: videoId, video_status: 'processing', updated_at: new Date().toISOString() })
+          .eq('id', contentId),
+        'content_items.video_job',
+      );
+      await throwOnError(
+        adminDb.from('audit_entries').insert({
+          campaign_id: s.campaignId, actor_user_id: s.userId,
+          action: 'generate_video', entity_type: 'content_item', entity_id: contentId,
+          details: { videoId },
+        }),
+        'audit_entries.generate_video',
+      );
+      return { ok: true, videoId };
+    } finally {
+      // Always release the reservation; bill only if the job was accepted.
+      await usageMeter.record(reservationId, 'video_generation', 1, cost);
+    }
   } catch (e) {
     if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
     throw e;
@@ -316,21 +392,50 @@ export async function generateVideoAction(
 }
 
 export async function getVideoStatusAction(videoId: string): Promise<{ status: string; url?: string }> {
-  return videoProvider.getVideoStatus(videoId);
+  const s = await requireSession(); // was unauthenticated — anyone could probe HeyGen job status (INT-10)
+  const result = await videoProvider.getVideoStatus(videoId);
+  // Reconcile the persisted job so a resumed poll lands the final state on the
+  // content row (INT-5). Scoped to the caller's campaign.
+  if (result.status === 'completed' && result.url) {
+    await adminDb.from('content_items')
+      .update({ video_status: 'completed', media_url: result.url, updated_at: new Date().toISOString() })
+      .eq('video_job_id', videoId).eq('campaign_id', s.campaignId);
+  } else if (result.status === 'failed') {
+    await adminDb.from('content_items')
+      .update({ video_status: 'failed', updated_at: new Date().toISOString() })
+      .eq('video_job_id', videoId).eq('campaign_id', s.campaignId);
+  }
+  return result;
 }
 
 // ── Voice synthesis ───────────────────────────────────────────────────────────
 
 export async function synthesizeVoiceAction(text: string): Promise<Result & { audioUrl?: string }> {
   const s = await requireSession();
-  const campaign = await getCampaign(s.campaignId);
+  const { getCandidateProfile } = await import('@/lib/candidate');
+  const [campaign, profile] = await Promise.all([
+    getCampaign(s.campaignId),
+    getCandidateProfile(s.campaignId),
+  ]);
   if (!campaign) return { ok: false, error: 'Campaign not found.' };
+  // Use the campaign's configured voice; never fall back to a global/stock
+  // voice that could be another tenant's cloned voice (INT-6). Refuse (and
+  // don't bill) when none is set.
+  const voiceId = profile?.elevenLabsVoiceId ?? undefined;
+  if (!voiceId) {
+    return { ok: false, error: 'No voice is configured for this campaign yet. Set one in Settings → Avatar.' };
+  }
   try {
     await billingGate.check(s.campaignId);
-    await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, 20_00);
-    const { audioUrl } = await voiceProvider.synthesize({ text });
-    await usageMeter.record(s.campaignId, 'voice_synthesis', 1, 20_00);
-    return { ok: true, audioUrl };
+    const reservationId = await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, 20_00);
+    let cost = 0;
+    try {
+      const { audioUrl } = await voiceProvider.synthesize({ text, voiceId });
+      cost = 20_00;
+      return { ok: true, audioUrl };
+    } finally {
+      await usageMeter.record(reservationId, 'voice_synthesis', 1, cost);
+    }
   } catch (e) {
     if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
     throw e;
@@ -340,10 +445,17 @@ export async function synthesizeVoiceAction(text: string): Promise<Result & { au
 // ── Wizard actions ────────────────────────────────────────────────────────────
 
 export async function saveBodyAction(id: string, body: string): Promise<Result> {
-  await requireSession();
-  await adminDb.from('content_items')
+  const s = await requireSession();
+  const item = await requireOwnedItem(id, s.campaignId);
+  if (!item) return NOT_FOUND;
+  // Editing after approval would let unapproved text reach publish — only allow pre-approval states.
+  if (!['draft', 'in_review', 'rejected'].includes(item.status)) {
+    return { ok: false, error: 'This content can no longer be edited. Move it back to draft first.' };
+  }
+  const { error } = await adminDb.from('content_items')
     .update({ body, updated_at: new Date().toISOString() })
     .eq('id', id);
+  if (error) return { ok: false, error: 'Save failed.' };
   revalidatePath(`/content/${id}`);
   return { ok: true };
 }
@@ -351,32 +463,30 @@ export async function saveBodyAction(id: string, body: string): Promise<Result> 
 export async function approveTextAction(id: string): Promise<Result> {
   const s = await requireSession();
   if (!can(s.role, 'approve')) return { ok: false, error: 'Permission denied.' };
-  const item = await contentRepo.get(id);
-  if (!item) return { ok: false, error: 'Content not found.' };
+  const item = await requireOwnedItem(id, s.campaignId);
+  if (!item) return NOT_FOUND;
 
-  await approvalRepo.add({
-    contentItemId: id,
-    campaignId: item.campaignId,
-    approverUserId: s.userId,
-    decision: 'approve',
-  });
-
-  let nextStatus: ContentStatus;
-  if (VIDEO_CONTENT_TYPES.includes(item.type)) {
-    nextStatus = 'in_review';
-  } else if (item.isAiGenerated) {
-    nextStatus = 'approved';
-  } else {
-    nextStatus = 'scheduled';
+  // The wizard presents "review + approve" as one click, but the lifecycle FSM
+  // requires in_review before approved — so a freshly generated draft needs the
+  // submit_for_review transition first (also keeps the audit trail complete).
+  if (item.status === 'draft') {
+    const submitResult = await guard(() => lifecycle.submitForReview(id, s.userId));
+    if (!submitResult.ok) return submitResult;
   }
 
-  await adminDb.from('content_items')
-    .update({ status: nextStatus, updated_at: new Date().toISOString() })
-    .eq('id', id);
-  await auditRepo.append({
-    campaignId: item.campaignId, actorUserId: s.userId,
-    action: 'approve_text', entityType: 'content_item', entityId: id,
-  });
+  // Approve via the lifecycle so a valid transition is enforced and an approval
+  // record is written. Scheduling never happens here — it goes through the
+  // gated confirmDisclosureAction/scheduleAction so the hard gate always runs.
+  const r = await guard(() => lifecycle.approve(id, s.userId));
+  if (!r.ok) return r;
+  // Video types still need the video-generation step, so send them back to
+  // in_review; the approval remains on record for the eventual schedule gate.
+  if (VIDEO_CONTENT_TYPES.includes(item.type)) {
+    const { error } = await adminDb.from('content_items')
+      .update({ status: 'in_review', updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) return { ok: false, error: 'Update failed.' };
+  }
   revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
   return { ok: true };
 }
@@ -384,19 +494,22 @@ export async function approveTextAction(id: string): Promise<Result> {
 export async function confirmVideoAction(id: string, videoUrl: string): Promise<Result> {
   const s = await requireSession();
   if (!can(s.role, 'approve')) return { ok: false, error: 'Permission denied.' };
-  const item = await contentRepo.get(id);
-  if (!item) return { ok: false, error: 'Content not found.' };
-  const nextStatus: ContentStatus = item.isAiGenerated ? 'approved' : 'scheduled';
-  await adminDb.from('content_items')
-    .update({ status: nextStatus, media_url: videoUrl, updated_at: new Date().toISOString() })
+  const item = await requireOwnedItem(id, s.campaignId);
+  if (!item) return NOT_FOUND;
+  // Persist the rendered video, then approve through the lifecycle. Scheduling
+  // is never done here — it always flows through the gated schedule actions.
+  const { error } = await adminDb.from('content_items')
+    .update({ media_url: videoUrl, updated_at: new Date().toISOString() })
     .eq('id', id);
+  if (error) return { ok: false, error: 'Update failed.' };
   await auditRepo.append({
     campaignId: item.campaignId, actorUserId: s.userId,
     action: 'confirm_video', entityType: 'content_item', entityId: id,
     details: { videoUrl },
   });
+  const r = await guard(() => lifecycle.approve(id, s.userId));
   revalidatePath(`/content/${id}`);
-  return { ok: true };
+  return r;
 }
 
 export async function generateFromMonitoringAction(
@@ -404,6 +517,7 @@ export async function generateFromMonitoringAction(
   contentType: string,
 ): Promise<Result & { contentId?: string }> {
   const s = await requireSession();
+  if (!isContentType(contentType)) return { ok: false, error: 'Unknown content type.' };
   const { getCandidateProfile } = await import('@/lib/candidate');
   const { CONTENT_COST_CENTS } = await import('@/lib/prompt');
 
@@ -417,13 +531,14 @@ export async function generateFromMonitoringAction(
     .from('monitoring_results')
     .select('*')
     .eq('id', monitoringResultId)
+    .eq('campaign_id', s.campaignId)
     .single();
   if (!result) return { ok: false, error: 'Monitoring result not found.' };
 
   try {
     const cost = CONTENT_COST_CENTS[contentType] ?? 5_00;
     await billingGate.check(s.campaignId);
-    await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, cost);
+    const reservationId = await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, cost);
 
     const instruction =
       `Respond to this news story${result.opponent ? ` about ${result.opponent}` : ''} on behalf of a political campaign.\n\n` +
@@ -439,21 +554,24 @@ export async function generateFromMonitoringAction(
     } finally {
       // Record even if draft() throws — the Anthropic call already happened
       // (and was billed by Anthropic) regardless of whether we got usable text back.
-      await usageMeter.record(s.campaignId, 'llm_tokens', 1, cost);
+      await usageMeter.record(reservationId, 'llm_tokens', 1, cost);
     }
 
     const id = uid();
-    await adminDb.from('content_items').insert({
-      id,
-      campaign_id: s.campaignId,
-      type: contentType,
-      title: out.title,
-      body: out.text,
-      status: 'draft',
-      is_ai_generated: true,
-      target_jurisdictions: campaign.jurisdictions,
-      created_by: s.userId,
-    });
+    await throwOnError(
+      adminDb.from('content_items').insert({
+        id,
+        campaign_id: s.campaignId,
+        type: contentType,
+        title: out.title,
+        body: out.text,
+        status: 'draft',
+        is_ai_generated: true,
+        target_jurisdictions: campaign.jurisdictions,
+        created_by: s.userId,
+      }),
+      'content_items.from_monitoring',
+    );
 
     await auditRepo.append({
       campaignId: s.campaignId,
@@ -473,8 +591,9 @@ export async function generateFromMonitoringAction(
 
 export async function confirmDisclosureAction(id: string): Promise<Result> {
   const s = await requireSession();
-  const item = await contentRepo.get(id);
-  if (!item) return { ok: false, error: 'Content not found.' };
+  if (!can(s.role, 'schedule')) return { ok: false, error: 'Permission denied.' };
+  const item = await requireOwnedItem(id, s.campaignId);
+  if (!item) return NOT_FOUND;
   const required = await disclosureEngine.requiredFor(item.targetJurisdictions, item.isAiGenerated);
   for (const req of required) {
     await disclosureRepo.add({
@@ -485,24 +604,21 @@ export async function confirmDisclosureAction(id: string): Promise<Result> {
       placement: req.placement,
     });
   }
-  await adminDb.from('content_items')
-    .update({ status: 'scheduled', updated_at: new Date().toISOString() })
-    .eq('id', id);
-  await auditRepo.append({
-    campaignId: item.campaignId, actorUserId: s.userId,
-    action: 'confirm_disclosure', entityType: 'content_item', entityId: id,
-  });
-  revalidatePath(`/content/${id}`);
-  return { ok: true };
+  // Route through the hard gate — enforces approval-on-record + disclosure-for-AI + valid transition.
+  const r = await guard(() => lifecycle.schedule(id, s.userId));
+  revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
+  return r;
 }
 
 export async function dismissMonitoringAction(id: string): Promise<Result> {
+  const s = await requireSession();
+  const campaignId = tenantId(s);
+  if (!campaignId) return { ok: false, error: 'No campaign in session.' };
   return guard(async () => {
-    const s = await requireSession();
     await adminDb.from('monitoring_results')
       .update({ dismissed_at: new Date().toISOString() })
       .eq('id', id)
-      .eq('campaign_id', s.campaignId);
+      .eq('campaign_id', campaignId);
     revalidatePath('/monitoring');
   });
 }
@@ -511,6 +627,7 @@ export async function saveVideoSettingsAction(data: {
   heygenBaseAvatarId?: string | null;
   heygenAvatarId?: string | null;
   elevenLabsVoiceId?: string | null;
+  heygenVoiceId?: string | null;
   videoAspectRatio?: '16:9' | '9:16' | '1:1';
   videoBackground?: string;
 }): Promise<Result> {
@@ -557,7 +674,11 @@ export async function scheduleWithTimeAction(
     const s = await requireSession();
     if (!can(s.role, 'schedule')) throw new GateError('Permission denied.');
     if (!scheduledAt) throw new GateError('Scheduled time is required');
-    if (new Date(scheduledAt) <= new Date()) throw new GateError('Scheduled time must be in the future');
+    // The wizard sends a naive datetime-local string plus the IANA timezone.
+    // Interpret it in that zone (not the server's) so the stored UTC instant is
+    // correct — otherwise posts fire hours early (audit finding DATA-8).
+    const scheduledUtc = zonedNaiveToUtc(scheduledAt, timezone);
+    if (scheduledUtc <= new Date()) throw new GateError('Scheduled time must be in the future');
 
     const item = await contentRepo.get(id);
     if (!item || item.campaignId !== s.campaignId) throw new GateError('Content not found.');
@@ -566,14 +687,17 @@ export async function scheduleWithTimeAction(
     // before status can move to 'scheduled' — same check scheduleAction uses.
     await lifecycle.schedule(id, s.userId);
 
-    await adminDb.from('content_items')
-      .update({
-        scheduled_at: new Date(scheduledAt).toISOString(),
-        timezone,
-        platforms,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id);
+    await throwOnError(
+      adminDb.from('content_items')
+        .update({
+          scheduled_at: scheduledUtc.toISOString(),
+          timezone,
+          platforms,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id),
+      'content_items.scheduleWithTime',
+    );
 
     await auditRepo.append({
       campaignId: s.campaignId,
@@ -612,9 +736,10 @@ export async function createAvatarAction(formData: FormData): Promise<Result & {
   if (!campaign) return { ok: false, error: 'Campaign not found.' };
 
   const estimatedCost = files.length * AVATAR_LOOK_COST_CENTS;
+  let reservationId: string;
   try {
     await billingGate.check(s.campaignId);
-    await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, estimatedCost);
+    reservationId = await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, estimatedCost);
   } catch (e) {
     if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
     throw e;
@@ -648,6 +773,7 @@ export async function createAvatarAction(formData: FormData): Promise<Result & {
   });
 
   let processedCount = 0;
+  let createError: string | null = null;
   try {
     let groupId: string | undefined;
     let baseLookId: string | undefined;
@@ -664,15 +790,18 @@ export async function createAvatarAction(formData: FormData): Promise<Result & {
     }
     await updateAvatarStatus(avatarId, 'training', { heygenGroupId: groupId, heygenLookId: baseLookId });
   } catch (e) {
-    await updateAvatarStatus(avatarId, 'failed', { errorMessage: e instanceof Error ? e.message : String(e) });
+    createError = e instanceof Error ? e.message : String(e);
+    await updateAvatarStatus(avatarId, 'failed', { errorMessage: createError });
   } finally {
     // Always finalize (even at processedCount 0) so the reservation from
     // guard() above is released promptly instead of relying on its 5-minute
     // auto-expiry.
-    await usageMeter.record(s.campaignId, 'avatar_training', processedCount, processedCount * AVATAR_LOOK_COST_CENTS, estimatedCost);
+    await usageMeter.record(reservationId, 'avatar_training', processedCount, processedCount * AVATAR_LOOK_COST_CENTS);
   }
 
   revalidatePath('/avatars');
+  // Report the failure instead of returning ok:true for a failed creation (INT-14).
+  if (createError) return { ok: false, error: `Avatar creation failed: ${createError}` };
   return { ok: true, avatarId };
 }
 
@@ -756,25 +885,30 @@ export async function generatePromptLookAction(avatarId: string, name: string, p
 
   try {
     await billingGate.check(s.campaignId);
-    await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, AVATAR_PROMPT_LOOK_COST_CENTS);
-    const { lookId } = await photoAvatarProvider.createPromptLook({
-      name: name.trim() || 'Styled look',
-      prompt: prompt.trim(),
-      avatarId: avatar.heygenLookId,
-    });
-    // The avatars table only tracks one heygen_look_id per row (see
-    // migration 012) — a newly generated look replaces it so video generation
-    // (which reads heygenAvatarId/heygenLookId) actually picks it up. Without
-    // this, the HeyGen asset we just paid for is created and then discarded.
-    if (lookId) {
-      await updateAvatarStatus(avatarId, avatar.status, { heygenLookId: lookId });
-      const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
-      const profile = await getCandidateProfile(s.campaignId);
-      if (profile?.activeAvatarId === avatarId) {
-        await upsertCandidateProfile(s.campaignId, { heygenAvatarId: lookId });
+    const reservationId = await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, AVATAR_PROMPT_LOOK_COST_CENTS);
+    let cost = 0;
+    try {
+      const { lookId } = await photoAvatarProvider.createPromptLook({
+        name: name.trim() || 'Styled look',
+        prompt: prompt.trim(),
+        avatarId: avatar.heygenLookId,
+      });
+      // The avatars table only tracks one heygen_look_id per row (see
+      // migration 012) — a newly generated look replaces it so video generation
+      // (which reads heygenAvatarId/heygenLookId) actually picks it up. Without
+      // this, the HeyGen asset we just paid for is created and then discarded.
+      if (lookId) {
+        cost = AVATAR_PROMPT_LOOK_COST_CENTS; // a look was actually produced
+        await updateAvatarStatus(avatarId, avatar.status, { heygenLookId: lookId });
+        const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
+        const profile = await getCandidateProfile(s.campaignId);
+        if (profile?.activeAvatarId === avatarId) {
+          await upsertCandidateProfile(s.campaignId, { heygenAvatarId: lookId });
+        }
       }
+    } finally {
+      await usageMeter.record(reservationId, 'avatar_look_generation', 1, cost);
     }
-    await usageMeter.record(s.campaignId, 'avatar_look_generation', 1, AVATAR_PROMPT_LOOK_COST_CENTS);
   } catch (e) {
     if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
     return { ok: false, error: e instanceof Error ? e.message : 'Failed to generate look.' };

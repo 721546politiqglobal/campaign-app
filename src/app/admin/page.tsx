@@ -89,19 +89,7 @@ export default async function AdminOverview() {
       </div>
 
       {/* Campaigns table */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>All campaigns</h2>
-        <button
-          className="btn primary"
-          style={{ fontSize: 13 }}
-          onClick={undefined}
-          form="create-campaign-form"
-          type="button"
-          formAction={undefined}
-        >
-          {/* Handled by modal below */}
-        </button>
-      </div>
+      <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>All campaigns</h2>
 
       <div className="card" style={{ padding: 0, marginBottom: 32 }}>
         <table>
@@ -117,7 +105,7 @@ export default async function AdminOverview() {
           </thead>
           <tbody>
             {campaigns.map(c => (
-              <tr key={c.id} className="row" onClick={undefined}>
+              <tr key={c.id}>
                 <td>
                   <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: 13.5 }}>{c.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
@@ -132,14 +120,14 @@ export default async function AdminOverview() {
                 <td>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                     {c.jurisdictions.map(j => (
-                      <span key={j} className="pill" style={{ fontSize: 10 }}>{j}</span>
+                      <span key={j} className="tag">{j}</span>
                     ))}
                   </div>
                 </td>
-                <td className="muted" style={{ fontVariantNumeric: 'tabular-nums' }}>{c.userCount}</td>
-                <td className="muted" style={{ fontVariantNumeric: 'tabular-nums' }}>{c.contentCount}</td>
+                <td className="data" style={{ color: 'var(--text-2)' }}>{c.userCount}</td>
+                <td className="data" style={{ color: 'var(--text-2)' }}>{c.contentCount}</td>
                 <td style={{ minWidth: 160 }}>
-                  <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4 }}>
+                  <div className="data" style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4 }}>
                     {fmt(c.monthlySpendCents)} <span style={{ color: 'var(--text-3)' }}>/ {fmt(c.monthlyCostCapCents)}</span>
                   </div>
                   <SpendBar spent={c.monthlySpendCents} cap={c.monthlyCostCapCents} />

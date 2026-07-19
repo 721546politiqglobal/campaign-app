@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation';
 import type { MonitoringResult } from '@/lib/data';
 import { dismissMonitoringAction } from '@/app/actions';
 
-const CREDIBILITY_BADGE: Record<string, { label: string; color: string; bg: string }> = {
-  high:   { label: '● High credibility',   color: '#16a34a', bg: 'color-mix(in srgb, #16a34a 12%, transparent)' },
-  medium: { label: '● Medium credibility', color: '#d97706', bg: 'color-mix(in srgb, #d97706 12%, transparent)' },
-  low:    { label: '● Low credibility',    color: '#dc2626', bg: 'color-mix(in srgb, #dc2626 12%, transparent)' },
+const CREDIBILITY_BADGE: Record<string, { label: string }> = {
+  high:   { label: 'High credibility' },
+  medium: { label: 'Medium credibility' },
+  low:    { label: 'Low credibility' },
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -42,6 +42,14 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
   const [filter, setFilter] = useState<Filter>('all');
   const [warnId, setWarnId] = useState<string | null>(null);
   const [dismissing, setDismissing] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  function toggleExpanded(id: string) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   const trendingIds = detectTrending(results);
 
@@ -74,11 +82,11 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
     router.refresh();
   }
 
-  const FILTERS: { key: Filter; label: string }[] = [
+  const FILTERS: { key: Filter; label: string; dot?: string }[] = [
     { key: 'all',    label: 'All' },
-    { key: 'high',   label: '🟢 High' },
-    { key: 'medium', label: '🟡 Medium' },
-    { key: 'low',    label: '🔴 Low' },
+    { key: 'high',   label: 'High',   dot: 'var(--ok)' },
+    { key: 'medium', label: 'Medium', dot: 'var(--warn)' },
+    { key: 'low',    label: 'Low',    dot: 'var(--bad)' },
     { key: 'news',   label: 'News' },
     { key: 'social', label: 'Social' },
   ];
@@ -88,9 +96,11 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
       {/* Filter bar */}
       <div className="btnrow" style={{ marginBottom: 20 }}>
         {FILTERS.map(f => (
-          <button key={f.key} className="btn"
-            onClick={() => setFilter(f.key)}
-            style={filter === f.key ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+          <button key={f.key} className={`btn${filter === f.key ? ' active' : ''}`}
+            onClick={() => setFilter(f.key)}>
+            {f.dot && (
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: f.dot, boxShadow: `0 0 6px ${f.dot}`, flexShrink: 0 }} />
+            )}
             {f.label}
           </button>
         ))}
@@ -100,12 +110,10 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
       {warnId && (() => {
         const result = results.find(r => r.id === warnId)!;
         return (
-          <div style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
-          }}>
-            <div className="card" style={{ maxWidth: 480, width: '90%' }}>
-              <h2 style={{ marginBottom: 10 }}>⚠️ Low-credibility source</h2>
+          <div className="modal-backdrop" style={{ zIndex: 50 }}>
+            <div className="modal" style={{ width: 480 }}>
+              <div className="modal-step" style={{ color: 'var(--warn)' }}>Low-credibility source</div>
+              <h3 style={{ marginBottom: 10, fontSize: 16 }}>Think before you respond</h3>
               <p className="muted" style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
                 <strong>{result.source}</strong> has a low credibility rating.
                 Responding publicly may give this story more attention than it deserves.
@@ -141,28 +149,29 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
             <div key={result.id} className="card" style={{ padding: '16px 20px' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 600, fontSize: 13 }}>{result.source}</span>
-                  <span style={{
-                    fontSize: 11, padding: '2px 8px', borderRadius: 20,
-                    color: badge.color, background: badge.bg, fontWeight: 600,
-                  }}>{badge.label}</span>
-                  <span className="pill" style={{ fontSize: 10 }}>{CATEGORY_LABEL[result.category] ?? result.category}</span>
-                  {trending && (
-                    <span style={{
-                      fontSize: 11, padding: '2px 8px', borderRadius: 20,
-                      background: 'color-mix(in srgb, var(--warn) 15%, transparent)',
-                      color: 'var(--warn)', fontWeight: 700,
-                    }}>🔥 Trending</span>
-                  )}
+                  <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{result.source}</span>
+                  <span className={`tag cred-${result.credibility}`}>
+                    <span className="dot" />{badge.label}
+                  </span>
+                  <span className="tag">{CATEGORY_LABEL[result.category] ?? result.category}</span>
+                  {trending && <span className="tag trending">Trending</span>}
                 </div>
-                <span className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                <span className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap', color: 'var(--text-3)' }}>
                   {new Date(result.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                 </span>
               </div>
 
-              <p style={{ fontSize: 14, lineHeight: 1.6, margin: '0 0 14px', color: 'var(--text)' }}>
+              <p className={expanded.has(result.id) ? undefined : 'excerpt-clamp'}
+                 style={{ fontSize: 14, lineHeight: 1.6, margin: '0 0 8px', color: 'var(--text)' }}>
                 {result.excerpt}
               </p>
+              {result.excerpt.length > 160 && (
+                <button type="button" onClick={() => toggleExpanded(result.id)}
+                  style={{ background: 'none', border: 'none', padding: 0, marginBottom: 14,
+                           color: 'var(--accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  {expanded.has(result.id) ? 'Show less' : 'Show more'}
+                </button>
+              )}
 
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button className="btn primary" style={{ fontSize: 12, padding: '6px 14px' }}

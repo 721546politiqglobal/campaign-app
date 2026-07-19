@@ -4,9 +4,15 @@ import { stripe } from '@/lib/stripe';
 import { sumUsageCents, buildSyncKey } from '@/lib/billing-sync';
 import { METER_EVENT_NAME } from '@/lib/billing-catalog';
 
+// Keep `until` behind the wall clock so a usage_events row whose DB-side
+// created_at lands just after this run reads can't fall into the gap between
+// `until` and the next run's `since` (= this until) and be skipped forever (BILL-8).
+const SYNC_SAFETY_LAG_MS = 60_000;
+
 export async function GET(req: NextRequest) {
+  const secret = process.env.CRON_SECRET;
   const auth = req.headers.get('authorization');
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!secret || auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   if (!stripe) return NextResponse.json({ error: 'Billing not configured' }, { status: 503 });
@@ -25,6 +31,16 @@ export async function GET(req: NextRequest) {
   const results: { campaignId: string; synced: boolean; error?: string }[] = [];
 
   for (const campaign of campaigns ?? []) {
+    // Single-flight: only one run may sync a campaign at a time. A contended
+    // lease (another run holds it) is skipped, not double-billed (BILL-4).
+    const { data: claimed } = await adminDb.rpc('claim_usage_sync', {
+      p_campaign_id: campaign.id,
+      p_ttl_seconds: 300,
+    });
+    if (!claimed) {
+      results.push({ campaignId: campaign.id, synced: false, error: 'sync already in progress' });
+      continue;
+    }
     try {
       const { data: cursorRow } = await adminDb
         .from('usage_sync_cursor')
@@ -32,7 +48,9 @@ export async function GET(req: NextRequest) {
         .eq('campaign_id', campaign.id)
         .maybeSingle();
 
-      const since = cursorRow?.last_synced_at ?? '1970-01-01T00:00:00Z';
+      // A subscribed campaign with no cursor row (pre-dates the seed fix, or a
+      // race) must not retro-bill from epoch — fall back to now, not 1970.
+      const since = cursorRow?.last_synced_at ?? new Date().toISOString();
       let until: string;
       let key: string;
 
@@ -43,7 +61,7 @@ export async function GET(req: NextRequest) {
         until = cursorRow.pending_until;
         key = cursorRow.pending_key;
       } else {
-        until = new Date().toISOString();
+        until = new Date(Date.now() - SYNC_SAFETY_LAG_MS).toISOString();
         key = buildSyncKey(campaign.id, since, until);
       }
 
@@ -91,6 +109,8 @@ export async function GET(req: NextRequest) {
       results.push({ campaignId: campaign.id, synced: true });
     } catch (e) {
       results.push({ campaignId: campaign.id, synced: false, error: String(e) });
+    } finally {
+      await adminDb.rpc('release_usage_sync', { p_campaign_id: campaign.id });
     }
   }
 

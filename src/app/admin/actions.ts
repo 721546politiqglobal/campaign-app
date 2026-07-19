@@ -3,8 +3,9 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireAdmin } from '@/lib/session';
-import { adminDb } from '@/lib/supabase';
+import { adminDb, throwOnError } from '@/lib/supabase';
 import { stripe } from '@/lib/stripe';
+import { prefixedId, inviteCode } from '@/lib/store';
 
 export async function impersonateAction(userId: string) {
   await requireAdmin();
@@ -26,14 +27,21 @@ export async function generateInviteAction(formData: FormData) {
   const campaignId = String(formData.get('campaignId'));
   const role = String(formData.get('role') ?? 'staff');
   if (!campaignId) return;
-  const code = 'inv_' + Math.random().toString(36).slice(2, 14);
-  await adminDb.from('invite_codes').insert({
-    code,
-    campaign_id: campaignId,
-    role,
-    created_by: s.userId,
-    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-  });
+  // An unused invite is a reserved seat — count it against the plan limit too.
+  const { getCampaignSeatUsage } = await import('@/lib/data');
+  const seats = await getCampaignSeatUsage(campaignId);
+  if (seats.limit !== null && seats.used >= seats.limit) return;
+  const code = inviteCode();
+  await throwOnError(
+    adminDb.from('invite_codes').insert({
+      code,
+      campaign_id: campaignId,
+      role,
+      created_by: s.userId,
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    }),
+    'invite_codes.generate',
+  );
   revalidatePath(`/admin/campaigns/${campaignId}`);
 }
 
@@ -69,11 +77,14 @@ export async function createCampaignAction(formData: FormData) {
   const jurisdictions = jurisdictionsInput.length ? jurisdictionsInput : ['US-FEDERAL'];
 
   if (!name) return;
-  const id = 'camp-' + Math.random().toString(36).slice(2, 8);
-  await adminDb.from('campaigns').insert({
-    id, name, jurisdictions,
-    monthly_cost_cap_cents: Math.round(capDollars * 100),
-  });
+  const id = prefixedId('camp-');
+  await throwOnError(
+    adminDb.from('campaigns').insert({
+      id, name, jurisdictions,
+      monthly_cost_cap_cents: Math.round(capDollars * 100),
+    }),
+    'campaigns.create',
+  );
   revalidatePath('/admin');
   revalidatePath('/admin/campaigns');
   redirect(`/admin/campaigns/${id}`);
@@ -104,8 +115,19 @@ export async function assignPlanAction(formData: FormData): Promise<{ ok: boolea
   // Changing plans cancels the old subscription and starts a fresh one —
   // simpler than diffing subscription items, and plan changes are an
   // infrequent admin action, not a self-serve upgrade flow.
+  // invoice_now finalizes an invoice for un-reported metered usage on the old
+  // sub (otherwise that overage revenue is lost); prorate credits the unused
+  // portion of the flat fee so the customer isn't charged twice for the period.
   if (campaign.stripeSubscriptionId) {
-    await stripe.subscriptions.cancel(campaign.stripeSubscriptionId);
+    try {
+      await stripe.subscriptions.cancel(campaign.stripeSubscriptionId, { invoice_now: true, prorate: true });
+    } catch (err) {
+      // Already canceled (e.g. a prior plan change canceled it but failed
+      // before saving the replacement, or it was canceled independently) —
+      // Stripe reports this as "no such subscription" rather than a
+      // clearer "already canceled" error. Nothing left to cancel; proceed.
+      if ((err as { code?: string }).code !== 'resource_missing') throw err;
+    }
   }
 
   // With no payment method on the customer yet, Stripe would otherwise
@@ -132,6 +154,17 @@ export async function assignPlanAction(formData: FormData): Promise<{ ok: boolea
     grace_period_ends_at: null,
     current_period_end: currentPeriodEnd ? new Date(currentPeriodEnd * 1000).toISOString() : null,
   }).eq('id', campaignId);
+
+  // Seed the sync cursor to subscription start. Without this the first
+  // billing-sync run defaults `since` to 1970 and reports ALL historical
+  // usage_events (accrued before any plan existed) to Stripe, instantly
+  // consuming the allowance and generating overage for pre-subscription usage.
+  await adminDb.from('usage_sync_cursor').upsert({
+    campaign_id: campaignId,
+    last_synced_at: new Date().toISOString(),
+    pending_key: null,
+    pending_until: null,
+  });
 
   revalidatePath(`/admin/campaigns/${campaignId}`);
   return { ok: true };
@@ -168,7 +201,7 @@ export async function assignAvatarAction(formData: FormData) {
   const { insertAvatar } = await import('@/lib/avatars');
   const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
 
-  const avatarId = 'av-' + Math.random().toString(36).slice(2, 9);
+  const avatarId = prefixedId('av-');
   await insertAvatar({
     id: avatarId,
     campaignId,
@@ -200,6 +233,31 @@ export async function assignAvatarAction(formData: FormData) {
   revalidatePath('/avatars');
 }
 
+export async function assignVoiceAction(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const campaignId = String(formData.get('campaignId') ?? '').trim();
+  const heygenVoiceId = String(formData.get('heygen_voice_id') ?? '').trim();
+  if (!campaignId || !heygenVoiceId) return;
+
+  // Same explicit-attestation requirement as assignAvatarAction — a
+  // super_admin linking a pre-cloned HeyGen voice must confirm consent was
+  // actually obtained; it must never be auto-stamped just because they hit submit.
+  const consentConfirmed = formData.get('consent') === 'on';
+  if (!consentConfirmed) return;
+
+  const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
+
+  // Same guard as assignAvatarAction: upsertCandidateProfile's insert path
+  // requires full_name/preferred_name/office/district (not-null, no defaults)
+  // this action doesn't have. Only update when a profile already exists.
+  const existingProfile = await getCandidateProfile(campaignId);
+  if (existingProfile) {
+    await upsertCandidateProfile(campaignId, { heygenVoiceId });
+  }
+
+  revalidatePath(`/admin/campaigns/${campaignId}`);
+}
+
 export async function addUserAction(formData: FormData) {
   const s = await requireAdmin();
   const campaignId = String(formData.get('campaignId'));
@@ -208,7 +266,13 @@ export async function addUserAction(formData: FormData) {
   const role      = String(formData.get('role')  ?? 'staff');
   if (!name || !email || !campaignId) return;
 
-  const userId = 'u-' + Math.random().toString(36).slice(2, 9);
+  // Enforce the plan's seat limit (null = unlimited). Bail silently, matching
+  // this action's existing duplicate-email failure style (audit finding BILL-10).
+  const { getCampaignSeatUsage } = await import('@/lib/data');
+  const seats = await getCampaignSeatUsage(campaignId);
+  if (seats.limit !== null && seats.used >= seats.limit) return;
+
+  const userId = prefixedId('u-');
   const { error } = await adminDb.from('users').insert({
     id: userId, campaign_id: campaignId, name, email, role,
   });
@@ -216,14 +280,17 @@ export async function addUserAction(formData: FormData) {
   if (error) return;
 
   // Auto-generate an invite so the new user can set their password
-  const code = 'inv_' + Math.random().toString(36).slice(2, 14);
-  await adminDb.from('invite_codes').insert({
-    code,
-    campaign_id: campaignId,
-    role,
-    created_by: s.userId,
-    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-  });
+  const code = inviteCode();
+  await throwOnError(
+    adminDb.from('invite_codes').insert({
+      code,
+      campaign_id: campaignId,
+      role,
+      created_by: s.userId,
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    }),
+    'invite_codes.auto',
+  );
 
   revalidatePath(`/admin/campaigns/${campaignId}`);
   revalidatePath('/admin/users');
@@ -231,7 +298,13 @@ export async function addUserAction(formData: FormData) {
 
 export async function removeUserAction(userId: string, campaignId: string) {
   await requireAdmin();
-  await adminDb.from('users').delete().eq('id', userId);
+  // A user who authored an avatar (avatars.created_by / consent_confirmed_by →
+  // users(id)) cannot be hard-deleted; surface that instead of a silent no-op
+  // that leaves a "removed" user still able to log in (audit finding DATA-12).
+  await throwOnError(
+    adminDb.from('users').delete().eq('id', userId),
+    'users.remove',
+  );
   revalidatePath(`/admin/campaigns/${campaignId}`);
   revalidatePath('/admin/users');
 }
@@ -241,16 +314,19 @@ export async function updateDisclosureRuleAction(formData: FormData) {
   const jurisdiction = String(formData.get('jurisdiction'));
   const requiredText = String(formData.get('requiredText') ?? '').trim() || null;
   const placement = String(formData.get('placement') ?? 'overlay');
-  const blackoutDays = formData.get('blackoutDays')
-    ? Number(formData.get('blackoutDays')) : null;
 
-  await adminDb.from('disclosure_rules').update({
-    requires_ai_label: formData.get('requiresAiLabel') === 'on',
-    required_text: requiredText,
-    placement,
-    blackout_days_before_election: blackoutDays,
-    needs_legal_review: formData.get('needsLegalReview') === 'on',
-  }).eq('jurisdiction', jurisdiction);
+  // blackout_days_before_election is intentionally NOT written here: it was
+  // never enforced anywhere and enforcement needs a per-campaign election date
+  // the schema lacks (audit finding DATA-13). Column retained for future use.
+  await throwOnError(
+    adminDb.from('disclosure_rules').update({
+      requires_ai_label: formData.get('requiresAiLabel') === 'on',
+      required_text: requiredText,
+      placement,
+      needs_legal_review: formData.get('needsLegalReview') === 'on',
+    }).eq('jurisdiction', jurisdiction),
+    'disclosure_rules.update',
+  );
 
   revalidatePath('/admin/disclosure-rules');
 }

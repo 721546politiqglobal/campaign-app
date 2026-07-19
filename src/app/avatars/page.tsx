@@ -21,7 +21,7 @@ export default async function AvatarsPage() {
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>
-        <h2 style={{ marginBottom: 4 }}>Avatars</h2>
+        <h2 style={{ marginBottom: 6 }}>Candidate avatars</h2>
         <p className="muted" style={{ fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>
           Create an AI avatar of your candidate from photos, then pick a look and video format for campaign videos.
         </p>

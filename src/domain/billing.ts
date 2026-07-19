@@ -9,7 +9,9 @@ export interface BillingRepo {
 
 export class BillingBlocked extends Error {}
 
-const INACTIVE_STATUSES = new Set(['canceled', 'unpaid', 'incomplete_expired', 'paused']);
+// Shared so the billing page banner can message every status the gate blocks
+// (audit finding BILL-12), not just canceled/unpaid.
+export const INACTIVE_STATUSES = new Set(['canceled', 'unpaid', 'incomplete_expired', 'paused']);
 
 export class BillingGate {
   constructor(private repo: BillingRepo) {}

@@ -3,6 +3,7 @@ import { loginAction } from '@/app/actions';
 
 const ERROR_MSG: Record<string, string> = {
   '1': 'Incorrect email or password.',
+  locked: 'Too many attempts. Try again in about 15 minutes.',
 };
 
 export default function LoginPage({
