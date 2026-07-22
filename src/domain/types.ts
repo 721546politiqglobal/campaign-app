@@ -85,16 +85,22 @@ export interface AuditRepo {
 
 export type VoiceTone = 'formal' | 'conversational' | 'urgent' | 'inspirational';
 
-export type AvatarStatus = 'training' | 'ready' | 'failed';
+export type AvatarStatus = 'pending_consent' | 'training' | 'ready' | 'failed';
+export type AvatarSourceType = 'photo' | 'digital_twin';
+export type AvatarConsentStatus = 'pending' | 'approved' | 'declined';
 
 export interface Avatar {
   id: string;
   campaignId: string;
   name: string;
   status: AvatarStatus;
+  sourceType: AvatarSourceType;
   heygenGroupId?: string | null;
   heygenLookId?: string | null;
   sourcePhotoUrls: string[];
+  sourceVideoUrl?: string | null;
+  consentStatus?: AvatarConsentStatus | null;
+  consentUrl?: string | null;
   errorMessage?: string | null;
   consentConfirmedBy: string;
   consentConfirmedAt: string;

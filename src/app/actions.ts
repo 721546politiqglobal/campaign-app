@@ -7,6 +7,7 @@ import { adminDb, throwOnError } from '@/lib/supabase';
 import { uid, prefixedId } from '@/lib/store';
 import { getCampaign } from '@/lib/data';
 import { lifecycle, disclosureEngine, usageMeter, billingGate, contentGenerator, publisher, videoProvider, voiceProvider, photoAvatarProvider } from '@/lib/services';
+import { HeyGenAccessDeniedError } from '@/integrations';
 import { contentRepo, approvalRepo, disclosureRepo, auditRepo } from '@/lib/repos';
 import { ContentType, ContentStatus, ContentItem, Platform, VIDEO_CONTENT_TYPES, isContentType } from '@/domain/types';
 import { GateError } from '@/domain/content-lifecycle';
@@ -810,16 +811,103 @@ export async function checkAvatarStatusAction(avatarId: string): Promise<Result>
   const { getAvatar, updateAvatarStatus } = await import('@/lib/avatars');
   const avatar = await getAvatar(avatarId);
   if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: 'Avatar not found.' };
-  if (avatar.status !== 'training' || !avatar.heygenGroupId) return { ok: true };
+  if ((avatar.status !== 'training' && avatar.status !== 'pending_consent') || !avatar.heygenGroupId) return { ok: true };
 
-  const { status, error } = await photoAvatarProvider.getAvatarGroupStatus(avatar.heygenGroupId);
+  const { status, error, consentStatus } = await photoAvatarProvider.getAvatarGroupStatus(avatar.heygenGroupId);
   if (status === 'failed') {
     await updateAvatarStatus(avatarId, 'failed', { errorMessage: error?.message ?? 'Avatar training failed.' });
   } else if (status === 'completed') {
     await updateAvatarStatus(avatarId, 'ready');
+  } else if (status === 'pending_consent') {
+    // Still waiting on the candidate to complete HeyGen's hosted consent
+    // recording — just refresh consentStatus in case it changed.
+    await updateAvatarStatus(avatarId, 'pending_consent', { consentStatus });
+  } else if (avatar.status === 'pending_consent' && status === 'processing') {
+    // Consent was approved since the last poll — HeyGen has started training.
+    await updateAvatarStatus(avatarId, 'training', { consentStatus });
   }
   revalidatePath('/avatars');
   return { ok: true };
+}
+
+const AVATAR_DIGITAL_TWIN_COST_CENTS = 5_00; // Placeholder — HeyGen's real Digital Twin credit cost is unconfirmed on this account; correct once the verification spike (scripts/verify-heygen-digital-twin.mjs) or HeyGen billing data shows the real figure.
+const MAX_TRAINING_VIDEO_BYTES = 500 * 1024 * 1024;
+
+export async function createVideoAvatarAction(formData: FormData): Promise<Result & { avatarId?: string }> {
+  const s = await requireSession();
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+
+  const consent = formData.get('consent') === 'on';
+  if (!consent) return { ok: false, error: 'Consent confirmation is required.' };
+
+  const name = String(formData.get('name') ?? '').trim() || 'Avatar';
+  const file = formData.get('video');
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: 'Upload a training video.' };
+  if (file.size > MAX_TRAINING_VIDEO_BYTES) return { ok: false, error: 'Video must be under 500 MB.' };
+  if (file.type !== 'video/mp4' && file.type !== 'video/quicktime') return { ok: false, error: 'Only MP4 or QuickTime video files are allowed.' };
+
+  const campaign = await getCampaign(s.campaignId);
+  if (!campaign) return { ok: false, error: 'Campaign not found.' };
+
+  let reservationId: string;
+  try {
+    await billingGate.check(s.campaignId);
+    reservationId = await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, AVATAR_DIGITAL_TWIN_COST_CENTS);
+  } catch (e) {
+    if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
+    throw e;
+  }
+
+  const { insertAvatar, updateAvatarStatus } = await import('@/lib/avatars');
+  const avatarId = uid();
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? 'mp4';
+  const filename = `avatars/${s.campaignId}/${avatarId}/training.${ext}`;
+  const { error: uploadError } = await adminDb.storage.from('media').upload(filename, buffer, {
+    contentType: file.type,
+    upsert: false,
+  });
+  if (uploadError) return { ok: false, error: uploadError.message };
+  const { data } = adminDb.storage.from('media').getPublicUrl(filename);
+
+  await insertAvatar({
+    id: avatarId,
+    campaignId: s.campaignId,
+    name,
+    sourceType: 'digital_twin',
+    sourcePhotoUrls: [],
+    sourceVideoUrl: data.publicUrl,
+    consentConfirmedBy: s.userId,
+    createdBy: s.userId,
+    status: 'training',
+  });
+
+  let processedCost = 0;
+  let createError: string | null = null;
+  try {
+    const { assetId } = await photoAvatarProvider.uploadAsset(buffer, file.type);
+    const { groupId, lookId } = await photoAvatarProvider.createVideoAvatar({ name, assetId });
+    const rerouteUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/avatars`;
+    const { consentUrl, consentStatus } = await photoAvatarProvider.requestConsent({ groupId, rerouteUrl });
+    processedCost = AVATAR_DIGITAL_TWIN_COST_CENTS;
+    await updateAvatarStatus(avatarId, 'pending_consent', { heygenGroupId: groupId, heygenLookId: lookId, consentUrl, consentStatus });
+  } catch (e) {
+    const accessDenied = e instanceof HeyGenAccessDeniedError;
+    createError = accessDenied
+      ? "Video avatars aren't enabled for this HeyGen account. Contact HeyGen support to enable Digital Twin access."
+      : e instanceof Error ? e.message : String(e);
+    await updateAvatarStatus(avatarId, 'failed', { errorMessage: createError });
+    // The access-denied message is already complete and user-facing — don't
+    // wrap it with the generic "creation failed" prefix below.
+    if (accessDenied) { revalidatePath('/avatars'); return { ok: false, error: createError }; }
+  } finally {
+    await usageMeter.record(reservationId, 'avatar_digital_twin_training', processedCost > 0 ? 1 : 0, processedCost);
+  }
+
+  revalidatePath('/avatars');
+  if (createError) return { ok: false, error: `Video avatar creation failed: ${createError}` };
+  return { ok: true, avatarId };
 }
 
 export async function setActiveAvatarAction(avatarId: string): Promise<Result> {
