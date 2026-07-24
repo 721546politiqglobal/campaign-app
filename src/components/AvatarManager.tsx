@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   createAvatarAction, checkAvatarStatusAction, setActiveAvatarAction, deleteAvatarAction, generatePromptLookAction,
+  createVideoAvatarAction,
 } from '@/app/actions';
 import { useToast } from '@/components/Toast';
 import type { Avatar } from '@/domain/types';
@@ -32,18 +33,27 @@ export function AvatarManager({
   const [submitting, setSubmitting] = useState(false);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
 
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [videoStep, setVideoStep] = useState<1 | 2 | 3>(1);
+  const [videoConsent, setVideoConsent] = useState(false);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoName, setVideoName] = useState('');
+  const [videoSubmitting, setVideoSubmitting] = useState(false);
+  const [videoDurationWarning, setVideoDurationWarning] = useState<string | null>(null);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
+
   const [lookModalAvatarId, setLookModalAvatarId] = useState<string | null>(null);
   const [lookName, setLookName] = useState('');
   const [lookPrompt, setLookPrompt] = useState('');
   const [generatingLook, setGeneratingLook] = useState(false);
 
-  const trainingIds = avatars.filter(a => a.status === 'training').map(a => a.id).join(',');
+  const pollableIds = avatars.filter(a => a.status === 'training' || a.status === 'pending_consent').map(a => a.id).join(',');
 
   useEffect(() => {
     let cancelled = false;
 
     async function pollOnce() {
-      const ids = trainingIds ? trainingIds.split(',') : [];
+      const ids = pollableIds ? pollableIds.split(',') : [];
       if (ids.length === 0) return;
       await Promise.all(ids.map(id => checkAvatarStatusAction(id)));
       if (!cancelled) router.refresh();
@@ -53,10 +63,10 @@ export function AvatarManager({
     // so status catches up if the user navigated away and back.
     pollOnce();
 
-    if (!trainingIds) return;
+    if (!pollableIds) return;
     const interval = setInterval(pollOnce, POLL_MS);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [trainingIds, router]);
+  }, [pollableIds, router]);
 
   useEffect(() => {
     const urls = files.map(f => URL.createObjectURL(f));
@@ -64,12 +74,67 @@ export function AvatarManager({
     return () => { urls.forEach(u => URL.revokeObjectURL(u)); };
   }, [files]);
 
+  useEffect(() => {
+    if (!videoFile) { setVideoPreviewUrl(null); return; }
+    const url = URL.createObjectURL(videoFile);
+    setVideoPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [videoFile]);
+
   function resetModal() {
     setModalOpen(false);
     setStep(1);
     setConsent(false);
     setFiles([]);
     setName('');
+  }
+
+  function resetVideoModal() {
+    setVideoModalOpen(false);
+    setVideoStep(1);
+    setVideoConsent(false);
+    setVideoFile(null);
+    setVideoName('');
+    setVideoDurationWarning(null);
+  }
+
+  function handleVideoFileChosen(chosen: FileList | null) {
+    const file = chosen?.[0];
+    if (!file) return;
+    setVideoFile(file);
+    const url = URL.createObjectURL(file);
+    const probe = document.createElement('video');
+    probe.preload = 'metadata';
+    probe.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      if (probe.duration < 30) setVideoDurationWarning('This clip looks shorter than 30 seconds — HeyGen recommends at least 30s of footage.');
+      else if (probe.duration > 300) setVideoDurationWarning('This clip looks longer than 5 minutes — HeyGen recommends under 5 minutes of footage.');
+      else setVideoDurationWarning(null);
+    };
+    probe.src = url;
+  }
+
+  async function handleVideoSubmit() {
+    if (!videoFile) return;
+    setVideoSubmitting(true);
+    const formData = new FormData();
+    formData.set('consent', videoConsent ? 'on' : 'off');
+    formData.set('name', videoName);
+    formData.set('video', videoFile);
+    const result = await createVideoAvatarAction(formData);
+    setVideoSubmitting(false);
+    if (result.ok) {
+      toast('Video avatar creation started — send the candidate the consent link shown on this avatar.');
+      resetVideoModal();
+      router.refresh();
+    } else {
+      toast(result.error ?? 'Failed to create video avatar', 'error');
+    }
+  }
+
+  async function handleCopyConsentLink(url: string) {
+    await navigator.clipboard.writeText(url);
+    toast('Consent link copied.');
   }
 
   function handleFilesChosen(chosen: FileList | null) {
@@ -131,9 +196,14 @@ export function AvatarManager({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
         <div className="eyebrow">{avatars.length} {avatars.length === 1 ? 'avatar' : 'avatars'}</div>
         {canManage && (
-          <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setModalOpen(true)}>
-            + Create avatar
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setModalOpen(true)}>
+              + From photos
+            </button>
+            <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setVideoModalOpen(true)}>
+              + From video
+            </button>
+          </div>
         )}
       </div>
 
@@ -173,16 +243,22 @@ export function AvatarManager({
                     boxShadow: `0 0 6px ${a.status === 'ready' ? 'var(--ok)' : a.status === 'failed' ? 'var(--bad)' : 'var(--warn)'}`,
                   }} />
                   <span>
+                    {a.status === 'pending_consent' && 'Waiting on candidate consent'}
                     {a.status === 'training' && 'Training — usually a few minutes'}
                     {a.status === 'ready' && 'Ready'}
                     {a.status === 'failed' && `Failed: ${a.errorMessage ?? 'Unknown error'}`}
-                    <span className="mono" style={{ color: 'var(--text-3)' }}> · created {new Date(a.createdAt).toLocaleDateString()}</span>
+                    <span className="mono" style={{ color: 'var(--text-3)' }}> · created {new Date(a.createdAt).toLocaleDateString('en-US')}</span>
                   </span>
                 </div>
               </div>
             </div>
             {canManage && (
               <div style={{ display: 'flex', gap: 8 }}>
+                {a.status === 'pending_consent' && a.consentUrl && (
+                  <button className="btn" style={{ fontSize: 12 }} onClick={() => handleCopyConsentLink(a.consentUrl!)}>
+                    Copy consent link
+                  </button>
+                )}
                 {a.status === 'ready' && a.id !== activeAvatarId && (
                   <button className="btn" style={{ fontSize: 12 }} onClick={() => handleSetActive(a.id)}>
                     Set active
@@ -256,6 +332,62 @@ export function AvatarManager({
                   <button className="btn" onClick={() => setStep(2)}>← Back</button>
                   <button className="btn primary" disabled={submitting || !name.trim()} onClick={handleSubmit}>
                     {submitting ? 'Creating…' : 'Create Avatar'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {videoModalOpen && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            {videoStep === 1 && (
+              <>
+                <div className="modal-step">Step 1 of 3 · Consent</div>
+                <h3 style={{ marginBottom: 14, fontSize: 16 }}>Confirm permission</h3>
+                <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, lineHeight: 1.5 }}>
+                  <input type="checkbox" checked={videoConsent} onChange={e => setVideoConsent(e.target.checked)} />
+                  I confirm I have the candidate&rsquo;s permission to record and use this video to create an AI avatar of them.
+                </label>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                  <button className="btn" onClick={resetVideoModal}>Cancel</button>
+                  <button className="btn primary" disabled={!videoConsent} onClick={() => setVideoStep(2)}>Next →</button>
+                </div>
+              </>
+            )}
+            {videoStep === 2 && (
+              <>
+                <div className="modal-step">Step 2 of 3 · Video</div>
+                <h3 style={{ marginBottom: 12, fontSize: 16 }}>Upload training video</h3>
+                <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+                  Upload one continuous, well-lit, front-facing clip of the candidate speaking (30 seconds to 5 minutes).
+                  The candidate will separately complete a short consent recording on HeyGen&rsquo;s own page after you submit this.
+                </p>
+                <input type="file" accept="video/mp4,video/quicktime" onChange={e => handleVideoFileChosen(e.target.files)} />
+                {videoFile && (
+                  <video src={videoPreviewUrl ?? undefined} controls style={{ width: '100%', marginTop: 12, borderRadius: 8, maxHeight: 200 }} />
+                )}
+                {videoDurationWarning && (
+                  <p className="muted" style={{ fontSize: 12, marginTop: 8, color: 'var(--warn)' }}>{videoDurationWarning}</p>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                  <button className="btn" onClick={() => setVideoStep(1)}>← Back</button>
+                  <button className="btn primary" disabled={!videoFile} onClick={() => setVideoStep(3)}>Next →</button>
+                </div>
+              </>
+            )}
+            {videoStep === 3 && (
+              <>
+                <div className="modal-step">Step 3 of 3 · Name</div>
+                <h3 style={{ marginBottom: 12, fontSize: 16 }}>Name this avatar</h3>
+                <input className="input" placeholder="e.g. Alex — video twin" value={videoName}
+                  onChange={e => setVideoName(e.target.value)} maxLength={60} />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                  <button className="btn" onClick={() => setVideoStep(2)}>← Back</button>
+                  <button className="btn primary" disabled={videoSubmitting || !videoName.trim()} onClick={handleVideoSubmit}>
+                    {videoSubmitting ? 'Creating…' : 'Create Video Avatar'}
                   </button>
                 </div>
               </>

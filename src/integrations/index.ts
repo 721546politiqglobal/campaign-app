@@ -6,6 +6,15 @@ import { Platform } from '@/domain/types';
 
 export type { Platform };
 
+// ── Helper functions ──────────────────────────────────────────────────────────
+
+type ConsentStatus = 'pending' | 'approved' | 'declined';
+const KNOWN_CONSENT_STATUSES = ['pending', 'approved', 'declined'] as const;
+
+function parseConsentStatus<F>(raw: unknown, fallback: F): ConsentStatus | F {
+  return (KNOWN_CONSENT_STATUSES as readonly unknown[]).includes(raw) ? raw as ConsentStatus : fallback;
+}
+
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
 import type { CandidateProfile } from '@/domain/types';
@@ -40,10 +49,15 @@ export interface PhotoAvatarProvider {
     Promise<{ lookId: string; groupId: string }>;
   createPromptLook(input: { name: string; prompt: string; avatarId: string }):
     Promise<{ lookId: string; groupId: string }>;
+  createVideoAvatar(input: { name: string; assetId: string }):
+    Promise<{ lookId: string; groupId: string }>;
+  requestConsent(input: { groupId: string; rerouteUrl?: string }):
+    Promise<{ consentUrl?: string; consentStatus: 'pending' | 'approved' | 'declined' }>;
   getAvatarGroupStatus(groupId: string): Promise<{
     status: 'processing' | 'pending_consent' | 'completed' | 'failed';
     previewImageUrl?: string;
     error?: { code: string; message: string };
+    consentStatus?: 'pending' | 'approved' | 'declined' | null;
   }>;
 }
 
@@ -179,6 +193,17 @@ export class HeyGenVideoProvider implements VideoProvider {
 // and asynchronously inside createAvatarLook; readiness comes from polling
 // getAvatarGroupStatus.
 
+// Thrown specifically for 401/403 responses from Digital Twin creation, so
+// callers can distinguish "this HeyGen account isn't enabled for Digital
+// Twin" from any other failure and show a clear, actionable message instead
+// of a generic one.
+export class HeyGenAccessDeniedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'HeyGenAccessDeniedError';
+  }
+}
+
 export class HeyGenPhotoAvatarProvider implements PhotoAvatarProvider {
   constructor(private apiKey: string) {}
 
@@ -237,6 +262,40 @@ export class HeyGenPhotoAvatarProvider implements PhotoAvatarProvider {
     return { lookId, groupId };
   }
 
+  async createVideoAvatar({ name, assetId }: { name: string; assetId: string }) {
+    const res = await fetch('https://api.heygen.com/v3/avatars', {
+      method: 'POST',
+      headers: { 'X-Api-Key': this.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'digital_twin', name, file: { type: 'asset_id', asset_id: assetId } }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      const message = json.error?.message ?? `HeyGen create digital twin error: ${res.status}`;
+      if (res.status === 401 || res.status === 403) throw new HeyGenAccessDeniedError(message);
+      throw new Error(`HeyGen create digital twin error: ${message}`);
+    }
+    const lookId = json.data?.avatar_item?.id;
+    const groupId = json.data?.avatar_group?.id ?? json.data?.avatar_item?.group_id;
+    if (!lookId || !groupId) throw new Error('HeyGen did not return a look/group id.');
+    return { lookId, groupId };
+  }
+
+  // Level 1 consent only — the candidate completes a hosted webcam recording
+  // on HeyGen's own page. Level 2 (submitting a pre-recorded consent clip
+  // directly) is Enterprise-whitelisted only and out of scope here.
+  async requestConsent({ groupId, rerouteUrl }: { groupId: string; rerouteUrl?: string }) {
+    const res = await fetch(`https://api.heygen.com/v3/avatars/${encodeURIComponent(groupId)}/consent`, {
+      method: 'POST',
+      headers: { 'X-Api-Key': this.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(rerouteUrl ? { reroute_url: rerouteUrl } : {}),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(`HeyGen consent request error: ${json.error?.message ?? res.status}`);
+    const raw = json.data?.avatar_group?.consent_status ?? json.data?.consent_status;
+    const consentStatus = parseConsentStatus(raw, 'pending' as const);
+    return { consentUrl: json.data?.url as string | undefined, consentStatus };
+  }
+
   // Deliberately polls GET /v3/avatars/{id} (the single-resource endpoint),
   // not GET /v3/avatars/looks?group_id=... — empirically verified the looks-list
   // endpoint returns an empty array even for a group HeyGen itself reports as
@@ -248,15 +307,18 @@ export class HeyGenPhotoAvatarProvider implements PhotoAvatarProvider {
     });
     const json = await res.json();
     if (!res.ok) throw new Error(`HeyGen get avatar error: ${json.error?.message ?? res.status}`);
-    // Validate against the known set — an unrecognized HeyGen status must not
-    // be cast straight through, or an avatar strands in "training" forever (INT-14).
     const raw = json.data?.status;
     const KNOWN = ['processing', 'pending_consent', 'completed', 'failed'] as const;
+    // Validate against the known set — an unrecognized HeyGen status must not
+    // be cast straight through, or an avatar strands in "training" forever (INT-14).
     const status = (KNOWN as readonly string[]).includes(raw) ? raw as typeof KNOWN[number] : 'failed';
+    const rawConsent = json.data?.consent_status;
+    const consentStatus = parseConsentStatus(rawConsent, null);
     return {
       status,
       previewImageUrl: json.data?.preview_image_url,
       error: json.data?.error,
+      consentStatus,
     };
   }
 }
@@ -397,6 +459,13 @@ export class MockPhotoAvatarProvider implements PhotoAvatarProvider {
   async uploadAsset(_buffer: Buffer, _contentType: string) { return { assetId: 'mock-asset-id' }; }
   async createAvatarLook(_input: { name: string; assetId: string; avatarGroupId?: string }) { return { lookId: 'mock-look-id', groupId: 'mock-group-id' }; }
   async createPromptLook(_input: { name: string; prompt: string; avatarId: string }) { return { lookId: 'mock-prompt-look-id', groupId: 'mock-group-id' }; }
+  async createVideoAvatar(_input: { name: string; assetId: string }) { return { lookId: 'mock-video-look-id', groupId: 'mock-video-group-id' }; }
+  // Mock mode simulates instant success everywhere else in this file
+  // (MockVideoProvider, MockPublisher) — consent resolves instantly too so
+  // local dev without HEYGEN_API_KEY can exercise the full flow end to end.
+  async requestConsent(_input: { groupId: string; rerouteUrl?: string }) {
+    return { consentUrl: 'https://app.heygen.com/mock-consent', consentStatus: 'approved' as const };
+  }
   async getAvatarGroupStatus(_groupId: string) {
     return { status: 'completed' as const, previewImageUrl: 'https://example.com/mock-avatar.jpg' };
   }

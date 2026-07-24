@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import Anthropic from '@anthropic-ai/sdk';
-import { HeyGenPhotoAvatarProvider, MockPhotoAvatarProvider, ClaudeContentGenerator } from './index';
+import { HeyGenPhotoAvatarProvider, MockPhotoAvatarProvider, ClaudeContentGenerator, HeyGenAccessDeniedError } from './index';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -150,6 +150,91 @@ describe('HeyGenPhotoAvatarProvider.createPromptLook', () => {
   });
 });
 
+describe('HeyGenPhotoAvatarProvider.createVideoAvatar', () => {
+  it('creates a digital_twin avatar from an uploaded asset', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { avatar_item: { id: 'look_dt_1', group_id: 'group_dt_1' }, avatar_group: { id: 'group_dt_1' } } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+    const result = await provider.createVideoAvatar({ name: 'Candidate twin', assetId: 'asset_video_1' });
+
+    expect(result).toEqual({ lookId: 'look_dt_1', groupId: 'group_dt_1' });
+    const [url, opts] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://api.heygen.com/v3/avatars');
+    const body = JSON.parse(opts.body);
+    expect(body).toEqual({ type: 'digital_twin', name: 'Candidate twin', file: { type: 'asset_id', asset_id: 'asset_video_1' } });
+  });
+
+  it('throws a generic error with the HeyGen message for a non-access failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: { message: 'invalid training footage' } }),
+    }));
+
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+    await expect(provider.createVideoAvatar({ name: 'n', assetId: 'a' }))
+      .rejects.toThrow('invalid training footage');
+  });
+
+  it('throws HeyGenAccessDeniedError specifically on a 403 (account not enabled for Digital Twin)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({ error: { message: 'digital twin not enabled for this account' } }),
+    }));
+
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+    await expect(provider.createVideoAvatar({ name: 'n', assetId: 'a' }))
+      .rejects.toBeInstanceOf(HeyGenAccessDeniedError);
+  });
+
+  it('throws HeyGenAccessDeniedError specifically on a 401', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: { message: 'invalid api key' } }),
+    }));
+
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+    await expect(provider.createVideoAvatar({ name: 'n', assetId: 'a' }))
+      .rejects.toBeInstanceOf(HeyGenAccessDeniedError);
+  });
+});
+
+describe('HeyGenPhotoAvatarProvider.requestConsent', () => {
+  it('requests Level 1 (hosted webcam) consent and returns the url + status', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { url: 'https://app.heygen.com/consent/abc', avatar_group: { id: 'group_dt_1', consent_status: 'pending' } } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+    const result = await provider.requestConsent({ groupId: 'group_dt_1', rerouteUrl: 'https://app.test/avatars' });
+
+    expect(result).toEqual({ consentUrl: 'https://app.heygen.com/consent/abc', consentStatus: 'pending' });
+    const [url, opts] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://api.heygen.com/v3/avatars/group_dt_1/consent');
+    expect(JSON.parse(opts.body)).toEqual({ reroute_url: 'https://app.test/avatars' });
+  });
+
+  it('falls back to "pending" when HeyGen returns an unrecognized consent_status', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { url: 'https://app.heygen.com/consent/abc', avatar_group: { consent_status: 'something_new' } } }),
+    }));
+
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+    const result = await provider.requestConsent({ groupId: 'group_dt_1' });
+
+    expect(result.consentStatus).toBe('pending');
+  });
+});
+
 describe('HeyGenPhotoAvatarProvider.getAvatarGroupStatus', () => {
   it('polls the single-resource endpoint and normalizes a completed group', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
@@ -163,7 +248,7 @@ describe('HeyGenPhotoAvatarProvider.getAvatarGroupStatus', () => {
     const provider = new HeyGenPhotoAvatarProvider('test-key');
     const result = await provider.getAvatarGroupStatus('group_1');
 
-    expect(result).toEqual({ status: 'completed', previewImageUrl: 'https://example.com/1.jpg', error: undefined });
+    expect(result).toEqual({ status: 'completed', previewImageUrl: 'https://example.com/1.jpg', error: undefined, consentStatus: null });
     const [url] = fetchMock.mock.calls[0];
     expect(url).toBe('https://api.heygen.com/v3/avatars/group_1');
   });
@@ -180,8 +265,20 @@ describe('HeyGenPhotoAvatarProvider.getAvatarGroupStatus', () => {
     const result = await provider.getAvatarGroupStatus('group_2');
 
     expect(result).toEqual({
-      status: 'failed', previewImageUrl: undefined, error: { code: 'training_failed', message: 'bad photo' },
+      status: 'failed', previewImageUrl: undefined, error: { code: 'training_failed', message: 'bad photo' }, consentStatus: null,
     });
+  });
+
+  it('surfaces consent_status for a digital twin group awaiting the candidate', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { id: 'group_dt_1', status: 'pending_consent', consent_status: 'pending' } }),
+    }));
+
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+    const result = await provider.getAvatarGroupStatus('group_dt_1');
+
+    expect(result).toEqual({ status: 'pending_consent', previewImageUrl: undefined, error: undefined, consentStatus: 'pending' });
   });
 });
 
@@ -192,5 +289,13 @@ describe('MockPhotoAvatarProvider', () => {
     const { groupId } = await provider.createAvatarLook({ name: 'n', assetId });
     const result = await provider.getAvatarGroupStatus(groupId);
     expect(result).toEqual({ status: 'completed', previewImageUrl: 'https://example.com/mock-avatar.jpg' });
+  });
+
+  it('creates a mock digital twin and returns instantly-approved consent', async () => {
+    const provider = new MockPhotoAvatarProvider();
+    const { assetId } = await provider.uploadAsset(Buffer.from('x'), 'video/mp4');
+    const { groupId } = await provider.createVideoAvatar({ name: 'n', assetId });
+    const { consentStatus } = await provider.requestConsent({ groupId });
+    expect(consentStatus).toBe('approved');
   });
 });

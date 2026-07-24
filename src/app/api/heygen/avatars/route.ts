@@ -30,17 +30,20 @@ export async function GET(req: NextRequest) {
 
     if (groupRes.ok) {
       const groupJson = await groupRes.json();
-      const list: { id?: string; name?: string; image_url?: string; motion_preview_url?: string; status?: string }[] =
+      // The real v2 response uses avatar_id/avatar_name/preview_image_url/
+      // preview_video_url (no `status` field) — NOT id/name/image_url/
+      // motion_preview_url. Every entry in avatar_list is already a usable
+      // look, so there's nothing to filter on beyond having an avatar_id.
+      const list: { avatar_id?: string; avatar_name?: string; preview_image_url?: string; preview_video_url?: string }[] =
         groupJson?.data?.avatar_list ?? [];
 
-      // Only return completed looks
       const photoAvatars: NormalizedAvatar[] = list
-        .filter(a => a.status === 'completed' && a.id)
+        .filter(a => a.avatar_id)
         .map(a => ({
-          avatar_id: a.id!,
-          avatar_name: a.name ?? 'Look',
-          preview_image_url: a.image_url,
-          preview_video_url: a.motion_preview_url ?? undefined,
+          avatar_id: a.avatar_id!,
+          avatar_name: a.avatar_name ?? 'Look',
+          preview_image_url: a.preview_image_url,
+          preview_video_url: a.preview_video_url,
         }));
 
       if (photoAvatars.length > 0) {
