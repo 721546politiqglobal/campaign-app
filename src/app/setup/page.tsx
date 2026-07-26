@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { requireSession } from '@/lib/session';
 import { getCandidateProfile } from '@/lib/candidate';
+import { PARTIES } from '@/lib/profile-validation';
 import { upsertProfileAction } from './actions';
 
 const TONES = [
@@ -48,6 +49,15 @@ export default async function SetupPage({
           </div>
         )}
 
+        {searchParams.error === 'party' && (
+          <div className="banner warn" style={{ marginBottom: 20 }}>
+            <div>
+              <div className="t">Choose a party from the list</div>
+              <div className="b">Select one of the provided party options, or leave it blank.</div>
+            </div>
+          </div>
+        )}
+
         <form action={upsertProfileAction} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <div className="card">
             <h2 style={{ marginBottom: 16 }}>Candidate</h2>
@@ -70,7 +80,10 @@ export default async function SetupPage({
               </div>
               <div>
                 <label className="field-label">Party</label>
-                <input name="party" className="input" placeholder="Democratic" />
+                <select name="party" className="input" defaultValue="">
+                  <option value="">—</option>
+                  {PARTIES.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
               </div>
               <div>
                 <label className="field-label">Primary opponent name</label>

@@ -64,7 +64,11 @@ async function saveProfileAction(formData: FormData) {
   revalidatePath('/settings');
 }
 
-export default async function Settings() {
+export default async function Settings({
+  searchParams,
+}: {
+  searchParams: { error?: string };
+}) {
   const s = await requireSession();
   const [campaign, rules, users, profile] = await Promise.all([
     getCampaign(s.campaignId),
@@ -84,6 +88,14 @@ export default async function Settings() {
       {/* Candidate profile — first and most important section */}
       <div className="card" style={{ marginBottom: 24 }}>
         <h2 style={{ marginBottom: 16 }}>Candidate profile</h2>
+        {searchParams.error === 'validation' && (
+          <div className="banner warn" style={{ marginBottom: 16 }}>
+            <div>
+              <div className="t">Profile not saved</div>
+              <div className="b">Check the party, voice tone, and any URL fields — one of them isn&rsquo;t valid.</div>
+            </div>
+          </div>
+        )}
         <form action={saveProfileAction} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
