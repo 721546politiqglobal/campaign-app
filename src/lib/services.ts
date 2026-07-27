@@ -3,9 +3,9 @@
 
 import { ContentLifecycle } from '@/domain/content-lifecycle';
 import { DisclosureEngine } from '@/domain/disclosure';
-import { UsageMeter } from '@/domain/usage';
+import { QuotaGate } from '@/domain/quota';
 import { BillingGate } from '@/domain/billing';
-import { contentRepo, approvalRepo, disclosureRepo, auditRepo, rulesRepo, usageRepo, billingRepo } from './repos';
+import { contentRepo, approvalRepo, disclosureRepo, auditRepo, rulesRepo, quotaRepo, billingRepo } from './repos';
 import {
   ClaudeContentGenerator, MockContentGenerator,
   HeyGenVideoProvider, MockVideoProvider,
@@ -18,7 +18,7 @@ import type { PhotoAvatarProvider, Publisher } from '@/integrations';
 
 export const lifecycle = new ContentLifecycle(contentRepo, approvalRepo, disclosureRepo, auditRepo);
 export const disclosureEngine = new DisclosureEngine(rulesRepo);
-export const usageMeter = new UsageMeter(usageRepo);
+export const quotaGate = new QuotaGate(quotaRepo);
 export const billingGate = new BillingGate(billingRepo);
 
 // Pick the real adapter when its key is present, otherwise fall back to the
