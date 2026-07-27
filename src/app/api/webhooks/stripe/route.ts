@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import type Stripe from 'stripe';
 import { adminDb } from '@/lib/supabase';
 import { stripe } from '@/lib/stripe';
-import { computeSubscriptionUpdate, isNewerEvent, type StripeSubscriptionStatus } from '@/lib/billing-webhook';
+import { computeSubscriptionUpdate, isNewerEvent, planIdFromPriceId, type StripeSubscriptionStatus } from '@/lib/billing-webhook';
+import { getBillingPlans } from '@/lib/data';
 
 export async function POST(req: NextRequest) {
   if (!stripe) return NextResponse.json({ error: 'Billing not configured' }, { status: 503 });
@@ -55,10 +56,14 @@ export async function POST(req: NextRequest) {
         // Stripe SDK v22.3.0 moved current_period_end off Subscription and onto
         // each SubscriptionItem.
         const currentPeriodEnd = sub.items.data[0]?.current_period_end;
+        const priceId = sub.items.data[0]?.price?.id;
+        const plans = await getBillingPlans();
+        const planId = planIdFromPriceId(priceId, plans);
         const { error: updateError } = await adminDb.from('campaigns').update({
           subscription_status: update.subscriptionStatus,
           grace_period_ends_at: update.gracePeriodEndsAt,
           subscription_event_created: event.created,
+          plan_id: planId ?? undefined,
           current_period_end: event.type === 'customer.subscription.deleted'
             ? null
             : currentPeriodEnd
@@ -80,6 +85,32 @@ export async function POST(req: NextRequest) {
       // redeliver, so a campaign row created in a race still gets its
       // transition. Recording it here would permanently drop the transition (BILL-6).
       return NextResponse.json({ error: 'No matching campaign; will retry' }, { status: 409 });
+    }
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const newCampaignId = session.client_reference_id;
+    if (newCampaignId && session.subscription && session.customer) {
+      campaignId = newCampaignId;
+      const sub = await stripe.subscriptions.retrieve(session.subscription as string);
+      const priceId = sub.items.data[0]?.price?.id;
+      const plans = await getBillingPlans();
+      const planId = planIdFromPriceId(priceId, plans);
+      const currentPeriodEnd = sub.items.data[0]?.current_period_end;
+      const { error: updateError } = await adminDb.from('campaigns').update({
+        plan_id: planId,
+        stripe_customer_id: session.customer as string,
+        stripe_subscription_id: sub.id,
+        subscription_status: sub.status,
+        subscription_event_created: event.created,
+        current_period_end: currentPeriodEnd ? new Date(currentPeriodEnd * 1000).toISOString() : null,
+      }).eq('id', newCampaignId);
+      if (updateError) {
+        return NextResponse.json({ error: updateError.message }, { status: 500 });
+      }
+    } else {
+      console.error(`Stripe webhook: checkout.session.completed ${event.id} missing client_reference_id/subscription/customer`);
     }
   }
 

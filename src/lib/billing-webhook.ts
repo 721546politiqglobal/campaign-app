@@ -34,3 +34,11 @@ export function isNewerEvent(eventCreatedSec: number, lastSeenSec: number | null
   if (lastSeenSec == null) return true;
   return eventCreatedSec > lastSeenSec;
 }
+
+export function planIdFromPriceId(
+  priceId: string | undefined,
+  plans: { id: string; stripeFlatPriceId: string }[],
+): string | null {
+  if (!priceId) return null;
+  return plans.find(p => p.stripeFlatPriceId === priceId)?.id ?? null;
+}
