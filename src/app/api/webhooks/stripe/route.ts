@@ -97,17 +97,36 @@ export async function POST(req: NextRequest) {
       const priceId = sub.items.data[0]?.price?.id;
       const plans = await getBillingPlans();
       const planId = planIdFromPriceId(priceId, plans);
+      // Writing plan_id: null here would leave a paying customer with no plan —
+      // which the billing gate treats as "never subscribed" and blocks. Fail
+      // loudly instead so Stripe retries once billing_plans is in sync
+      // (e.g. after syncBillingPlansAction has been run for this price).
+      if (!planId) {
+        console.error(
+          `Stripe webhook: checkout.session.completed ${event.id} could not resolve a plan for price ${priceId ?? 'unknown'} (campaign ${newCampaignId}); refusing to write plan_id: null — will retry`
+        );
+        return NextResponse.json({ error: 'Unknown price; will retry' }, { status: 500 });
+      }
       const currentPeriodEnd = sub.items.data[0]?.current_period_end;
-      const { error: updateError } = await adminDb.from('campaigns').update({
+      const { data: updatedRows, error: updateError } = await adminDb.from('campaigns').update({
         plan_id: planId,
         stripe_customer_id: session.customer as string,
         stripe_subscription_id: sub.id,
         subscription_status: sub.status,
         subscription_event_created: event.created,
         current_period_end: currentPeriodEnd ? new Date(currentPeriodEnd * 1000).toISOString() : null,
-      }).eq('id', newCampaignId);
+      }).eq('id', newCampaignId).select('id');
       if (updateError) {
         return NextResponse.json({ error: updateError.message }, { status: 500 });
+      }
+      // Supabase does not error on an update that matched zero rows. Without
+      // this check a paid checkout whose campaign row doesn't exist yet (or was
+      // deleted) would be silently marked processed and never retried.
+      if (!updatedRows || updatedRows.length === 0) {
+        console.error(
+          `Stripe webhook: checkout.session.completed ${event.id} matched no campaign row for id ${newCampaignId} (subscription ${sub.id})`
+        );
+        return NextResponse.json({ error: 'No matching campaign; will retry' }, { status: 409 });
       }
     } else {
       console.error(`Stripe webhook: checkout.session.completed ${event.id} missing client_reference_id/subscription/customer`);

@@ -8,15 +8,32 @@ import { can } from '@/lib/permissions';
 
 export async function startCheckoutAction(planId: string): Promise<void> {
   const s = await requireSession();
+  // Server actions are directly callable — the button being hidden in the UI is
+  // not a permission check. Only roles that can manage billing may subscribe.
+  if (!can(s.role, 'edit_settings')) return;
   if (!stripe) return;
-  const plan = await getBillingPlan(planId);
+
+  const [campaign, plan] = await Promise.all([getCampaign(s.campaignId), getBillingPlan(planId)]);
+  if (!campaign) return;
   if (!plan) return;
+
+  // Never open a second Checkout for a campaign that already has a live
+  // subscription — that would create a duplicate Stripe subscription (and
+  // double-bill). Plan switches go through changePlanAction instead. This also
+  // covers the window right after paying, before the webhook has landed.
+  if (campaign.stripeSubscriptionId) redirect('/billing');
 
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     client_reference_id: s.campaignId,
+    // Reuse the existing Stripe Customer (e.g. from a previously canceled,
+    // admin-assigned plan) so Checkout doesn't mint a duplicate one.
+    ...(campaign.stripeCustomerId ? { customer: campaign.stripeCustomerId } : {}),
     line_items: [{ price: plan.stripeFlatPriceId, quantity: 1 }],
-    success_url: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/dashboard?checkout=success`,
+    // Land back on /pricing, not /dashboard: /pricing is not wrapped in
+    // AppFrame, so it renders immediately (no race with the webhook that sets
+    // plan_id) and shows the "Payment received — activating your plan" banner.
+    success_url: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/pricing?checkout=success`,
     cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/pricing?checkout=canceled`,
   });
   if (!session.url) return;

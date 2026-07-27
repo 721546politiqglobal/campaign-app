@@ -5,7 +5,14 @@ const subscriptionsRetrieve = vi.fn();
 vi.mock('@/lib/stripe', () => ({ stripe: { webhooks: { constructEvent }, subscriptions: { retrieve: subscriptionsRetrieve } } }));
 
 const insert = vi.fn(() => Promise.resolve({ error: null }));
-const update = vi.fn(() => ({ eq: () => Promise.resolve({ error: null }) }));
+// `update().eq()` is awaited directly by the subscription branch, and further
+// chained with `.select('id')` by the checkout branch (to detect an update that
+// matched zero rows). One thenable serves both.
+function eqResult(res: { data?: unknown; error: unknown }) {
+  return Object.assign(Promise.resolve(res), { select: () => Promise.resolve(res) });
+}
+const updateOk = { data: [{ id: 'c-1' }], error: null };
+const update = vi.fn(() => ({ eq: () => eqResult(updateOk) }));
 const campaignSingle = vi.fn();
 const billingPlansRows = [
   { id: 'pro', name: 'Pro', monthly_price_cents: 9900, seat_limit: 5, avatar_limit: 5, content_limit_monthly: 100, video_limit_daily: 10, stripe_product_id: 'prod_pro', stripe_flat_price_id: 'price_pro', is_active: true },
@@ -73,7 +80,7 @@ describe('stripe webhook robustness', () => {
   it('returns 500 and does NOT record the event when the campaign update fails, so Stripe retries (TEST-3)', async () => {
     campaignSingle.mockResolvedValue({ data: { id: 'c-1', grace_period_ends_at: null, subscription_event_created: 1000 }, error: null });
     constructEvent.mockReturnValue({ id: 'evt_5', type: 'customer.subscription.updated', created: 3000, data: { object: { id: 'sub_1', status: 'past_due', items: { data: [{ current_period_end: 1 }] } } } });
-    update.mockReturnValueOnce({ eq: () => Promise.resolve({ error: { message: 'db down' } }) } as any);
+    update.mockReturnValueOnce({ eq: () => eqResult({ data: null, error: { message: 'db down' } }) } as any);
     const { POST } = await import('./route');
     const res = await POST(req());
     expect(res.status).toBe(500);
@@ -116,6 +123,40 @@ describe('stripe webhook robustness', () => {
     expect(insert).toHaveBeenCalled();
     const insertedEvent = (insert.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
     expect(insertedEvent.campaign_id).toBe('campaign-42');
+  });
+
+  it('returns 500 and records nothing when the checkout price maps to no billing plan (I4)', async () => {
+    subscriptionsRetrieve.mockResolvedValue({
+      id: 'sub_new', status: 'active',
+      items: { data: [{ current_period_end: 1_800_000_000, price: { id: 'price_unknown' } }] },
+    });
+    constructEvent.mockReturnValue({
+      id: 'evt_checkout_noplan', type: 'checkout.session.completed', created: 3000,
+      data: { object: { client_reference_id: 'campaign-42', subscription: 'sub_new', customer: 'cus_1' } },
+    });
+    const { POST } = await import('./route');
+    const res = await POST(req());
+    expect(res.status).toBe(500);
+    // Never write plan_id: null for a customer who just paid, and never mark the
+    // event processed — Stripe must retry once billing_plans is in sync.
+    expect(update).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('returns 409 and records nothing when the checkout update matches no campaign row (I4)', async () => {
+    subscriptionsRetrieve.mockResolvedValue({
+      id: 'sub_new', status: 'active',
+      items: { data: [{ current_period_end: 1_800_000_000, price: { id: 'price_pro' } }] },
+    });
+    constructEvent.mockReturnValue({
+      id: 'evt_checkout_nomatch', type: 'checkout.session.completed', created: 3000,
+      data: { object: { client_reference_id: 'campaign-gone', subscription: 'sub_new', customer: 'cus_1' } },
+    });
+    update.mockReturnValueOnce({ eq: () => eqResult({ data: [], error: null }) } as any);
+    const { POST } = await import('./route');
+    const res = await POST(req());
+    expect(res.status).toBe(409);
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it('logs and skips checkout.session.completed events missing required fields', async () => {
