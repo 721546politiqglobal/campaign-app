@@ -42,6 +42,27 @@ describe('quotaRepo.incrementFeatureUsage', () => {
   });
 });
 
+describe('quotaRepo.decrementFeatureUsage', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('calls decrement_feature_usage with an ISO period_start and no limit argument', async () => {
+    rpc.mockResolvedValue({ data: null, error: null });
+    const { quotaRepo } = await import('./repos');
+    await quotaRepo.decrementFeatureUsage('camp-1', 'video', new Date('2026-07-27T00:00:00.000Z'));
+    expect(rpc).toHaveBeenCalledWith('decrement_feature_usage', {
+      p_campaign_id: 'camp-1',
+      p_feature: 'video',
+      p_period_start: '2026-07-27T00:00:00.000Z',
+    });
+  });
+
+  it('throws when the RPC reports an error', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    const { quotaRepo } = await import('./repos');
+    await expect(quotaRepo.decrementFeatureUsage('camp-1', 'video', new Date())).rejects.toThrow();
+  });
+});
+
 describe('quotaRepo.countAvatars', () => {
   beforeEach(() => vi.clearAllMocks());
 

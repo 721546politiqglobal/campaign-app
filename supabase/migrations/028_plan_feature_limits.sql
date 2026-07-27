@@ -1,6 +1,12 @@
 -- supabase/migrations/028_plan_feature_limits.sql
 -- Replaces dollar-based plan allowances with concrete per-feature counts
 -- (see docs/superpowers/specs/2026-07-27-self-serve-billing-design.md).
+--
+-- DEPLOY ORDER: Apply this migration BEFORE deploying application code that
+-- reads avatar_limit/content_limit_monthly/video_limit_daily. If the code ships
+-- first, the columns don't exist, toBillingPlan maps every limit to null, and
+-- null silently means "no limit configured" — so every plan is either
+-- unlimited or blocked depending on the gate. Either way it is silently wrong.
 alter table billing_plans
   add column if not exists avatar_limit integer,          -- null = unlimited
   add column if not exists content_limit_monthly integer, -- null = unlimited

@@ -26,7 +26,7 @@ const lifecycle = {
 };
 vi.mock('@/lib/services', () => ({
   lifecycle, disclosureEngine: { requiredFor: vi.fn(() => []) },
-  quotaGate: { checkAndIncrement: vi.fn(), checkAvatarCap: vi.fn() }, billingGate: { check: vi.fn() },
+  quotaGate: { checkAndIncrement: vi.fn(), checkAvatarCap: vi.fn(), release: vi.fn() }, billingGate: { check: vi.fn() },
   contentGenerator: {}, publisher: { publish: vi.fn(() => []) }, videoProvider: {}, voiceProvider: {}, photoAvatarProvider: {},
 }));
 

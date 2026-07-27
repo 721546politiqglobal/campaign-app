@@ -15,7 +15,7 @@ const checkAndIncrement = vi.fn(() => Promise.resolve());
 vi.mock('@/lib/services', () => ({
   lifecycle: {}, disclosureEngine: {}, contentGenerator: {}, publisher: {},
   videoProvider: {}, voiceProvider: { synthesize }, photoAvatarProvider: {},
-  billingGate: { check: vi.fn() }, quotaGate: { checkAndIncrement, checkAvatarCap: vi.fn() },
+  billingGate: { check: vi.fn() }, quotaGate: { checkAndIncrement, checkAvatarCap: vi.fn(), release: vi.fn(() => Promise.resolve()) },
 }));
 
 describe('synthesizeVoiceAction', () => {

@@ -161,6 +161,14 @@ export const quotaRepo: QuotaRepo = {
     if (error) throw error;
     return data as boolean;
   },
+  async decrementFeatureUsage(campaignId, feature, periodStart) {
+    const { error } = await adminDb.rpc('decrement_feature_usage', {
+      p_campaign_id: campaignId,
+      p_feature: feature,
+      p_period_start: periodStart.toISOString(),
+    });
+    if (error) throw error;
+  },
   async countAvatars(campaignId) {
     const { count, error } = await adminDb.from('avatars').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId);
     if (error) throw error;

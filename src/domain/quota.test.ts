@@ -4,6 +4,7 @@ import { QuotaGate, QuotaExceeded, QuotaRepo, videoPeriodStart, contentPeriodSta
 function fakeRepo(overrides: Partial<QuotaRepo> = {}): QuotaRepo {
   return {
     async incrementFeatureUsage() { return true; },
+    async decrementFeatureUsage() {},
     async countAvatars() { return 0; },
     ...overrides,
   };
@@ -35,6 +36,38 @@ describe('QuotaGate.checkAndIncrement', () => {
     const periodStart = new Date('2026-07-01T00:00:00.000Z');
     await gate.checkAndIncrement('camp-9', 'content', periodStart, 50);
     expect(captured).toEqual(['camp-9', 'content', periodStart, 50]);
+  });
+});
+
+describe('QuotaGate.release', () => {
+  it('decrements the same campaign/feature/period the increment used', async () => {
+    let captured: unknown[] = [];
+    const gate = new QuotaGate(fakeRepo({
+      decrementFeatureUsage: async (...args) => { captured = args; },
+    }));
+    const periodStart = new Date('2026-07-27T00:00:00.000Z');
+    await gate.release('camp-9', 'video', periodStart);
+    expect(captured).toEqual(['camp-9', 'video', periodStart]);
+  });
+
+  it('resolves (never throws) so a release can be attempted on any failure path', async () => {
+    const gate = new QuotaGate(fakeRepo());
+    await expect(gate.release('camp-1', 'content', new Date('2026-07-01'))).resolves.toBeUndefined();
+  });
+
+  it('returns a slot so a subsequent checkAndIncrement can use it again', async () => {
+    // Real counter semantics: increment to the limit, release, increment again.
+    let count = 0;
+    const limitOf = 1;
+    const gate = new QuotaGate(fakeRepo({
+      incrementFeatureUsage: async () => { if (count >= limitOf) return false; count += 1; return true; },
+      decrementFeatureUsage: async () => { count = Math.max(count - 1, 0); },
+    }));
+    const periodStart = new Date('2026-07-27T00:00:00.000Z');
+    await gate.checkAndIncrement('camp-1', 'video', periodStart, limitOf);
+    await expect(gate.checkAndIncrement('camp-1', 'video', periodStart, limitOf)).rejects.toBeInstanceOf(QuotaExceeded);
+    await gate.release('camp-1', 'video', periodStart);
+    await expect(gate.checkAndIncrement('camp-1', 'video', periodStart, limitOf)).resolves.toBeUndefined();
   });
 });
 

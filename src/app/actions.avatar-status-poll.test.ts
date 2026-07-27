@@ -21,7 +21,7 @@ const photoAvatarProvider = {
   createVideoAvatar: vi.fn(), requestConsent: vi.fn(), getAvatarGroupStatus: vi.fn(),
 };
 const billingGate = { check: vi.fn() };
-const quotaGate = { checkAndIncrement: vi.fn(), checkAvatarCap: vi.fn() };
+const quotaGate = { checkAndIncrement: vi.fn(), checkAvatarCap: vi.fn(), release: vi.fn() };
 vi.mock('@/lib/services', () => ({
   lifecycle: {}, disclosureEngine: {}, contentGenerator: {}, publisher: {},
   videoProvider: {}, voiceProvider: {}, billingGate, quotaGate, photoAvatarProvider,

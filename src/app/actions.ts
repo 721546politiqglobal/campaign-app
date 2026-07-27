@@ -26,6 +26,31 @@ function guard<T>(fn: () => Promise<T>): Promise<Result> {
   });
 }
 
+// Run a provider call that a quota slot has already been consumed for, and give
+// the slot back if the call fails (audit finding BILL-9, re-broken by the move
+// to per-feature counters). `periodStart` must be the same value passed to the
+// preceding `checkAndIncrement`. A failure to release is logged, never allowed
+// to mask the underlying provider error.
+async function withQuotaRelease<T>(
+  campaignId: string,
+  feature: 'content' | 'video',
+  periodStart: Date,
+  fn: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    try {
+      await quotaGate.release(campaignId, feature, periodStart);
+    } catch (releaseError) {
+      console.error(
+        `Failed to release ${feature} quota for campaign ${campaignId} after a provider failure: ${releaseError}`,
+      );
+    }
+    throw e;
+  }
+}
+
 // Every content server action must confirm the item belongs to the caller's
 // campaign before acting on it — the DB has no RLS, so this is the tenant boundary.
 async function requireOwnedItem(id: string, campaignId: string): Promise<ContentItem | null> {
@@ -207,7 +232,9 @@ export async function createContentAction(formData: FormData) {
   redirect(`/content/${id}`);
 }
 
-export async function generateDraftAction(instruction: string, type: string) {
+export type DraftResult = { ok: true; title: string; text: string } | { ok: false; error: string };
+
+export async function generateDraftAction(instruction: string, type: string): Promise<DraftResult> {
   const s = await requireSession();
   const { getCandidateProfile } = await import('@/lib/candidate');
 
@@ -217,18 +244,22 @@ export async function generateDraftAction(instruction: string, type: string) {
   ]);
   if (!campaign) throw new Error('Campaign not found');
 
-  await billingGate.check(s.campaignId);
-  const plan = campaign.planId ? await getBillingPlan(campaign.planId) : null;
-  await quotaGate.checkAndIncrement(
-    s.campaignId, 'content',
-    contentPeriodStart(campaign.currentPeriodEnd),
-    plan?.contentLimitMonthly ?? null,
-  );
-  return await contentGenerator.draft({
-    instruction,
-    type,
-    candidateProfile: profile ?? undefined,
-  });
+  // Quota/billing refusals are returned, not thrown: Next.js redacts thrown
+  // server-action errors in production, so a thrown QuotaExceeded would reach
+  // the browser as an opaque digest and the user would never learn why their
+  // draft was refused (finding I6).
+  try {
+    await billingGate.check(s.campaignId);
+    const plan = campaign.planId ? await getBillingPlan(campaign.planId) : null;
+    const periodStart = contentPeriodStart(campaign.currentPeriodEnd);
+    await quotaGate.checkAndIncrement(s.campaignId, 'content', periodStart, plan?.contentLimitMonthly ?? null);
+    const out = await withQuotaRelease(s.campaignId, 'content', periodStart, () =>
+      contentGenerator.draft({ instruction, type, candidateProfile: profile ?? undefined }));
+    return { ok: true, title: out.title, text: out.text };
+  } catch (e) {
+    if (e instanceof QuotaExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
+    throw e;
+  }
 }
 
 export async function submitAction(id: string): Promise<Result> {
@@ -339,14 +370,24 @@ export async function generateVideoAction(
   try {
     await billingGate.check(s.campaignId);
     const plan = campaign.planId ? await getBillingPlan(campaign.planId) : null;
-    await quotaGate.checkAndIncrement(s.campaignId, 'video', videoPeriodStart(), plan?.videoLimitDaily ?? null);
-    const { videoId } = await videoProvider.generateAvatarVideo({
-      script,
-      avatarId,
-      voiceId: heygenVoiceId,
-      background: overrides?.background ?? profile?.videoBackground ?? 'plain',
-      aspectRatio: overrides?.aspectRatio ?? profile?.videoAspectRatio ?? '16:9',
-    });
+    // Reuse the same instant for the increment and any release below, so the
+    // release can never land on a different period bucket than the increment.
+    const periodStart = videoPeriodStart();
+    await quotaGate.checkAndIncrement(s.campaignId, 'video', periodStart, plan?.videoLimitDaily ?? null);
+    // The quota slot is consumed before the provider call, so a provider failure
+    // has to give it back — otherwise one HeyGen 500 costs a Starter campaign
+    // its entire day (video_limit_daily = 1) with nothing to show for it.
+    // Scoped to the provider call only: once HeyGen has accepted the job the
+    // video exists and the slot is legitimately spent, even if the DB writes
+    // below fail.
+    const { videoId } = await withQuotaRelease(s.campaignId, 'video', periodStart, () =>
+      videoProvider.generateAvatarVideo({
+        script,
+        avatarId,
+        voiceId: heygenVoiceId,
+        background: overrides?.background ?? profile?.videoBackground ?? 'plain',
+        aspectRatio: overrides?.aspectRatio ?? profile?.videoAspectRatio ?? '16:9',
+      }));
     await throwOnError(
       adminDb.from('content_items')
         .update({ video_job_id: videoId, video_status: 'processing', updated_at: new Date().toISOString() })
@@ -405,8 +446,12 @@ export async function synthesizeVoiceAction(text: string): Promise<Result & { au
   try {
     await billingGate.check(s.campaignId);
     const plan = campaign.planId ? await getBillingPlan(campaign.planId) : null;
-    await quotaGate.checkAndIncrement(s.campaignId, 'video', videoPeriodStart(), plan?.videoLimitDaily ?? null);
-    const { audioUrl } = await voiceProvider.synthesize({ text, voiceId });
+    const periodStart = videoPeriodStart();
+    await quotaGate.checkAndIncrement(s.campaignId, 'video', periodStart, plan?.videoLimitDaily ?? null);
+    // As in generateVideoAction: a failed ElevenLabs call must not cost the
+    // caller the quota slot it consumed.
+    const { audioUrl } = await withQuotaRelease(s.campaignId, 'video', periodStart, () =>
+      voiceProvider.synthesize({ text, voiceId }));
     return { ok: true, audioUrl };
   } catch (e) {
     if (e instanceof QuotaExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
@@ -509,11 +554,8 @@ export async function generateFromMonitoringAction(
   try {
     await billingGate.check(s.campaignId);
     const plan = campaign.planId ? await getBillingPlan(campaign.planId) : null;
-    await quotaGate.checkAndIncrement(
-      s.campaignId, 'content',
-      contentPeriodStart(campaign.currentPeriodEnd),
-      plan?.contentLimitMonthly ?? null,
-    );
+    const periodStart = contentPeriodStart(campaign.currentPeriodEnd);
+    await quotaGate.checkAndIncrement(s.campaignId, 'content', periodStart, plan?.contentLimitMonthly ?? null);
 
     const instruction =
       `Respond to this news story${result.opponent ? ` about ${result.opponent}` : ''} on behalf of a political campaign.\n\n` +
@@ -523,7 +565,8 @@ export async function generateFromMonitoringAction(
       `\nWrite a ${contentType.replace('_', ' ')} that directly addresses this story. ` +
       `Be factual, on-message, and persuasive.`;
 
-    const out = await contentGenerator.draft({ instruction, type: contentType, candidateProfile: profile ?? undefined });
+    const out = await withQuotaRelease(s.campaignId, 'content', periodStart, () =>
+      contentGenerator.draft({ instruction, type: contentType, candidateProfile: profile ?? undefined }));
 
     const id = uid();
     await throwOnError(

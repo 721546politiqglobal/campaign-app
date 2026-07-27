@@ -45,7 +45,7 @@ const upsertCandidateProfile = vi.fn(() => Promise.resolve());
 vi.mock('@/lib/candidate', () => ({ getCandidateProfile, upsertCandidateProfile }));
 
 const billingGate = { check: vi.fn(() => Promise.resolve()) };
-const quotaGate = { checkAndIncrement: vi.fn(() => Promise.resolve()), checkAvatarCap: vi.fn(() => Promise.resolve()) };
+const quotaGate = { checkAndIncrement: vi.fn(() => Promise.resolve()), checkAvatarCap: vi.fn(() => Promise.resolve()), release: vi.fn(() => Promise.resolve()) };
 const photoAvatarProvider = {
   uploadAsset: vi.fn(),
   createAvatarLook: vi.fn(),

@@ -22,7 +22,7 @@ const getCandidateProfile = vi.fn(() => Promise.resolve(null as any));
 vi.mock('@/lib/candidate', () => ({ getCandidateProfile, upsertCandidateProfile: vi.fn() }));
 
 const billingGate = { check: vi.fn(() => Promise.resolve()) };
-const quotaGate = { checkAndIncrement: vi.fn(() => Promise.resolve()), checkAvatarCap: vi.fn(() => Promise.resolve()) };
+const quotaGate = { checkAndIncrement: vi.fn(() => Promise.resolve()), checkAvatarCap: vi.fn(() => Promise.resolve()), release: vi.fn(() => Promise.resolve()) };
 const contentGenerator = { draft: vi.fn() };
 const videoProvider = { generateAvatarVideo: vi.fn(), getVideoStatus: vi.fn() };
 const voiceProvider = { synthesize: vi.fn() };
@@ -37,6 +37,7 @@ beforeEach(() => {
   billingGate.check.mockResolvedValue(undefined);
   quotaGate.checkAndIncrement.mockResolvedValue(undefined);
   quotaGate.checkAvatarCap.mockResolvedValue(undefined);
+  quotaGate.release.mockResolvedValue(undefined);
   getCandidateProfile.mockResolvedValue(null);
 });
 
@@ -48,12 +49,40 @@ describe('generateDraftAction billing', () => {
     expect(quotaGate.checkAndIncrement).toHaveBeenCalledWith('c-1', 'content', expect.any(Date), null);
   });
 
+  it('releases the content slot when the generator fails, using the increment period', async () => {
+    contentGenerator.draft.mockRejectedValue(new Error('model refused'));
+    const { generateDraftAction } = await import('./actions');
+    await expect(generateDraftAction('write a post', 'social_post')).rejects.toThrow('model refused');
+    const incrementPeriod = (quotaGate.checkAndIncrement.mock.calls[0] as unknown[])[2];
+    expect(quotaGate.release).toHaveBeenCalledWith('c-1', 'content', incrementPeriod);
+  });
+
   it('checks the content quota before generating', async () => {
     contentGenerator.draft.mockResolvedValue({ title: 'T', text: 'B' });
     const { generateDraftAction } = await import('./actions');
-    await generateDraftAction('write a post', 'social_post');
+    const r = await generateDraftAction('write a post', 'social_post');
+    expect(r).toEqual({ ok: true, title: 'T', text: 'B' });
     expect(quotaGate.checkAndIncrement).toHaveBeenCalledWith('c-1', 'content', expect.any(Date), null);
     expect(contentGenerator.draft).toHaveBeenCalled();
+    expect(quotaGate.release).not.toHaveBeenCalled();
+  });
+
+  it('returns the quota-exceeded message so the UI can show it verbatim (I6)', async () => {
+    const message = "You've used all content pieces included in your plan for this month. Upgrade your plan for more.";
+    quotaGate.checkAndIncrement.mockRejectedValue(new QuotaExceeded('content', message));
+    const { generateDraftAction } = await import('./actions');
+    const r = await generateDraftAction('write a post', 'social_post');
+    expect(r).toEqual({ ok: false, error: message });
+    expect(contentGenerator.draft).not.toHaveBeenCalled();
+  });
+
+  it('returns the billing-blocked message rather than throwing', async () => {
+    const { BillingBlocked } = await import('@/domain/billing');
+    billingGate.check.mockRejectedValue(new BillingBlocked('This campaign must subscribe to a plan before using this feature. Visit /pricing to subscribe.'));
+    const { generateDraftAction } = await import('./actions');
+    const r = await generateDraftAction('write a post', 'social_post');
+    expect(r).toEqual({ ok: false, error: expect.stringMatching(/must subscribe to a plan/) });
+    expect(quotaGate.checkAndIncrement).not.toHaveBeenCalled();
   });
 });
 
@@ -84,6 +113,33 @@ describe('generateVideoAction billing', () => {
     const r = await generateVideoAction('ci-1', 'script', { avatarId: 'look_1' });
     expect(r.ok).toBe(false);
     expect(videoProvider.generateAvatarVideo).not.toHaveBeenCalled();
+    expect(quotaGate.release).not.toHaveBeenCalled();
+  });
+
+  it('releases the video slot when HeyGen fails, so a provider error does not cost the day (I7/BILL-9)', async () => {
+    getCandidateProfile.mockResolvedValue({ heygenVoiceId: 'hv-1' });
+    videoProvider.generateAvatarVideo.mockRejectedValue(new Error('HeyGen 500'));
+    const { generateVideoAction } = await import('./actions');
+    await expect(generateVideoAction('ci-1', 'script', { avatarId: 'look_1' })).rejects.toThrow('HeyGen 500');
+    const incrementPeriod = (quotaGate.checkAndIncrement.mock.calls[0] as unknown[])[2];
+    expect(quotaGate.release).toHaveBeenCalledWith('c-1', 'video', incrementPeriod);
+  });
+
+  it('does NOT release the video slot when HeyGen accepted the job', async () => {
+    getCandidateProfile.mockResolvedValue({ heygenVoiceId: 'hv-1' });
+    videoProvider.generateAvatarVideo.mockResolvedValue({ videoId: 'v-1' });
+    const { generateVideoAction } = await import('./actions');
+    const r = await generateVideoAction('ci-1', 'script', { avatarId: 'look_1' });
+    expect(r.ok).toBe(true);
+    expect(quotaGate.release).not.toHaveBeenCalled();
+  });
+
+  it('still surfaces the provider error when the release itself fails', async () => {
+    getCandidateProfile.mockResolvedValue({ heygenVoiceId: 'hv-1' });
+    videoProvider.generateAvatarVideo.mockRejectedValue(new Error('HeyGen 500'));
+    quotaGate.release.mockRejectedValue(new Error('rpc down'));
+    const { generateVideoAction } = await import('./actions');
+    await expect(generateVideoAction('ci-1', 'script', { avatarId: 'look_1' })).rejects.toThrow('HeyGen 500');
   });
 });
 
@@ -95,5 +151,15 @@ describe('synthesizeVoiceAction billing', () => {
     const r = await synthesizeVoiceAction('hello');
     expect(r.ok).toBe(true);
     expect(quotaGate.checkAndIncrement).toHaveBeenCalledWith('c-1', 'video', expect.any(Date), null);
+    expect(quotaGate.release).not.toHaveBeenCalled();
+  });
+
+  it('releases the video slot when ElevenLabs fails (I7/BILL-9)', async () => {
+    getCandidateProfile.mockResolvedValue({ elevenLabsVoiceId: 'ev-1' });
+    voiceProvider.synthesize.mockRejectedValue(new Error('ElevenLabs 503'));
+    const { synthesizeVoiceAction } = await import('./actions');
+    await expect(synthesizeVoiceAction('hello')).rejects.toThrow('ElevenLabs 503');
+    const incrementPeriod = (quotaGate.checkAndIncrement.mock.calls[0] as unknown[])[2];
+    expect(quotaGate.release).toHaveBeenCalledWith('c-1', 'video', incrementPeriod);
   });
 });
