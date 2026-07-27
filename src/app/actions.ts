@@ -5,15 +5,15 @@ import { redirect } from 'next/navigation';
 import { requireSession, signInAs, signOut } from '@/lib/session';
 import { adminDb, throwOnError } from '@/lib/supabase';
 import { uid, prefixedId } from '@/lib/store';
-import { getCampaign } from '@/lib/data';
-import { lifecycle, disclosureEngine, usageMeter, billingGate, contentGenerator, publisher, videoProvider, voiceProvider, photoAvatarProvider } from '@/lib/services';
+import { getCampaign, getBillingPlan } from '@/lib/data';
+import { lifecycle, disclosureEngine, quotaGate, billingGate, contentGenerator, publisher, videoProvider, voiceProvider, photoAvatarProvider } from '@/lib/services';
 import { HeyGenAccessDeniedError } from '@/integrations';
 import { contentRepo, approvalRepo, disclosureRepo, auditRepo } from '@/lib/repos';
 import { ContentType, ContentStatus, ContentItem, Platform, VIDEO_CONTENT_TYPES, isContentType } from '@/domain/types';
 import { GateError } from '@/domain/content-lifecycle';
 import { combineDisclosureText } from '@/domain/disclosure';
 import { zonedNaiveToUtc } from '@/lib/timezone';
-import { CapExceeded } from '@/domain/usage';
+import { QuotaExceeded, contentPeriodStart, videoPeriodStart } from '@/domain/quota';
 import { BillingBlocked } from '@/domain/billing';
 import { can } from '@/lib/permissions';
 
@@ -21,7 +21,7 @@ type Result = { ok: true } | { ok: false; error: string };
 
 function guard<T>(fn: () => Promise<T>): Promise<Result> {
   return fn().then(() => ({ ok: true as const })).catch((e: unknown) => {
-    if (e instanceof GateError || e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false as const, error: e.message };
+    if (e instanceof GateError || e instanceof QuotaExceeded || e instanceof BillingBlocked) return { ok: false as const, error: e.message };
     throw e;
   });
 }
@@ -209,7 +209,6 @@ export async function createContentAction(formData: FormData) {
 
 export async function generateDraftAction(instruction: string, type: string) {
   const s = await requireSession();
-  const { CONTENT_COST_CENTS } = await import('@/lib/prompt');
   const { getCandidateProfile } = await import('@/lib/candidate');
 
   const [campaign, profile] = await Promise.all([
@@ -218,20 +217,18 @@ export async function generateDraftAction(instruction: string, type: string) {
   ]);
   if (!campaign) throw new Error('Campaign not found');
 
-  const cost = CONTENT_COST_CENTS[type] ?? 5_00;
   await billingGate.check(s.campaignId);
-  const reservationId = await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, cost);
-  try {
-    return await contentGenerator.draft({
-      instruction,
-      type,
-      candidateProfile: profile ?? undefined,
-    });
-  } finally {
-    // Record even if draft() throws — the Anthropic call already happened
-    // (and was billed by Anthropic) regardless of whether we got usable text back.
-    await usageMeter.record(reservationId, 'llm_tokens', 1, cost);
-  }
+  const plan = campaign.planId ? await getBillingPlan(campaign.planId) : null;
+  await quotaGate.checkAndIncrement(
+    s.campaignId, 'content',
+    contentPeriodStart(campaign.currentPeriodEnd),
+    plan?.contentLimitMonthly ?? null,
+  );
+  return await contentGenerator.draft({
+    instruction,
+    type,
+    candidateProfile: profile ?? undefined,
+  });
 }
 
 export async function submitAction(id: string): Promise<Result> {
@@ -351,43 +348,34 @@ export async function generateVideoAction(
   // tenant's video with one shared voice. And never pass the ElevenLabs id
   // here: HeyGen uses a different voice-id namespace and 400s on it (INT-7).
   if (!heygenVoiceId) return { ok: false, error: 'No video voice is set up for this campaign yet. Contact your platform admin to assign one.' };
-  const VIDEO_COST_CENTS = 50_00;
   try {
     await billingGate.check(s.campaignId);
-    const reservationId = await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, VIDEO_COST_CENTS);
-    let cost = 0;
-    try {
-      const { videoId } = await videoProvider.generateAvatarVideo({
-        script,
-        avatarId,
-        voiceId: heygenVoiceId,
-        background: overrides?.background ?? profile?.videoBackground ?? 'plain',
-        aspectRatio: overrides?.aspectRatio ?? profile?.videoAspectRatio ?? '16:9',
-      });
-      cost = VIDEO_COST_CENTS; // provider accepted the job — this is billable
-      // Persist the job on the content row so a page refresh resumes polling
-      // instead of orphaning this paid ($50) render (INT-5).
-      await throwOnError(
-        adminDb.from('content_items')
-          .update({ video_job_id: videoId, video_status: 'processing', updated_at: new Date().toISOString() })
-          .eq('id', contentId),
-        'content_items.video_job',
-      );
-      await throwOnError(
-        adminDb.from('audit_entries').insert({
-          campaign_id: s.campaignId, actor_user_id: s.userId,
-          action: 'generate_video', entity_type: 'content_item', entity_id: contentId,
-          details: { videoId },
-        }),
-        'audit_entries.generate_video',
-      );
-      return { ok: true, videoId };
-    } finally {
-      // Always release the reservation; bill only if the job was accepted.
-      await usageMeter.record(reservationId, 'video_generation', 1, cost);
-    }
+    const plan = campaign.planId ? await getBillingPlan(campaign.planId) : null;
+    await quotaGate.checkAndIncrement(s.campaignId, 'video', videoPeriodStart(), plan?.videoLimitDaily ?? null);
+    const { videoId } = await videoProvider.generateAvatarVideo({
+      script,
+      avatarId,
+      voiceId: heygenVoiceId,
+      background: overrides?.background ?? profile?.videoBackground ?? 'plain',
+      aspectRatio: overrides?.aspectRatio ?? profile?.videoAspectRatio ?? '16:9',
+    });
+    await throwOnError(
+      adminDb.from('content_items')
+        .update({ video_job_id: videoId, video_status: 'processing', updated_at: new Date().toISOString() })
+        .eq('id', contentId),
+      'content_items.video_job',
+    );
+    await throwOnError(
+      adminDb.from('audit_entries').insert({
+        campaign_id: s.campaignId, actor_user_id: s.userId,
+        action: 'generate_video', entity_type: 'content_item', entity_id: contentId,
+        details: { videoId },
+      }),
+      'audit_entries.generate_video',
+    );
+    return { ok: true, videoId };
   } catch (e) {
-    if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
+    if (e instanceof QuotaExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
     throw e;
   }
 }
@@ -428,17 +416,12 @@ export async function synthesizeVoiceAction(text: string): Promise<Result & { au
   }
   try {
     await billingGate.check(s.campaignId);
-    const reservationId = await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, 20_00);
-    let cost = 0;
-    try {
-      const { audioUrl } = await voiceProvider.synthesize({ text, voiceId });
-      cost = 20_00;
-      return { ok: true, audioUrl };
-    } finally {
-      await usageMeter.record(reservationId, 'voice_synthesis', 1, cost);
-    }
+    const plan = campaign.planId ? await getBillingPlan(campaign.planId) : null;
+    await quotaGate.checkAndIncrement(s.campaignId, 'video', videoPeriodStart(), plan?.videoLimitDaily ?? null);
+    const { audioUrl } = await voiceProvider.synthesize({ text, voiceId });
+    return { ok: true, audioUrl };
   } catch (e) {
-    if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
+    if (e instanceof QuotaExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
     throw e;
   }
 }
@@ -520,7 +503,6 @@ export async function generateFromMonitoringAction(
   const s = await requireSession();
   if (!isContentType(contentType)) return { ok: false, error: 'Unknown content type.' };
   const { getCandidateProfile } = await import('@/lib/candidate');
-  const { CONTENT_COST_CENTS } = await import('@/lib/prompt');
 
   const [campaign, profile] = await Promise.all([
     getCampaign(s.campaignId),
@@ -537,9 +519,13 @@ export async function generateFromMonitoringAction(
   if (!result) return { ok: false, error: 'Monitoring result not found.' };
 
   try {
-    const cost = CONTENT_COST_CENTS[contentType] ?? 5_00;
     await billingGate.check(s.campaignId);
-    const reservationId = await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, cost);
+    const plan = campaign.planId ? await getBillingPlan(campaign.planId) : null;
+    await quotaGate.checkAndIncrement(
+      s.campaignId, 'content',
+      contentPeriodStart(campaign.currentPeriodEnd),
+      plan?.contentLimitMonthly ?? null,
+    );
 
     const instruction =
       `Respond to this news story${result.opponent ? ` about ${result.opponent}` : ''} on behalf of a political campaign.\n\n` +
@@ -549,14 +535,7 @@ export async function generateFromMonitoringAction(
       `\nWrite a ${contentType.replace('_', ' ')} that directly addresses this story. ` +
       `Be factual, on-message, and persuasive.`;
 
-    let out;
-    try {
-      out = await contentGenerator.draft({ instruction, type: contentType, candidateProfile: profile ?? undefined });
-    } finally {
-      // Record even if draft() throws — the Anthropic call already happened
-      // (and was billed by Anthropic) regardless of whether we got usable text back.
-      await usageMeter.record(reservationId, 'llm_tokens', 1, cost);
-    }
+    const out = await contentGenerator.draft({ instruction, type: contentType, candidateProfile: profile ?? undefined });
 
     const id = uid();
     await throwOnError(
@@ -585,7 +564,7 @@ export async function generateFromMonitoringAction(
 
     return { ok: true, contentId: id };
   } catch (e) {
-    if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
+    if (e instanceof QuotaExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
     throw e;
   }
 }
@@ -715,9 +694,6 @@ export async function scheduleWithTimeAction(
 
 // ── Avatar creation ───────────────────────────────────────────────────────────
 
-const AVATAR_LOOK_COST_CENTS = 1_00;
-const AVATAR_PROMPT_LOOK_COST_CENTS = 1_00;
-
 export async function createAvatarAction(formData: FormData): Promise<Result & { avatarId?: string }> {
   const s = await requireSession();
   if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
@@ -736,13 +712,12 @@ export async function createAvatarAction(formData: FormData): Promise<Result & {
   const campaign = await getCampaign(s.campaignId);
   if (!campaign) return { ok: false, error: 'Campaign not found.' };
 
-  const estimatedCost = files.length * AVATAR_LOOK_COST_CENTS;
-  let reservationId: string;
   try {
     await billingGate.check(s.campaignId);
-    reservationId = await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, estimatedCost);
+    const plan = campaign.planId ? await getBillingPlan(campaign.planId) : null;
+    await quotaGate.checkAvatarCap(s.campaignId, plan?.avatarLimit ?? null);
   } catch (e) {
-    if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
+    if (e instanceof QuotaExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
     throw e;
   }
 
@@ -773,7 +748,6 @@ export async function createAvatarAction(formData: FormData): Promise<Result & {
     status: 'training',
   });
 
-  let processedCount = 0;
   let createError: string | null = null;
   try {
     let groupId: string | undefined;
@@ -785,7 +759,6 @@ export async function createAvatarAction(formData: FormData): Promise<Result & {
         assetId,
         avatarGroupId: groupId,
       });
-      processedCount++;
       groupId = groupId ?? newGroupId;
       baseLookId = baseLookId ?? lookId;
     }
@@ -793,11 +766,6 @@ export async function createAvatarAction(formData: FormData): Promise<Result & {
   } catch (e) {
     createError = e instanceof Error ? e.message : String(e);
     await updateAvatarStatus(avatarId, 'failed', { errorMessage: createError });
-  } finally {
-    // Always finalize (even at processedCount 0) so the reservation from
-    // guard() above is released promptly instead of relying on its 5-minute
-    // auto-expiry.
-    await usageMeter.record(reservationId, 'avatar_training', processedCount, processedCount * AVATAR_LOOK_COST_CENTS);
   }
 
   revalidatePath('/avatars');
@@ -830,7 +798,6 @@ export async function checkAvatarStatusAction(avatarId: string): Promise<Result>
   return { ok: true };
 }
 
-const AVATAR_DIGITAL_TWIN_COST_CENTS = 5_00; // Placeholder — HeyGen's real Digital Twin credit cost is unconfirmed on this account; correct once the verification spike (scripts/verify-heygen-digital-twin.mjs) or HeyGen billing data shows the real figure.
 const MAX_TRAINING_VIDEO_BYTES = 500 * 1024 * 1024;
 
 export async function createVideoAvatarAction(formData: FormData): Promise<Result & { avatarId?: string }> {
@@ -849,12 +816,12 @@ export async function createVideoAvatarAction(formData: FormData): Promise<Resul
   const campaign = await getCampaign(s.campaignId);
   if (!campaign) return { ok: false, error: 'Campaign not found.' };
 
-  let reservationId: string;
   try {
     await billingGate.check(s.campaignId);
-    reservationId = await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, AVATAR_DIGITAL_TWIN_COST_CENTS);
+    const plan = campaign.planId ? await getBillingPlan(campaign.planId) : null;
+    await quotaGate.checkAvatarCap(s.campaignId, plan?.avatarLimit ?? null);
   } catch (e) {
-    if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
+    if (e instanceof QuotaExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
     throw e;
   }
 
@@ -883,14 +850,12 @@ export async function createVideoAvatarAction(formData: FormData): Promise<Resul
     status: 'training',
   });
 
-  let processedCost = 0;
   let createError: string | null = null;
   try {
     const { assetId } = await photoAvatarProvider.uploadAsset(buffer, file.type);
     const { groupId, lookId } = await photoAvatarProvider.createVideoAvatar({ name, assetId });
     const rerouteUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/avatars`;
     const { consentUrl, consentStatus } = await photoAvatarProvider.requestConsent({ groupId, rerouteUrl });
-    processedCost = AVATAR_DIGITAL_TWIN_COST_CENTS;
     await updateAvatarStatus(avatarId, 'pending_consent', { heygenGroupId: groupId, heygenLookId: lookId, consentUrl, consentStatus });
   } catch (e) {
     const accessDenied = e instanceof HeyGenAccessDeniedError;
@@ -901,8 +866,6 @@ export async function createVideoAvatarAction(formData: FormData): Promise<Resul
     // The access-denied message is already complete and user-facing — don't
     // wrap it with the generic "creation failed" prefix below.
     if (accessDenied) { revalidatePath('/avatars'); return { ok: false, error: createError }; }
-  } finally {
-    await usageMeter.record(reservationId, 'avatar_digital_twin_training', processedCost > 0 ? 1 : 0, processedCost);
   }
 
   revalidatePath('/avatars');
@@ -973,32 +936,28 @@ export async function generatePromptLookAction(avatarId: string, name: string, p
 
   try {
     await billingGate.check(s.campaignId);
-    const reservationId = await usageMeter.guard(s.campaignId, campaign.monthlyCostCapCents, AVATAR_PROMPT_LOOK_COST_CENTS);
-    let cost = 0;
-    try {
-      const { lookId } = await photoAvatarProvider.createPromptLook({
-        name: name.trim() || 'Styled look',
-        prompt: prompt.trim(),
-        avatarId: avatar.heygenLookId,
-      });
-      // The avatars table only tracks one heygen_look_id per row (see
-      // migration 012) — a newly generated look replaces it so video generation
-      // (which reads heygenAvatarId/heygenLookId) actually picks it up. Without
-      // this, the HeyGen asset we just paid for is created and then discarded.
-      if (lookId) {
-        cost = AVATAR_PROMPT_LOOK_COST_CENTS; // a look was actually produced
-        await updateAvatarStatus(avatarId, avatar.status, { heygenLookId: lookId });
-        const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
-        const profile = await getCandidateProfile(s.campaignId);
-        if (profile?.activeAvatarId === avatarId) {
-          await upsertCandidateProfile(s.campaignId, { heygenAvatarId: lookId });
-        }
+    // Regenerating a look on an existing, already-created avatar doesn't
+    // consume avatar quota (only createAvatarAction/createVideoAvatarAction,
+    // which create new avatar rows, do) — no quotaGate check belongs here.
+    const { lookId } = await photoAvatarProvider.createPromptLook({
+      name: name.trim() || 'Styled look',
+      prompt: prompt.trim(),
+      avatarId: avatar.heygenLookId,
+    });
+    // The avatars table only tracks one heygen_look_id per row (see
+    // migration 012) — a newly generated look replaces it so video generation
+    // (which reads heygenAvatarId/heygenLookId) actually picks it up. Without
+    // this, the HeyGen asset we just generated is created and then discarded.
+    if (lookId) {
+      await updateAvatarStatus(avatarId, avatar.status, { heygenLookId: lookId });
+      const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
+      const profile = await getCandidateProfile(s.campaignId);
+      if (profile?.activeAvatarId === avatarId) {
+        await upsertCandidateProfile(s.campaignId, { heygenAvatarId: lookId });
       }
-    } finally {
-      await usageMeter.record(reservationId, 'avatar_look_generation', 1, cost);
     }
   } catch (e) {
-    if (e instanceof CapExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
+    if (e instanceof BillingBlocked) return { ok: false, error: e.message };
     return { ok: false, error: e instanceof Error ? e.message : 'Failed to generate look.' };
   }
   revalidatePath('/avatars');

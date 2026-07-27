@@ -21,10 +21,10 @@ const photoAvatarProvider = {
   createVideoAvatar: vi.fn(), requestConsent: vi.fn(), getAvatarGroupStatus: vi.fn(),
 };
 const billingGate = { check: vi.fn() };
-const usageMeter = { guard: vi.fn(), record: vi.fn() };
+const quotaGate = { checkAndIncrement: vi.fn(), checkAvatarCap: vi.fn() };
 vi.mock('@/lib/services', () => ({
   lifecycle: {}, disclosureEngine: {}, contentGenerator: {}, publisher: {},
-  videoProvider: {}, voiceProvider: {}, billingGate, usageMeter, photoAvatarProvider,
+  videoProvider: {}, voiceProvider: {}, billingGate, quotaGate, photoAvatarProvider,
 }));
 vi.mock('@/lib/repos', () => ({ contentRepo: {}, approvalRepo: {}, disclosureRepo: {}, auditRepo: { append: vi.fn() } }));
 

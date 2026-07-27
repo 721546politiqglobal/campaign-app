@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { CapExceeded } from '@/domain/usage';
+import { QuotaExceeded } from '@/domain/quota';
 
 const session = { userId: 'u-1', name: 'Owner', role: 'owner' as const, campaignId: 'c-1', exp: 9_999_999_999 };
 const campaign = {
@@ -41,7 +41,7 @@ const getAvatar = vi.fn();
 vi.mock('@/lib/avatars', () => ({ insertAvatar, updateAvatarStatus, getAvatar }));
 
 const billingGate = { check: vi.fn(() => Promise.resolve()) };
-const usageMeter = { guard: vi.fn(() => Promise.resolve('res-1')), record: vi.fn(() => Promise.resolve()) };
+const quotaGate = { checkAndIncrement: vi.fn(() => Promise.resolve()), checkAvatarCap: vi.fn(() => Promise.resolve()) };
 const photoAvatarProvider = {
   uploadAsset: vi.fn(),
   createAvatarLook: vi.fn(),
@@ -53,7 +53,7 @@ const photoAvatarProvider = {
 vi.mock('@/lib/services', () => ({
   lifecycle: {}, disclosureEngine: {}, contentGenerator: {}, publisher: {},
   videoProvider: {}, voiceProvider: {},
-  billingGate, usageMeter, photoAvatarProvider,
+  billingGate, quotaGate, photoAvatarProvider,
 }));
 
 vi.mock('@/lib/repos', () => ({ contentRepo: {}, approvalRepo: {}, disclosureRepo: {}, auditRepo: { append: vi.fn() } }));
@@ -69,8 +69,8 @@ function makeVideoForm(overrides: Partial<{ consent: string; name: string; video
 beforeEach(() => {
   vi.clearAllMocks();
   billingGate.check.mockResolvedValue(undefined);
-  usageMeter.guard.mockResolvedValue('res-1');
-  usageMeter.record.mockResolvedValue(undefined);
+  quotaGate.checkAndIncrement.mockResolvedValue(undefined);
+  quotaGate.checkAvatarCap.mockResolvedValue(undefined);
 });
 
 describe('createVideoAvatarAction', () => {
@@ -98,14 +98,14 @@ describe('createVideoAvatarAction', () => {
     if (!result.ok) expect(result.error).toMatch(/mp4|quicktime/i);
   });
 
-  it('checks the spend cap before calling HeyGen, and never calls HeyGen if the cap is exceeded', async () => {
-    usageMeter.guard.mockRejectedValue(new CapExceeded('This campaign has reached its monthly spending cap. Raise the cap in Settings to continue.'));
+  it('checks the avatar cap before calling HeyGen, and never calls HeyGen if the cap is exceeded', async () => {
+    quotaGate.checkAvatarCap.mockRejectedValue(new QuotaExceeded('avatar', 'Your plan includes up to 1 avatars. Delete one or upgrade your plan to create another.'));
     const { createVideoAvatarAction } = await import('./actions');
 
     const result = await createVideoAvatarAction(makeVideoForm());
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/spending cap/);
+    if (!result.ok) expect(result.error).toMatch(/avatars/);
     expect(photoAvatarProvider.uploadAsset).not.toHaveBeenCalled();
   });
 
@@ -122,7 +122,7 @@ describe('createVideoAvatarAction', () => {
     expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'pending_consent', {
       heygenGroupId: 'group-1', heygenLookId: 'look-1', consentUrl: 'https://app.heygen.com/consent/abc', consentStatus: 'pending',
     });
-    expect(usageMeter.record).toHaveBeenCalled();
+    expect(quotaGate.checkAvatarCap).toHaveBeenCalledWith('c-1', null);
   });
 
   it('marks the row failed (never silently dropped) when consent request fails after avatar creation', async () => {

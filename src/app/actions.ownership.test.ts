@@ -20,7 +20,7 @@ vi.mock('@/lib/repos', () => ({
 const lifecycle = { submitForReview: vi.fn(), approve: vi.fn(), reject: vi.fn(), schedule: vi.fn(), markPublished: vi.fn() };
 vi.mock('@/lib/services', () => ({
   lifecycle, disclosureEngine: { requiredFor: vi.fn(() => []) },
-  usageMeter: { guard: vi.fn(), record: vi.fn() }, billingGate: { check: vi.fn() },
+  quotaGate: { checkAndIncrement: vi.fn(), checkAvatarCap: vi.fn() }, billingGate: { check: vi.fn() },
   contentGenerator: {}, publisher: { publish: vi.fn(() => []) }, videoProvider: {}, voiceProvider: {}, photoAvatarProvider: {},
 }));
 

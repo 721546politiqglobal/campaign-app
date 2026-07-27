@@ -17,7 +17,7 @@ const generateAvatarVideo = vi.fn(() => Promise.resolve({ videoId: 'job-1' }));
 vi.mock('@/lib/services', () => ({
   lifecycle: {}, disclosureEngine: {}, contentGenerator: {}, publisher: {},
   videoProvider: { generateAvatarVideo, getVideoStatus: vi.fn() }, voiceProvider: {}, photoAvatarProvider: {},
-  billingGate: { check: vi.fn() }, usageMeter: { guard: vi.fn(() => Promise.resolve('res-1')), record: vi.fn() },
+  billingGate: { check: vi.fn() }, quotaGate: { checkAndIncrement: vi.fn(() => Promise.resolve()), checkAvatarCap: vi.fn() },
 }));
 
 describe('generateVideoAction voice namespace', () => {
