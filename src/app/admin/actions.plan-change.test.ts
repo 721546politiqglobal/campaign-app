@@ -30,13 +30,4 @@ describe('assignPlanAction preserves revenue on plan change', () => {
     expect(cancel).toHaveBeenCalledWith('sub_old', { invoice_now: true, prorate: true });
   });
 
-  it('seeds usage_sync_cursor.last_synced_at at ~now when the subscription is created', async () => {
-    const before = Date.now();
-    const { assignPlanAction } = await import('./actions');
-    await assignPlanAction(fd({ campaignId: 'c-1', planId: 'starter' }));
-    const cursorCall = (upsert.mock.calls as unknown[][]).find(c => (c[0] as any)?.campaign_id === 'c-1' && 'last_synced_at' in (c[0] as any));
-    expect(cursorCall).toBeTruthy();
-    const seeded = new Date((cursorCall![0] as any).last_synced_at).getTime();
-    expect(seeded).toBeGreaterThanOrEqual(before);
-  });
 });

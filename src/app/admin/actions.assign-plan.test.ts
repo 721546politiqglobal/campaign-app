@@ -45,7 +45,7 @@ beforeEach(() => {
 });
 
 describe('assignPlanAction', () => {
-  it('creates a Stripe customer first when the campaign has none, then a two-item incomplete subscription', async () => {
+  it('creates a Stripe customer first when the campaign has none, then a single-item incomplete subscription', async () => {
     getCampaign.mockResolvedValue({ id: 'c-1', name: 'Camp', stripeCustomerId: null, stripeSubscriptionId: null });
     const { assignPlanAction } = await import('./actions');
     const r = await assignPlanAction(fd());
@@ -54,7 +54,7 @@ describe('assignPlanAction', () => {
     expect(subscriptionsCancel).not.toHaveBeenCalled();
     expect(subscriptionsCreate).toHaveBeenCalledWith(expect.objectContaining({
       customer: 'cus_new',
-      items: [{ price: 'price_flat' }, { price: 'price_metered' }],
+      items: [{ price: 'price_flat' }],
       payment_behavior: 'default_incomplete',
     }));
   });
@@ -71,7 +71,7 @@ describe('assignPlanAction', () => {
     expect(customersCreate).not.toHaveBeenCalled();
   });
 
-  it('persists the new subscription id, status, and resets the cap to the plan allowance', async () => {
+  it('persists the new subscription id, status, and grace period', async () => {
     getCampaign.mockResolvedValue({ id: 'c-1', name: 'Camp', stripeCustomerId: 'cus_1', stripeSubscriptionId: null });
     const { assignPlanAction } = await import('./actions');
     await assignPlanAction(fd());
@@ -79,7 +79,6 @@ describe('assignPlanAction', () => {
       plan_id: 'plan-starter',
       stripe_subscription_id: 'sub_new',
       subscription_status: 'incomplete',
-      monthly_cost_cap_cents: 2500,
       grace_period_ends_at: null,
     }));
     expect(campaignsUpdateEq).toHaveBeenCalledWith('id', 'c-1');
