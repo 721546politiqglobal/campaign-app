@@ -5,6 +5,7 @@ import {
 import { DisclosureRule, DisclosureRulesRepo } from '@/domain/disclosure';
 import { UsageRepo } from '@/domain/usage';
 import { BillingRepo, CampaignBillingInfo } from '@/domain/billing';
+import { QuotaRepo } from '@/domain/quota';
 
 // ── row → domain mappers ─────────────────────────────────────────────────────
 
@@ -180,6 +181,24 @@ export const billingRepo: BillingRepo = {
       subscriptionStatus: (data.subscription_status as string | null) ?? null,
       gracePeriodEndsAt: (data.grace_period_ends_at as string | null) ?? null,
     };
+  },
+};
+
+export const quotaRepo: QuotaRepo = {
+  async incrementFeatureUsage(campaignId, feature, periodStart, limit) {
+    const { data, error } = await adminDb.rpc('increment_feature_usage', {
+      p_campaign_id: campaignId,
+      p_feature: feature,
+      p_period_start: periodStart.toISOString(),
+      p_limit: limit,
+    });
+    if (error) throw error;
+    return data as boolean;
+  },
+  async countAvatars(campaignId) {
+    const { count, error } = await adminDb.from('avatars').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId);
+    if (error) throw error;
+    return count ?? 0;
   },
 };
 
