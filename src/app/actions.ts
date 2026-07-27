@@ -298,18 +298,6 @@ export async function publishAction(id: string, platforms: Platform[]): Promise<
   return r;
 }
 
-export async function setCapAction(formData: FormData): Promise<void> {
-  const s = await requireSession();
-  if (!can(s.role, 'edit_settings')) return;
-  const dollars = Number(formData.get('cap'));
-  if (Number.isFinite(dollars) && dollars >= 0) {
-    await adminDb.from('campaigns')
-      .update({ monthly_cost_cap_cents: Math.round(dollars * 100) })
-      .eq('id', s.campaignId);
-  }
-  revalidatePath('/settings');
-}
-
 export async function openMyBillingPortalAction(): Promise<void> {
   const s = await requireSession();
   if (!can(s.role, 'edit_settings')) return;
