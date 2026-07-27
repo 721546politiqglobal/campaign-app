@@ -1,10 +1,11 @@
 import { AppFrame } from '@/components/AppFrame';
 import { requireSession } from '@/lib/session';
-import { getCampaign, getBillingPlan, getMonthlySpend } from '@/lib/data';
+import { getCampaign, getBillingPlan, getContentUsageThisPeriod, getVideoUsageToday, getAvatarCount } from '@/lib/data';
 import { openMyBillingPortalAction } from '@/app/actions';
 import { can } from '@/lib/permissions';
 import { formatDate } from '@/lib/formatDate';
 import { INACTIVE_STATUSES } from '@/domain/billing';
+import Link from 'next/link';
 
 const STATUS_TONE: Record<string, { label: string; color: string; bg: string; border: string }> = {
   active:              { label: 'Active',    color: 'var(--ok)',     bg: 'var(--ok-dim)',     border: 'var(--ok-border)' },
@@ -19,21 +20,39 @@ const STATUS_TONE: Record<string, { label: string; color: string; bg: string; bo
 
 const usd = (c: number) => (c / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
+function Meter({ label, used, limit }: { label: string; used: number; limit: number | null }) {
+  const pct = limit ? Math.min((used / limit) * 100, 100) : 0;
+  const over = limit !== null && used >= limit;
+  return (
+    <div style={{ padding: '16px 0', borderTop: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
+        <span className="muted">{label}</span>
+        <span className="data" style={{ color: over ? 'var(--warn)' : 'var(--text)' }}>
+          {used} of {limit ?? 'Unlimited'}
+        </span>
+      </div>
+      {limit !== null && (
+        <div style={{ height: 6, background: 'var(--bg-hover)', borderRadius: 999, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${pct}%`, borderRadius: 999, background: over ? 'var(--warn)' : 'var(--accent-grad)' }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default async function Billing() {
   const s = await requireSession();
   const campaign = await getCampaign(s.campaignId);
-  const [plan, monthlySpendCents] = await Promise.all([
-    campaign?.planId ? getBillingPlan(campaign.planId) : Promise.resolve(null),
-    getMonthlySpend(s.campaignId),
+  const plan = campaign?.planId ? await getBillingPlan(campaign.planId) : null;
+  const [contentUsed, videoUsed, avatarCount] = await Promise.all([
+    getContentUsageThisPeriod(s.campaignId, campaign?.currentPeriodEnd ?? null),
+    getVideoUsageToday(s.campaignId),
+    getAvatarCount(s.campaignId),
   ]);
   const canEdit = can(s.role, 'edit_settings');
 
   const status = campaign?.subscriptionStatus ?? null;
   const tone = status ? STATUS_TONE[status] : null;
-  const included = plan?.includedUsageCents ?? 0;
-  const usedPct = included > 0 ? Math.min((monthlySpendCents / included) * 100, 100) : 0;
-  const over = included > 0 && monthlySpendCents > included;
-  const meterColor = over ? 'var(--warn)' : usedPct > 80 ? 'var(--warn)' : 'var(--accent)';
 
   return (
     <AppFrame>
@@ -63,7 +82,6 @@ export default async function Billing() {
       )}
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        {/* Plan header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, padding: '22px 24px', borderBottom: '1px solid var(--border)' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
@@ -73,39 +91,26 @@ export default async function Billing() {
               )}
             </div>
             <div className="muted" style={{ fontSize: 13 }}>
-              {plan ? <>Campaign subscription · <span className="data" style={{ color: 'var(--text)' }}>{usd(plan.monthlyPriceCents)}</span>/mo</> : 'No plan assigned yet — contact your platform admin.'}
+              {plan ? <>Campaign subscription · <span className="data" style={{ color: 'var(--text)' }}>{usd(plan.monthlyPriceCents)}</span>/mo</> : 'No plan assigned yet.'}
             </div>
           </div>
-          {canEdit && campaign?.stripeCustomerId && (
-            <form action={openMyBillingPortalAction}>
-              <button className="btn primary" type="submit">Manage billing</button>
-            </form>
+          {canEdit && (
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Link href="/pricing" className="btn">Change plan</Link>
+              {campaign?.stripeCustomerId && (
+                <form action={openMyBillingPortalAction}>
+                  <button className="btn primary" type="submit">Manage billing</button>
+                </form>
+              )}
+            </div>
           )}
         </div>
 
-        {/* Usage meter */}
-        {plan && (
-          <div style={{ padding: '22px 24px' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
-              <span className="eyebrow">Usage this billing period</span>
-              <span className="data" style={{ fontSize: 13, color: over ? 'var(--warn)' : 'var(--text-3)' }}>
-                {included > 0 ? `${Math.round((monthlySpendCents / included) * 100)}%` : '—'}
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 12 }}>
-              <span className="data" style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)' }}>{usd(monthlySpendCents)}</span>
-              <span className="muted" style={{ fontSize: 13 }}>used of <span className="data" style={{ color: 'var(--text-2)' }}>{usd(included)}</span> included</span>
-            </div>
-            <div style={{ height: 8, background: 'var(--bg-hover)', borderRadius: 999, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${usedPct}%`, borderRadius: 999, background: usedPct > 80 || over ? meterColor : 'var(--accent-grad)', transition: 'width 0.4s ease' }} />
-            </div>
-            <p className="muted" style={{ fontSize: 12, marginTop: 12, marginBottom: 0 }}>
-              {over
-                ? 'You’re over the included allowance — additional usage bills as overage.'
-                : 'Usage above the included allowance bills as overage. Your hard spend cap is set separately in Settings.'}
-            </p>
-          </div>
-        )}
+        <div style={{ padding: '6px 24px 22px' }}>
+          <Meter label="Content pieces this month" used={contentUsed} limit={plan?.contentLimitMonthly ?? null} />
+          <Meter label="Videos today" used={videoUsed} limit={plan?.videoLimitDaily ?? null} />
+          <Meter label="Avatars" used={avatarCount} limit={plan?.avatarLimit ?? null} />
+        </div>
       </div>
     </AppFrame>
   );
