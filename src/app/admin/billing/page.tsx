@@ -53,7 +53,7 @@ export default async function AdminBillingPage({
       <div className="card" style={{ padding: 0 }}>
         <table>
           <thead>
-            <tr><th>Plan</th><th>Price</th><th>Seats</th><th>Included usage</th><th>Overage</th></tr>
+            <tr><th>Plan</th><th>Price</th><th>Seats</th><th>Avatars</th><th>Content/mo</th><th>Videos/day</th></tr>
           </thead>
           <tbody>
             {plans.map(p => (
@@ -61,12 +61,13 @@ export default async function AdminBillingPage({
                 <td style={{ fontWeight: 600, color: 'var(--text)' }}>{p.name}</td>
                 <td>{fmt(p.monthlyPriceCents)}/mo</td>
                 <td className="muted">{p.seatLimit ?? 'Unlimited'}</td>
-                <td className="muted">{fmt(p.includedUsageCents)}</td>
-                <td className="muted">{p.overageMultiplier}x</td>
+                <td className="muted">{p.avatarLimit ?? 'Unlimited'}</td>
+                <td className="muted">{p.contentLimitMonthly ?? 'Unlimited'}</td>
+                <td className="muted">{p.videoLimitDaily ?? 'Unlimited'}</td>
               </tr>
             ))}
             {plans.length === 0 && (
-              <tr><td colSpan={5} className="muted" style={{ padding: 20 }}>No plans yet — click "Sync plans to Stripe" above.</td></tr>
+              <tr><td colSpan={6} className="muted" style={{ padding: 20 }}>No plans yet — click "Sync plans to Stripe" above.</td></tr>
             )}
           </tbody>
         </table>
