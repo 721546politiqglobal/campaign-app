@@ -129,6 +129,27 @@ export async function getMonthlySpend(campaignId: string): Promise<number> {
   return (data ?? []).reduce((n, r) => n + (r.cost_cents as number), 0);
 }
 
+export async function getContentUsageThisPeriod(campaignId: string, currentPeriodEnd: string | null): Promise<number> {
+  const { contentPeriodStart } = await import('@/domain/quota');
+  const periodStart = contentPeriodStart(currentPeriodEnd).toISOString();
+  const { data } = await adminDb.from('feature_usage_counters')
+    .select('count').eq('campaign_id', campaignId).eq('feature', 'content').eq('period_start', periodStart).maybeSingle();
+  return (data?.count as number | undefined) ?? 0;
+}
+
+export async function getVideoUsageToday(campaignId: string): Promise<number> {
+  const { videoPeriodStart } = await import('@/domain/quota');
+  const periodStart = videoPeriodStart().toISOString();
+  const { data } = await adminDb.from('feature_usage_counters')
+    .select('count').eq('campaign_id', campaignId).eq('feature', 'video').eq('period_start', periodStart).maybeSingle();
+  return (data?.count as number | undefined) ?? 0;
+}
+
+export async function getAvatarCount(campaignId: string): Promise<number> {
+  const { count } = await adminDb.from('avatars').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId);
+  return count ?? 0;
+}
+
 // ── Admin-only data functions ─────────────────────────────────────────────────
 
 export interface CampaignWithStats extends Campaign {
@@ -157,8 +178,8 @@ export interface DisclosureRule {
 
 export interface BillingPlan {
   id: string; name: string; monthlyPriceCents: number; seatLimit: number | null;
-  includedUsageCents: number; overageMultiplier: number;
-  stripeProductId: string; stripeFlatPriceId: string; stripeMeteredPriceId: string;
+  avatarLimit: number | null; contentLimitMonthly: number | null; videoLimitDaily: number | null;
+  stripeProductId: string; stripeFlatPriceId: string;
   isActive: boolean;
 }
 
@@ -167,11 +188,11 @@ function toBillingPlan(r: Record<string, unknown>): BillingPlan {
     id: r.id as string, name: r.name as string,
     monthlyPriceCents: r.monthly_price_cents as number,
     seatLimit: (r.seat_limit as number | null) ?? null,
-    includedUsageCents: r.included_usage_cents as number,
-    overageMultiplier: r.overage_multiplier as number,
+    avatarLimit: (r.avatar_limit as number | null) ?? null,
+    contentLimitMonthly: (r.content_limit_monthly as number | null) ?? null,
+    videoLimitDaily: (r.video_limit_daily as number | null) ?? null,
     stripeProductId: r.stripe_product_id as string,
     stripeFlatPriceId: r.stripe_flat_price_id as string,
-    stripeMeteredPriceId: r.stripe_metered_price_id as string,
     isActive: r.is_active as boolean,
   };
 }
