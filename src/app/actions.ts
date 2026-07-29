@@ -213,7 +213,7 @@ export async function createContentAction(formData: FormData) {
   const campaign = await getCampaign(s.campaignId);
   if (!campaign) throw new Error('Campaign not found');
   const rawType = String(formData.get('type') ?? '');
-  const type: ContentType = isContentType(rawType) ? rawType : 'social_post';
+  const type: ContentType = isContentType(rawType) ? rawType : 'reel';
   const id = uid();
   await throwOnError(
     adminDb.from('content_items').insert({
@@ -600,18 +600,22 @@ export async function generateFromMonitoringAction(
   }
 }
 
-export async function confirmDisclosureAction(id: string): Promise<Result> {
+export async function confirmDisclosureAction(id: string, disclosureTexts?: string[]): Promise<Result> {
   const s = await requireSession();
   if (!can(s.role, 'schedule')) return { ok: false, error: 'Permission denied.' };
   const item = await requireOwnedItem(id, s.campaignId);
   if (!item) return NOT_FOUND;
   const required = await disclosureEngine.requiredFor(item.targetJurisdictions, item.isAiGenerated);
-  for (const req of required) {
+  for (const [i, req] of required.entries()) {
+    // Campaigns edit disclosure wording per state, so the wizard's edited text
+    // (not the jurisdiction-rule default) is what actually gets attached.
+    const text = (disclosureTexts?.[i] ?? req.disclosureText).trim();
+    if (!text) return { ok: false, error: 'Disclosure text cannot be empty.' };
     await disclosureRepo.add({
       contentItemId: id,
       campaignId: s.campaignId,
       jurisdiction: req.jurisdiction,
-      disclosureText: req.disclosureText,
+      disclosureText: text,
       placement: req.placement,
     });
   }

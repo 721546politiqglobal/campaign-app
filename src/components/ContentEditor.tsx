@@ -19,7 +19,7 @@ const BRIEF_SUGGESTIONS = [
 
 export function ContentEditor() {
   const searchParams = useSearchParams();
-  const [type, setType]               = useState((searchParams.get('type') as string) || 'social_post');
+  const [type, setType]               = useState((searchParams.get('type') as string) || 'reel');
   const [instruction, setInstruction] = useState(searchParams.get('brief') || '');
   const [title, setTitle]             = useState('');
   const [body, setBody]               = useState('');

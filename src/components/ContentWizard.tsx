@@ -91,6 +91,10 @@ export function ContentWizard({
   const [videoUrl, setVideoUrl] = useState<string | null>(item.mediaUrl ?? null);
   const [scheduleMode, setScheduleMode] = useState<'now' | 'later'>('now');
   const [scheduledAt, setScheduledAt] = useState('');
+  const [dateMonth, setDateMonth] = useState('');
+  const [dateDay, setDateDay] = useState('');
+  const [dateYear, setDateYear] = useState('');
+  const [timeStr, setTimeStr] = useState('');
   const [timezone, setTimezone] = useState(
     Intl.DateTimeFormat().resolvedOptions().timeZone
   );
@@ -101,6 +105,20 @@ export function ContentWizard({
     background: videoSettings?.background ?? 'plain',
     aspectRatio: videoSettings?.aspectRatio ?? '16:9',
   });
+  const [disclosureTexts, setDisclosureTexts] = useState<string[]>(
+    requiredDisclosures.map(d => d.disclosureText),
+  );
+
+  useEffect(() => {
+    // American date-entry order (month, day, year) is the whole point of
+    // splitting this into three fields — a native date input renders in
+    // whatever order the visitor's OS locale dictates, not necessarily MM/DD/YYYY.
+    if (dateMonth && dateDay && dateYear.length === 4 && timeStr) {
+      setScheduledAt(`${dateYear}-${dateMonth.padStart(2, '0')}-${dateDay.padStart(2, '0')}T${timeStr}`);
+    } else {
+      setScheduledAt('');
+    }
+  }, [dateMonth, dateDay, dateYear, timeStr]);
 
   const run = useCallback(async (
     fn: () => Promise<{ ok: boolean; error?: string }>,
@@ -286,34 +304,25 @@ export function ContentWizard({
                 </p>
                 {/* Video customization */}
                 <div style={{ margin: '14px 0', padding: 14, background: 'var(--bg-hover)', borderRadius: 8 }}>
-                  <div className="eyebrow" style={{ marginBottom: 10 }}>Video settings</div>
+                  <div className="eyebrow" style={{ marginBottom: 10 }}>Video format</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-                    {(['16:9', '9:16', '1:1'] as const).map(r => (
-                      <button key={r} type="button" className={`btn${videoOverride.aspectRatio === r ? ' active' : ''}`}
-                        onClick={() => setVideoOverride(v => ({ ...v, aspectRatio: r }))}
-                      >{r}</button>
-                    ))}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {[
-                      { id: 'plain',   color: '#FFFFFF', label: 'White' },
-                      { id: '#1A1A1A', color: '#1A1A1A', label: 'Dark' },
-                      { id: '#1E3A5F', color: '#1E3A5F', label: 'Navy' },
-                      { id: '#064E3B', color: '#064E3B', label: 'Forest' },
-                      { id: '#7C2D12', color: '#7C2D12', label: 'Burgundy' },
-                      { id: '#F97316', color: '#F97316', label: 'Campaign' },
-                    ].map(bg => (
-                      <button key={bg.id} type="button" title={bg.label}
-                        onClick={() => setVideoOverride(v => ({ ...v, background: bg.id }))}
-                        style={{
-                          width: 28, height: 28, borderRadius: 6, background: bg.color, cursor: 'pointer',
-                          border: `2px solid ${videoOverride.background === bg.id ? 'var(--accent)' : 'var(--line)'}`,
-                        }} />
+                    {([
+                      { ratio: '16:9', label: 'YouTube · Landscape' },
+                      { ratio: '9:16', label: 'TikTok/Reels/Stories · Vertical' },
+                      { ratio: '1:1',  label: 'Instagram · Square' },
+                    ] as const).map(({ ratio, label }) => (
+                      <button key={ratio} type="button" className={`btn${videoOverride.aspectRatio === ratio ? ' active' : ''}`}
+                        onClick={() => setVideoOverride(v => ({ ...v, aspectRatio: ratio }))}
+                        style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '8px 12px' }}
+                      >
+                        <span style={{ fontWeight: 700 }}>{ratio}</span>
+                        <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.8 }}>{label}</span>
+                      </button>
                     ))}
                   </div>
                   <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
-                    Default settings can be changed in{' '}
-                    <a href="/settings" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>Settings → Avatar</a>
+                    Default format can be changed in{' '}
+                    <a href="/avatars" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>Avatars</a>
                   </div>
                 </div>
                 <div className="spacer-y" />
@@ -420,7 +429,8 @@ export function ContentWizard({
             <h2>Required AI disclosure</h2>
             <p className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>
               Because this content was AI-generated, the following disclosure must be attached
-              before publishing. It will be appended to every post automatically.
+              before publishing. Edit the wording to match your state&apos;s requirements — it
+              will be appended to every post automatically.
             </p>
             <div className="spacer-y" />
             {requiredDisclosures.length === 0 ? (
@@ -444,9 +454,22 @@ export function ContentWizard({
                       }}>Needs legal review</span>
                     )}
                   </div>
-                  <p style={{ fontSize: 14, fontStyle: 'italic', lineHeight: 1.6, margin: 0 }}>
-                    &ldquo;{d.disclosureText}&rdquo;
-                  </p>
+                  <textarea
+                    className="input"
+                    value={disclosureTexts[i] ?? ''}
+                    onChange={e => setDisclosureTexts(texts => {
+                      const next = [...texts];
+                      next[i] = e.target.value;
+                      return next;
+                    })}
+                    style={{ minHeight: 70, fontStyle: 'italic', lineHeight: 1.6 }}
+                    placeholder="Enter the disclosure text required in this jurisdiction…"
+                  />
+                  {!disclosureTexts[i]?.trim() && (
+                    <div className="error" style={{ marginTop: 6, fontSize: 12 }}>
+                      Disclosure text is required.
+                    </div>
+                  )}
                 </div>
               ))
             )}
@@ -454,8 +477,8 @@ export function ContentWizard({
             <button
               className="btn primary"
               style={{ width: '100%' }}
-              disabled={busy}
-              onClick={() => run(() => confirmDisclosureAction(item.id))}
+              disabled={busy || disclosureTexts.some(t => !t.trim())}
+              onClick={() => run(() => confirmDisclosureAction(item.id, disclosureTexts))}
             >
               {busy ? 'Confirming…' : 'Confirm disclosure — Continue →'}
             </button>
@@ -496,20 +519,31 @@ export function ContentWizard({
             </div>
 
             {scheduleMode === 'later' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
-                <div>
-                  <label className="field-label">Date &amp; time</label>
+              <div style={{ marginBottom: 20 }}>
+                <label className="field-label">Date (MM/DD/YYYY) &amp; time</label>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                   <input
-                    type="datetime-local"
-                    className="input"
-                    value={scheduledAt}
-                    min={new Date(Date.now() + 5 * 60 * 1000).toISOString().slice(0, 16)}
-                    onChange={e => setScheduledAt(e.target.value)}
+                    type="number" inputMode="numeric" placeholder="MM" min={1} max={12}
+                    className="input" style={{ width: 56, textAlign: 'center' }}
+                    value={dateMonth} onChange={e => setDateMonth(e.target.value.slice(0, 2))}
                   />
-                </div>
-                <div>
-                  <label className="field-label">Timezone</label>
-                  <select className="input" value={timezone} onChange={e => setTimezone(e.target.value)}>
+                  <span className="muted">/</span>
+                  <input
+                    type="number" inputMode="numeric" placeholder="DD" min={1} max={31}
+                    className="input" style={{ width: 56, textAlign: 'center' }}
+                    value={dateDay} onChange={e => setDateDay(e.target.value.slice(0, 2))}
+                  />
+                  <span className="muted">/</span>
+                  <input
+                    type="number" inputMode="numeric" placeholder="YYYY" min={new Date().getFullYear()} max={2100}
+                    className="input" style={{ width: 76, textAlign: 'center' }}
+                    value={dateYear} onChange={e => setDateYear(e.target.value.slice(0, 4))}
+                  />
+                  <input
+                    type="time" className="input" style={{ width: 130, marginLeft: 8 }}
+                    value={timeStr} onChange={e => setTimeStr(e.target.value)}
+                  />
+                  <select className="input" style={{ width: 150 }} value={timezone} onChange={e => setTimezone(e.target.value)}>
                     {[
                       'America/New_York', 'America/Chicago', 'America/Denver',
                       'America/Los_Angeles', 'America/Anchorage', 'Pacific/Honolulu',
@@ -518,6 +552,11 @@ export function ContentWizard({
                     ))}
                   </select>
                 </div>
+                {scheduledAt && new Date(scheduledAt) < new Date(Date.now() + 5 * 60 * 1000) && (
+                  <div className="error" style={{ marginTop: 6, fontSize: 12 }}>
+                    Pick a time at least 5 minutes from now.
+                  </div>
+                )}
               </div>
             )}
 
@@ -541,7 +580,7 @@ export function ContentWizard({
             ) : (
               can(role, 'schedule') ? (
                 <button className="btn primary" style={{ width: '100%' }}
-                  disabled={busy || platforms.length === 0 || !scheduledAt}
+                  disabled={busy || platforms.length === 0 || !scheduledAt || new Date(scheduledAt) < new Date(Date.now() + 5 * 60 * 1000)}
                   onClick={() => run(() => scheduleWithTimeAction(item.id, platforms, scheduledAt, timezone), 'Content scheduled!')}>
                   {busy ? 'Scheduling…' : scheduledAt
                     ? `Schedule for ${new Date(scheduledAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
