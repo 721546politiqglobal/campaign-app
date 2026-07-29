@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { CapExceeded } from '@/domain/usage';
+import { QuotaExceeded } from '@/domain/quota';
 
 const session = { userId: 'u-1', name: 'Owner', role: 'owner' as const, campaignId: 'c-1', exp: 9_999_999_999 };
 const campaign = {
@@ -45,7 +45,7 @@ const upsertCandidateProfile = vi.fn(() => Promise.resolve());
 vi.mock('@/lib/candidate', () => ({ getCandidateProfile, upsertCandidateProfile }));
 
 const billingGate = { check: vi.fn(() => Promise.resolve()) };
-const usageMeter = { guard: vi.fn(() => Promise.resolve('res-1')), record: vi.fn(() => Promise.resolve()) };
+const quotaGate = { checkAndIncrement: vi.fn(() => Promise.resolve()), checkAvatarCap: vi.fn(() => Promise.resolve()), release: vi.fn(() => Promise.resolve()) };
 const photoAvatarProvider = {
   uploadAsset: vi.fn(),
   createAvatarLook: vi.fn(),
@@ -55,7 +55,7 @@ const photoAvatarProvider = {
 vi.mock('@/lib/services', () => ({
   lifecycle: {}, disclosureEngine: {}, contentGenerator: {}, publisher: {},
   videoProvider: {}, voiceProvider: {},
-  billingGate, usageMeter, photoAvatarProvider,
+  billingGate, quotaGate, photoAvatarProvider,
 }));
 
 vi.mock('@/lib/repos', () => ({ contentRepo: {}, approvalRepo: {}, disclosureRepo: {}, auditRepo: { append: vi.fn() } }));
@@ -73,35 +73,35 @@ function makePhotos(count: number): FormData {
 beforeEach(() => {
   vi.clearAllMocks();
   billingGate.check.mockResolvedValue(undefined);
-  usageMeter.guard.mockResolvedValue('res-1'); // guard now returns the reservation id
-  usageMeter.record.mockResolvedValue(undefined);
+  quotaGate.checkAndIncrement.mockResolvedValue(undefined);
+  quotaGate.checkAvatarCap.mockResolvedValue(undefined);
 });
 
 describe('createAvatarAction billing', () => {
-  it('checks the spend cap before calling HeyGen, and never calls HeyGen if the cap is exceeded', async () => {
-    usageMeter.guard.mockRejectedValue(new CapExceeded('This campaign has reached its monthly spending cap. Raise the cap in Settings to continue.'));
+  it('checks the avatar cap before calling HeyGen, and never calls HeyGen if the cap is exceeded', async () => {
+    quotaGate.checkAvatarCap.mockRejectedValue(new QuotaExceeded('avatar', 'Your plan includes up to 1 avatars. Delete one or upgrade your plan to create another.'));
     const { createAvatarAction } = await import('./actions');
 
     const result = await createAvatarAction(makePhotos(4));
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/spending cap/);
+    if (!result.ok) expect(result.error).toMatch(/avatars/);
     expect(photoAvatarProvider.uploadAsset).not.toHaveBeenCalled();
     expect(photoAvatarProvider.createAvatarLook).not.toHaveBeenCalled();
   });
 
-  it('records the full training cost (photos × per-look cost) after all photos succeed', async () => {
+  it('checks the avatar cap (with the plan limit) before processing all photos', async () => {
     photoAvatarProvider.uploadAsset.mockResolvedValue({ assetId: 'asset-1' });
     photoAvatarProvider.createAvatarLook.mockResolvedValue({ lookId: 'look-1', groupId: 'group-1' });
     const { createAvatarAction } = await import('./actions');
 
     await createAvatarAction(makePhotos(4));
 
-    expect(usageMeter.guard).toHaveBeenCalledWith('c-1', 100_00, 4 * 1_00);
-    expect(usageMeter.record).toHaveBeenCalledWith('res-1', 'avatar_training', 4, 4 * 1_00);
+    expect(quotaGate.checkAvatarCap).toHaveBeenCalledWith('c-1', null);
+    expect(photoAvatarProvider.createAvatarLook).toHaveBeenCalledTimes(4);
   });
 
-  it('records only the cost for photos actually processed when training fails midway', async () => {
+  it('processes only the photos up to the failure point when training fails midway', async () => {
     photoAvatarProvider.uploadAsset.mockResolvedValue({ assetId: 'asset-1' });
     photoAvatarProvider.createAvatarLook
       .mockResolvedValueOnce({ lookId: 'look-1', groupId: 'group-1' })
@@ -111,7 +111,7 @@ describe('createAvatarAction billing', () => {
 
     await createAvatarAction(makePhotos(4));
 
-    expect(usageMeter.record).toHaveBeenCalledWith('res-1', 'avatar_training', 2, 2 * 1_00);
+    expect(photoAvatarProvider.createAvatarLook).toHaveBeenCalledTimes(3);
     expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'failed', expect.objectContaining({ errorMessage: 'HeyGen training failed' }));
   });
 
@@ -132,19 +132,19 @@ describe('generatePromptLookAction billing', () => {
     consentConfirmedBy: 'u-1', consentConfirmedAt: '2026-01-01T00:00:00Z', createdBy: 'u-1', createdAt: '2026-01-01T00:00:00Z',
   };
 
-  it('checks the spend cap before calling HeyGen, and never calls HeyGen if the cap is exceeded', async () => {
+  it('checks the billing gate before calling HeyGen, and never calls HeyGen when billing is blocked', async () => {
+    const { BillingBlocked } = await import('@/domain/billing');
     getAvatar.mockResolvedValue(readyAvatar);
-    usageMeter.guard.mockRejectedValue(new CapExceeded('This campaign has reached its monthly spending cap. Raise the cap in Settings to continue.'));
+    billingGate.check.mockRejectedValue(new BillingBlocked('This campaign\'s subscription is past due.'));
     const { generatePromptLookAction } = await import('./actions');
 
     const result = await generatePromptLookAction('avatar-1', 'Debate look', 'wearing a navy suit');
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/spending cap/);
     expect(photoAvatarProvider.createPromptLook).not.toHaveBeenCalled();
   });
 
-  it('records the look-generation cost after a successful call', async () => {
+  it('does not consume avatar quota — regenerating a look is not creating a new avatar', async () => {
     getAvatar.mockResolvedValue(readyAvatar);
     photoAvatarProvider.createPromptLook.mockResolvedValue({ lookId: 'look-2', groupId: 'group-1' });
     const { generatePromptLookAction } = await import('./actions');
@@ -152,8 +152,7 @@ describe('generatePromptLookAction billing', () => {
     const result = await generatePromptLookAction('avatar-1', 'Debate look', 'wearing a navy suit');
 
     expect(result.ok).toBe(true);
-    expect(usageMeter.guard).toHaveBeenCalledWith('c-1', 100_00, 1_00);
-    expect(usageMeter.record).toHaveBeenCalledWith('res-1', 'avatar_look_generation', 1, 1_00);
+    expect(quotaGate.checkAvatarCap).not.toHaveBeenCalled();
   });
 
   it('persists the newly generated look id onto the avatar instead of discarding it', async () => {

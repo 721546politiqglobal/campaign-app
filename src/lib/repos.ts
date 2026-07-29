@@ -3,8 +3,8 @@ import {
   ContentItem, ContentStatus, ContentRepo, ApprovalRepo, DisclosureRepo, AuditRepo,
 } from '@/domain/types';
 import { DisclosureRule, DisclosureRulesRepo } from '@/domain/disclosure';
-import { UsageRepo } from '@/domain/usage';
 import { BillingRepo, CampaignBillingInfo } from '@/domain/billing';
+import { QuotaRepo } from '@/domain/quota';
 
 // ── row → domain mappers ─────────────────────────────────────────────────────
 
@@ -135,39 +135,6 @@ export const rulesRepo: DisclosureRulesRepo = {
   },
 };
 
-export const usageRepo: UsageRepo = {
-  async monthToDateCents(campaignId) {
-    const start = new Date();
-    start.setDate(1); start.setHours(0, 0, 0, 0);
-    const { data } = await adminDb.from('usage_events')
-      .select('cost_cents')
-      .eq('campaign_id', campaignId)
-      .neq('kind', '_reserved')
-      .gte('created_at', start.toISOString());
-    return (data ?? []).reduce((n, r) => n + (r.cost_cents as number), 0);
-  },
-  async reserve(campaignId, capCents, estimatedCents) {
-    const { data, error } = await adminDb.rpc('reserve_usage', {
-      p_campaign_id: campaignId,
-      p_cap_cents: capCents,
-      p_cost_cents: estimatedCents,
-    });
-    if (error) throw error;
-    return (data as string | null) ?? null;
-  },
-  async finalize(reservationId, kind, _quantity, costCents) {
-    // Atomic delete-reservation + insert-real-row in one plpgsql transaction,
-    // keyed on the exact reservation id (migration 019) — no cost-match race,
-    // no crash-between-statements spend loss.
-    const { error } = await adminDb.rpc('finalize_usage', {
-      p_reservation_id: reservationId,
-      p_kind: kind,
-      p_cost_cents: costCents,
-    });
-    if (error) throw error;
-  },
-};
-
 export const billingRepo: BillingRepo = {
   async getBillingInfo(campaignId): Promise<CampaignBillingInfo | null> {
     const { data } = await adminDb
@@ -180,6 +147,32 @@ export const billingRepo: BillingRepo = {
       subscriptionStatus: (data.subscription_status as string | null) ?? null,
       gracePeriodEndsAt: (data.grace_period_ends_at as string | null) ?? null,
     };
+  },
+};
+
+export const quotaRepo: QuotaRepo = {
+  async incrementFeatureUsage(campaignId, feature, periodStart, limit) {
+    const { data, error } = await adminDb.rpc('increment_feature_usage', {
+      p_campaign_id: campaignId,
+      p_feature: feature,
+      p_period_start: periodStart.toISOString(),
+      p_limit: limit,
+    });
+    if (error) throw error;
+    return data as boolean;
+  },
+  async decrementFeatureUsage(campaignId, feature, periodStart) {
+    const { error } = await adminDb.rpc('decrement_feature_usage', {
+      p_campaign_id: campaignId,
+      p_feature: feature,
+      p_period_start: periodStart.toISOString(),
+    });
+    if (error) throw error;
+  },
+  async countAvatars(campaignId) {
+    const { count, error } = await adminDb.from('avatars').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId);
+    if (error) throw error;
+    return count ?? 0;
   },
 };
 

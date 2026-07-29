@@ -1,6 +1,5 @@
 {
   "crons": [
-    { "path": "/api/cron/publish", "schedule": "0 6 * * *" },
-    { "path": "/api/cron/billing-sync", "schedule": "30 6 * * *" }
+    { "path": "/api/cron/publish", "schedule": "0 6 * * *" }
   ]
 }

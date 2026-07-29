@@ -9,7 +9,7 @@ vi.mock('@/lib/supabase', () => ({ adminDb: { from: vi.fn() }, throwOnError: vi.
 vi.mock('@/lib/store', () => ({ uid: vi.fn(), prefixedId: vi.fn(), inviteCode: vi.fn() }));
 vi.mock('@/lib/repos', () => ({ contentRepo: {}, approvalRepo: {}, disclosureRepo: {}, auditRepo: {} }));
 vi.mock('@/lib/services', () => ({
-  lifecycle: {}, disclosureEngine: {}, usageMeter: {}, billingGate: {},
+  lifecycle: {}, disclosureEngine: {}, quotaGate: {}, billingGate: {},
   contentGenerator: {}, publisher: {}, videoProvider: {}, voiceProvider: {}, photoAvatarProvider: {},
 }));
 

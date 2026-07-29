@@ -11,13 +11,14 @@ const ROLE_LABEL: Record<string, string> = {
 export async function AppFrame({ children }: { children: React.ReactNode }) {
   const s = await requireSession();
 
-  // super_admin manages all campaigns — no profile required
+  const campaign = await getCampaign(s.campaignId);
+
+  // super_admin manages all campaigns — no profile or plan required
   if (s.role !== 'super_admin') {
     const profile = await getCandidateProfile(s.campaignId);
     if (!profile) redirect('/setup');
+    if (!campaign?.planId) redirect('/pricing');
   }
-
-  const campaign = await getCampaign(s.campaignId);
 
   return (
     <div className="shell">

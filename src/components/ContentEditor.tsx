@@ -33,9 +33,15 @@ export function ContentEditor() {
     setBusy(true); setError('');
     try {
       const out = await generateDraftAction(instruction, type);
+      // Quota/billing refusals come back as { ok: false, error } and carry the
+      // real reason (which limit, and what to do about it) — show it verbatim
+      // rather than guessing on the user's behalf.
+      if (!out.ok) { setError(out.error); return; }
       setTitle(out.title); setBody(out.text); setIsAi(true); setGenerated(true);
     } catch {
-      setError('Could not generate a draft. Your AI key may not be configured or the spend cap has been reached.');
+      // Only unexpected exceptions land here (Next.js redacts their messages in
+      // production), so a generic fallback is all that's available.
+      setError('Could not generate a draft. Please try again — if this keeps happening, your AI provider key may not be configured.');
     } finally { setBusy(false); }
   }
 

@@ -13,9 +13,19 @@ function fakeRepo(info: CampaignBillingInfo | null): BillingRepo {
 }
 
 describe('BillingGate.check', () => {
-  it('allows a campaign with no plan assigned yet', async () => {
+  it('no-ops when there is no billing record at all (unknown campaign / super_admin session)', async () => {
     const gate = new BillingGate(fakeRepo(null));
     await expect(gate.check('camp-1')).resolves.toBeUndefined();
+  });
+
+  it('BLOCKS a real campaign row that has never subscribed (subscriptionStatus null)', async () => {
+    const gate = new BillingGate(fakeRepo({ subscriptionStatus: null, gracePeriodEndsAt: null }));
+    await expect(gate.check('camp-1')).rejects.toThrow(BillingBlocked);
+  });
+
+  it('tells a never-subscribed campaign where to subscribe', async () => {
+    const gate = new BillingGate(fakeRepo({ subscriptionStatus: null, gracePeriodEndsAt: null }));
+    await expect(gate.check('camp-1')).rejects.toThrow(/must subscribe to a plan.*\/pricing/is);
   });
 
   it('allows an active subscription', async () => {

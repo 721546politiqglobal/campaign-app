@@ -18,7 +18,20 @@ export class BillingGate {
 
   async check(campaignId: string, now: Date = new Date()): Promise<void> {
     const info = await this.repo.getBillingInfo(campaignId);
-    if (!info || !info.subscriptionStatus) return;
+    // No billing record at all (no such campaign row, or a super_admin session
+    // with no campaign) — nothing to enforce here; the caller's own
+    // campaign/permission checks handle it.
+    if (!info) return;
+
+    // A real campaign row that has never been subscribed. This MUST block:
+    // plan limits are read as `plan?.contentLimitMonthly ?? null` and the quota
+    // gate treats null as "unlimited", so letting a no-plan campaign through
+    // would hand it unlimited free access to every paid feature.
+    if (!info.subscriptionStatus) {
+      throw new BillingBlocked(
+        'This campaign must subscribe to a plan before using this feature. Visit /pricing to subscribe.',
+      );
+    }
 
     if (INACTIVE_STATUSES.has(info.subscriptionStatus)) {
       throw new BillingBlocked(

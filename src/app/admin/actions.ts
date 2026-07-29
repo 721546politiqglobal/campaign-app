@@ -137,7 +137,7 @@ export async function assignPlanAction(formData: FormData): Promise<{ ok: boolea
   // billing portal, and the webhook (Task 9) syncs that status here.
   const subscription = await stripe.subscriptions.create({
     customer: customerId,
-    items: [{ price: plan.stripeFlatPriceId }, { price: plan.stripeMeteredPriceId }],
+    items: [{ price: plan.stripeFlatPriceId }],
     payment_behavior: 'default_incomplete',
   });
 
@@ -150,21 +150,9 @@ export async function assignPlanAction(formData: FormData): Promise<{ ok: boolea
     stripe_customer_id: customerId,
     stripe_subscription_id: subscription.id,
     subscription_status: subscription.status,
-    monthly_cost_cap_cents: plan.includedUsageCents,
     grace_period_ends_at: null,
     current_period_end: currentPeriodEnd ? new Date(currentPeriodEnd * 1000).toISOString() : null,
   }).eq('id', campaignId);
-
-  // Seed the sync cursor to subscription start. Without this the first
-  // billing-sync run defaults `since` to 1970 and reports ALL historical
-  // usage_events (accrued before any plan existed) to Stripe, instantly
-  // consuming the allowance and generating overage for pre-subscription usage.
-  await adminDb.from('usage_sync_cursor').upsert({
-    campaign_id: campaignId,
-    last_synced_at: new Date().toISOString(),
-    pending_key: null,
-    pending_until: null,
-  });
 
   revalidatePath(`/admin/campaigns/${campaignId}`);
   return { ok: true };

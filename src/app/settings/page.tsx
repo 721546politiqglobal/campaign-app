@@ -4,7 +4,6 @@ import { requireSession } from '@/lib/session';
 import { getCampaign, getDisclosureRules, getUsers } from '@/lib/data';
 import { getCandidateProfile } from '@/lib/candidate';
 import { upsertCandidateProfile } from '@/lib/candidate';
-import { setCapAction } from '@/app/actions';
 import { can } from '@/lib/permissions';
 import { PARTIES } from '@/lib/profile-validation';
 import type { VoiceTone } from '@/domain/types';
@@ -76,7 +75,6 @@ export default async function Settings({
     getUsers(s.campaignId),
     getCandidateProfile(s.campaignId),
   ]);
-  const cap = ((campaign?.monthlyCostCapCents ?? 0) / 100).toFixed(0);
   const canEdit = can(s.role, 'edit_settings');
 
   return (
@@ -196,32 +194,16 @@ export default async function Settings({
         </form>
       </div>
 
-      <div className="grid cols-2">
-        <div className="card">
-          <h2>Campaign</h2>
-          <p><strong>{campaign?.name}</strong></p>
-          <div className="eyebrow" style={{ marginTop: 12 }}>Jurisdictions</div>
-          <div className="btnrow" style={{ marginTop: 6 }}>
-            {(campaign?.jurisdictions ?? []).map(j => <span key={j} className="pill approved">{j}</span>)}
-          </div>
-          <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
-            Jurisdictions decide which disclosure rules apply to AI content.
-          </p>
+      <div className="card">
+        <h2>Campaign</h2>
+        <p><strong>{campaign?.name}</strong></p>
+        <div className="eyebrow" style={{ marginTop: 12 }}>Jurisdictions</div>
+        <div className="btnrow" style={{ marginTop: 6 }}>
+          {(campaign?.jurisdictions ?? []).map(j => <span key={j} className="pill approved">{j}</span>)}
         </div>
-
-        <div className="card">
-          <h2>Monthly spend cap</h2>
-          <form action={setCapAction}>
-            <label className="field">
-              <span className="cap">Cap (USD)</span>
-              <input type="text" name="cap" defaultValue={cap} inputMode="numeric" disabled={!canEdit} />
-            </label>
-            {canEdit && <button className="btn primary" type="submit">Save cap</button>}
-          </form>
-          <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
-            Video, voice, and AI drafting count against this cap. Paid actions are blocked once it&rsquo;s reached.
-          </p>
-        </div>
+        <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
+          Jurisdictions decide which disclosure rules apply to AI content.
+        </p>
       </div>
 
       <div className="spacer-y" />

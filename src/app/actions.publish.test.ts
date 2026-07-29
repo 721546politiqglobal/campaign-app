@@ -18,7 +18,7 @@ const publish = vi.fn();
 const lifecycle = { markPublished: vi.fn(() => Promise.resolve()) };
 vi.mock('@/lib/services', () => ({
   lifecycle, disclosureEngine: { requiredFor: vi.fn(() => []) },
-  usageMeter: { guard: vi.fn(), record: vi.fn() }, billingGate: { check: vi.fn() },
+  quotaGate: { checkAndIncrement: vi.fn(), checkAvatarCap: vi.fn(), release: vi.fn() }, billingGate: { check: vi.fn() },
   contentGenerator: {}, publisher: { publish }, videoProvider: {}, voiceProvider: {}, photoAvatarProvider: {},
 }));
 

@@ -11,11 +11,11 @@ vi.mock('@/lib/supabase', () => ({ adminDb: { from: vi.fn(() => ({ update: vi.fn
 vi.mock('@/lib/store', () => ({ uid: vi.fn(), prefixedId: vi.fn(), inviteCode: vi.fn() }));
 vi.mock('@/lib/repos', () => ({ contentRepo: {}, approvalRepo: {}, disclosureRepo: {}, auditRepo: {} }));
 const synthesize = vi.fn(() => Promise.resolve({ audioUrl: 'http://a/1.mp3' }));
-const guard = vi.fn(() => Promise.resolve('res-1'));
+const checkAndIncrement = vi.fn(() => Promise.resolve());
 vi.mock('@/lib/services', () => ({
   lifecycle: {}, disclosureEngine: {}, contentGenerator: {}, publisher: {},
   videoProvider: {}, voiceProvider: { synthesize }, photoAvatarProvider: {},
-  billingGate: { check: vi.fn() }, usageMeter: { guard, record: vi.fn() },
+  billingGate: { check: vi.fn() }, quotaGate: { checkAndIncrement, checkAvatarCap: vi.fn(), release: vi.fn(() => Promise.resolve()) },
 }));
 
 describe('synthesizeVoiceAction', () => {
@@ -35,6 +35,6 @@ describe('synthesizeVoiceAction', () => {
     const r = await synthesizeVoiceAction('hello');
     expect(r).toEqual({ ok: false, error: expect.stringMatching(/voice/i) });
     expect(synthesize).not.toHaveBeenCalled();
-    expect(guard).not.toHaveBeenCalled();
+    expect(checkAndIncrement).not.toHaveBeenCalled();
   });
 });
