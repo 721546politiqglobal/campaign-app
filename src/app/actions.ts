@@ -729,15 +729,26 @@ export async function scheduleWithTimeAction(
 
 // ── Avatar creation ───────────────────────────────────────────────────────────
 
-export async function createAvatarAction(formData: FormData): Promise<Result & { avatarId?: string }> {
+// Photo/video avatar creation is split into begin/finalize pairs so the raw
+// file bytes never travel through a Server Action body. Sending them there
+// (as the single-step createAvatarAction/createVideoAvatarAction used to)
+// makes the whole request a serverless function invocation subject to
+// Vercel's function payload limit — 10 photos or a training video routinely
+// exceed it and the platform rejects the request with 413
+// FUNCTION_PAYLOAD_TOO_LARGE before our code even runs. Instead: begin*
+// validates and hands back a signed Supabase Storage upload URL per file, the
+// browser PUTs directly to Storage (bypassing our functions entirely), and
+// finalize* downloads the bytes from Storage server-side (an outbound fetch,
+// not a client request, so it isn't subject to the same limit) to hand off to
+// HeyGen and write the DB row.
+export async function beginAvatarUploadAction(
+  consent: boolean,
+  files: { name: string; type: string; size: number }[],
+): Promise<Result & { avatarId?: string; uploads?: { path: string; token: string }[] }> {
   const s = await requireSession();
   if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
-
-  const consent = formData.get('consent') === 'on';
   if (!consent) return { ok: false, error: 'Consent confirmation is required.' };
 
-  const name = String(formData.get('name') ?? '').trim() || 'Avatar';
-  const files = formData.getAll('photos').filter((f): f is File => f instanceof File && f.size > 0);
   if (files.length < 4 || files.length > 10) return { ok: false, error: 'Upload between 4 and 10 photos.' };
   for (const file of files) {
     if (file.size > 10 * 1024 * 1024) return { ok: false, error: 'Each photo must be under 10 MB.' };
@@ -756,27 +767,50 @@ export async function createAvatarAction(formData: FormData): Promise<Result & {
     throw e;
   }
 
-  const { insertAvatar, updateAvatarStatus } = await import('@/lib/avatars');
   const avatarId = uid();
-  const buffers = await Promise.all(files.map(f => f.arrayBuffer().then(b => Buffer.from(b))));
-
-  const sourcePhotoUrls: string[] = [];
+  const uploads: { path: string; token: string }[] = [];
   for (let i = 0; i < files.length; i++) {
     const ext = files[i].name.split('.').pop()?.toLowerCase() ?? 'jpg';
-    const filename = `avatars/${s.campaignId}/${avatarId}/${i}.${ext}`;
-    const { error } = await adminDb.storage.from('media').upload(filename, buffers[i], {
-      contentType: files[i].type,
-      upsert: false,
-    });
+    const path = `avatars/${s.campaignId}/${avatarId}/${i}.${ext}`;
+    const { data, error } = await adminDb.storage.from('media').createSignedUploadUrl(path);
     if (error) return { ok: false, error: error.message };
-    const { data } = adminDb.storage.from('media').getPublicUrl(filename);
-    sourcePhotoUrls.push(data.publicUrl);
+    uploads.push({ path, token: data.token });
+  }
+
+  return { ok: true, avatarId, uploads };
+}
+
+export async function finalizeAvatarAction(
+  avatarId: string,
+  name: string,
+  paths: string[],
+): Promise<Result & { avatarId?: string }> {
+  const s = await requireSession();
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+
+  const prefix = `avatars/${s.campaignId}/${avatarId}/`;
+  if (paths.length < 4 || paths.length > 10 || paths.some(p => !p.startsWith(prefix))) {
+    return { ok: false, error: 'Invalid upload.' };
+  }
+
+  const { insertAvatar, updateAvatarStatus } = await import('@/lib/avatars');
+  const trimmedName = name.trim() || 'Avatar';
+
+  const buffers: Buffer[] = [];
+  const contentTypes: string[] = [];
+  const sourcePhotoUrls: string[] = [];
+  for (const path of paths) {
+    const { data, error } = await adminDb.storage.from('media').download(path);
+    if (error || !data) return { ok: false, error: error?.message ?? 'Uploaded photo not found.' };
+    buffers.push(Buffer.from(await data.arrayBuffer()));
+    contentTypes.push(data.type);
+    sourcePhotoUrls.push(adminDb.storage.from('media').getPublicUrl(path).data.publicUrl);
   }
 
   await insertAvatar({
     id: avatarId,
     campaignId: s.campaignId,
-    name,
+    name: trimmedName,
     sourcePhotoUrls,
     consentConfirmedBy: s.userId,
     createdBy: s.userId,
@@ -787,10 +821,10 @@ export async function createAvatarAction(formData: FormData): Promise<Result & {
   try {
     let groupId: string | undefined;
     let baseLookId: string | undefined;
-    for (let i = 0; i < files.length; i++) {
-      const { assetId } = await photoAvatarProvider.uploadAsset(buffers[i], files[i].type);
+    for (let i = 0; i < buffers.length; i++) {
+      const { assetId } = await photoAvatarProvider.uploadAsset(buffers[i], contentTypes[i]);
       const { groupId: newGroupId, lookId } = await photoAvatarProvider.createAvatarLook({
-        name,
+        name: trimmedName,
         assetId,
         avatarGroupId: groupId,
       });
@@ -835,16 +869,15 @@ export async function checkAvatarStatusAction(avatarId: string): Promise<Result>
 
 const MAX_TRAINING_VIDEO_BYTES = 500 * 1024 * 1024;
 
-export async function createVideoAvatarAction(formData: FormData): Promise<Result & { avatarId?: string }> {
+export async function beginVideoAvatarUploadAction(
+  consent: boolean,
+  file: { name: string; type: string; size: number },
+): Promise<Result & { avatarId?: string; path?: string; token?: string }> {
   const s = await requireSession();
   if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
-
-  const consent = formData.get('consent') === 'on';
   if (!consent) return { ok: false, error: 'Consent confirmation is required.' };
 
-  const name = String(formData.get('name') ?? '').trim() || 'Avatar';
-  const file = formData.get('video');
-  if (!(file instanceof File) || file.size === 0) return { ok: false, error: 'Upload a training video.' };
+  if (!file || file.size === 0) return { ok: false, error: 'Upload a training video.' };
   if (file.size > MAX_TRAINING_VIDEO_BYTES) return { ok: false, error: 'Video must be under 500 MB.' };
   if (file.type !== 'video/mp4' && file.type !== 'video/quicktime') return { ok: false, error: 'Only MP4 or QuickTime video files are allowed.' };
 
@@ -860,26 +893,43 @@ export async function createVideoAvatarAction(formData: FormData): Promise<Resul
     throw e;
   }
 
-  const { insertAvatar, updateAvatarStatus } = await import('@/lib/avatars');
   const avatarId = uid();
-  const buffer = Buffer.from(await file.arrayBuffer());
-
   const ext = file.name.split('.').pop()?.toLowerCase() ?? 'mp4';
-  const filename = `avatars/${s.campaignId}/${avatarId}/training.${ext}`;
-  const { error: uploadError } = await adminDb.storage.from('media').upload(filename, buffer, {
-    contentType: file.type,
-    upsert: false,
-  });
-  if (uploadError) return { ok: false, error: uploadError.message };
-  const { data } = adminDb.storage.from('media').getPublicUrl(filename);
+  const path = `avatars/${s.campaignId}/${avatarId}/training.${ext}`;
+  const { data, error } = await adminDb.storage.from('media').createSignedUploadUrl(path);
+  if (error) return { ok: false, error: error.message };
+
+  return { ok: true, avatarId, path, token: data.token };
+}
+
+export async function finalizeVideoAvatarAction(
+  avatarId: string,
+  name: string,
+  path: string,
+): Promise<Result & { avatarId?: string }> {
+  const s = await requireSession();
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+
+  const prefix = `avatars/${s.campaignId}/${avatarId}/`;
+  if (!path.startsWith(prefix)) return { ok: false, error: 'Invalid upload.' };
+
+  const { insertAvatar, updateAvatarStatus } = await import('@/lib/avatars');
+  const trimmedName = name.trim() || 'Avatar';
+
+  const { data, error: downloadError } = await adminDb.storage.from('media').download(path);
+  if (downloadError || !data) return { ok: false, error: downloadError?.message ?? 'Uploaded video not found.' };
+  const buffer = Buffer.from(await data.arrayBuffer());
+  const contentType = data.type;
+
+  const { data: urlData } = adminDb.storage.from('media').getPublicUrl(path);
 
   await insertAvatar({
     id: avatarId,
     campaignId: s.campaignId,
-    name,
+    name: trimmedName,
     sourceType: 'digital_twin',
     sourcePhotoUrls: [],
-    sourceVideoUrl: data.publicUrl,
+    sourceVideoUrl: urlData.publicUrl,
     consentConfirmedBy: s.userId,
     createdBy: s.userId,
     status: 'training',
@@ -887,8 +937,8 @@ export async function createVideoAvatarAction(formData: FormData): Promise<Resul
 
   let createError: string | null = null;
   try {
-    const { assetId } = await photoAvatarProvider.uploadAsset(buffer, file.type);
-    const { groupId, lookId } = await photoAvatarProvider.createVideoAvatar({ name, assetId });
+    const { assetId } = await photoAvatarProvider.uploadAsset(buffer, contentType);
+    const { groupId, lookId } = await photoAvatarProvider.createVideoAvatar({ name: trimmedName, assetId });
     const rerouteUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/avatars`;
     const { consentUrl, consentStatus } = await photoAvatarProvider.requestConsent({ groupId, rerouteUrl });
     await updateAvatarStatus(avatarId, 'pending_consent', { heygenGroupId: groupId, heygenLookId: lookId, consentUrl, consentStatus });

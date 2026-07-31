@@ -104,3 +104,21 @@ describe('startCheckoutAction post-payment redirect (I3)', () => {
     expect(args.cancel_url).toBe('https://app.test/pricing?checkout=canceled');
   });
 });
+
+describe('startCheckoutAction Stripe API failure', () => {
+  it('redirects to /pricing with an error banner instead of throwing a 500 (e.g. an unsynced price id)', async () => {
+    checkoutCreate.mockRejectedValue(new Error("No such price: 'price_bad'"));
+    const to = await run();
+    expect(to).toBe(`/pricing?error=${encodeURIComponent("No such price: 'price_bad'")}`);
+  });
+});
+
+describe('changePlanAction Stripe API failure', () => {
+  it('returns ok:false instead of throwing when Stripe rejects the retrieve/update call', async () => {
+    const { changePlanAction } = await import('./actions');
+    getCampaign.mockResolvedValue({ ...campaign, stripeSubscriptionId: 'sub_live' } as any);
+    subscriptionsRetrieve.mockRejectedValue(new Error("No such subscription: 'sub_live'"));
+    const result = await changePlanAction('pro');
+    expect(result).toEqual({ ok: false, error: "No such subscription: 'sub_live'" });
+  });
+});

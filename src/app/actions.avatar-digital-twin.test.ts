@@ -26,7 +26,11 @@ vi.mock('@/lib/supabase', () => ({
     from: vi.fn(() => ({ select: vi.fn(), insert: vi.fn(), update: vi.fn(), delete: vi.fn() })),
     storage: {
       from: vi.fn(() => ({
-        upload: vi.fn(() => Promise.resolve({ error: null })),
+        createSignedUploadUrl: vi.fn((path: string) => Promise.resolve({ data: { path, token: `token-${path}` }, error: null })),
+        download: vi.fn(() => Promise.resolve({
+          data: { arrayBuffer: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer), type: 'video/mp4' },
+          error: null,
+        })),
         getPublicUrl: vi.fn((path: string) => ({ data: { publicUrl: `https://media.test/${path}` } })),
       })),
     },
@@ -58,12 +62,21 @@ vi.mock('@/lib/services', () => ({
 
 vi.mock('@/lib/repos', () => ({ contentRepo: {}, approvalRepo: {}, disclosureRepo: {}, auditRepo: { append: vi.fn() } }));
 
-function makeVideoForm(overrides: Partial<{ consent: string; name: string; video: File }> = {}): FormData {
-  const fd = new FormData();
-  fd.set('consent', overrides.consent ?? 'on');
-  fd.set('name', overrides.name ?? 'Candidate twin');
-  fd.set('video', overrides.video ?? new File([new Uint8Array([1, 2, 3])], 'training.mp4', { type: 'video/mp4' }));
-  return fd;
+function videoMeta(overrides: Partial<{ name: string; type: string; size: number }> = {}) {
+  return { name: 'training.mp4', type: 'video/mp4', size: 3, ...overrides };
+}
+
+// Mirrors what AvatarManager does: begin (validation + quota/billing +
+// signed upload URL) then finalize (download from storage + HeyGen calls).
+async function createVideoAvatar(overrides: {
+  consent?: boolean;
+  name?: string;
+  video?: { name: string; type: string; size: number };
+} = {}) {
+  const { beginVideoAvatarUploadAction, finalizeVideoAvatarAction } = await import('./actions');
+  const begin = await beginVideoAvatarUploadAction(overrides.consent ?? true, overrides.video ?? videoMeta());
+  if (!begin.ok) return begin;
+  return finalizeVideoAvatarAction(begin.avatarId!, overrides.name ?? 'Candidate twin', begin.path!);
 }
 
 beforeEach(() => {
@@ -73,65 +86,68 @@ beforeEach(() => {
   quotaGate.checkAvatarCap.mockResolvedValue(undefined);
 });
 
-describe('createVideoAvatarAction', () => {
+describe('beginVideoAvatarUploadAction', () => {
   it('requires the consent checkbox', async () => {
-    const { createVideoAvatarAction } = await import('./actions');
-    const result = await createVideoAvatarAction(makeVideoForm({ consent: 'off' }));
+    const { beginVideoAvatarUploadAction } = await import('./actions');
+    const result = await beginVideoAvatarUploadAction(false, videoMeta());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/consent/i);
     expect(photoAvatarProvider.uploadAsset).not.toHaveBeenCalled();
   });
 
   it('rejects a non-video file', async () => {
-    const { createVideoAvatarAction } = await import('./actions');
-    const badFile = new File([new Uint8Array([1])], 'photo.jpg', { type: 'image/jpeg' });
-    const result = await createVideoAvatarAction(makeVideoForm({ video: badFile }));
+    const { beginVideoAvatarUploadAction } = await import('./actions');
+    const result = await beginVideoAvatarUploadAction(true, videoMeta({ name: 'photo.jpg', type: 'image/jpeg' }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/video/i);
   });
 
   it('rejects a video file with an unsupported container (e.g. webm)', async () => {
-    const { createVideoAvatarAction } = await import('./actions');
-    const webmFile = new File([new Uint8Array([1])], 'clip.webm', { type: 'video/webm' });
-    const result = await createVideoAvatarAction(makeVideoForm({ video: webmFile }));
+    const { beginVideoAvatarUploadAction } = await import('./actions');
+    const result = await beginVideoAvatarUploadAction(true, videoMeta({ name: 'clip.webm', type: 'video/webm' }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/mp4|quicktime/i);
   });
 
-  it('checks the avatar cap before calling HeyGen, and never calls HeyGen if the cap is exceeded', async () => {
+  it('checks the avatar cap before ever touching storage or HeyGen', async () => {
     quotaGate.checkAvatarCap.mockRejectedValue(new QuotaExceeded('avatar', 'Your plan includes up to 1 avatars. Delete one or upgrade your plan to create another.'));
-    const { createVideoAvatarAction } = await import('./actions');
+    const { beginVideoAvatarUploadAction } = await import('./actions');
 
-    const result = await createVideoAvatarAction(makeVideoForm());
+    const result = await beginVideoAvatarUploadAction(true, videoMeta());
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/avatars/);
     expect(photoAvatarProvider.uploadAsset).not.toHaveBeenCalled();
   });
 
+  it('checks the avatar cap with the plan limit', async () => {
+    const { beginVideoAvatarUploadAction } = await import('./actions');
+    await beginVideoAvatarUploadAction(true, videoMeta());
+    expect(quotaGate.checkAvatarCap).toHaveBeenCalledWith('c-1', null);
+  });
+});
+
+describe('finalizeVideoAvatarAction', () => {
   it('on success, persists the row as pending_consent with the consent url/status', async () => {
     photoAvatarProvider.uploadAsset.mockResolvedValue({ assetId: 'asset-1' });
     photoAvatarProvider.createVideoAvatar.mockResolvedValue({ lookId: 'look-1', groupId: 'group-1' });
     photoAvatarProvider.requestConsent.mockResolvedValue({ consentUrl: 'https://app.heygen.com/consent/abc', consentStatus: 'pending' });
-    const { createVideoAvatarAction } = await import('./actions');
 
-    const result = await createVideoAvatarAction(makeVideoForm());
+    const result = await createVideoAvatar();
 
     expect(result.ok).toBe(true);
     expect(insertAvatar).toHaveBeenCalledWith(expect.objectContaining({ sourceType: 'digital_twin', status: 'training' }));
     expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'pending_consent', {
       heygenGroupId: 'group-1', heygenLookId: 'look-1', consentUrl: 'https://app.heygen.com/consent/abc', consentStatus: 'pending',
     });
-    expect(quotaGate.checkAvatarCap).toHaveBeenCalledWith('c-1', null);
   });
 
   it('marks the row failed (never silently dropped) when consent request fails after avatar creation', async () => {
     photoAvatarProvider.uploadAsset.mockResolvedValue({ assetId: 'asset-1' });
     photoAvatarProvider.createVideoAvatar.mockResolvedValue({ lookId: 'look-1', groupId: 'group-1' });
     photoAvatarProvider.requestConsent.mockRejectedValue(new Error('HeyGen consent request error: 500'));
-    const { createVideoAvatarAction } = await import('./actions');
 
-    const result = await createVideoAvatarAction(makeVideoForm());
+    const result = await createVideoAvatar();
 
     expect(result.ok).toBe(false);
     expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'failed', expect.objectContaining({ errorMessage: expect.stringMatching(/consent/i) }));
@@ -141,9 +157,8 @@ describe('createVideoAvatarAction', () => {
     const { HeyGenAccessDeniedError } = await import('@/integrations');
     photoAvatarProvider.uploadAsset.mockResolvedValue({ assetId: 'asset-1' });
     photoAvatarProvider.createVideoAvatar.mockRejectedValue(new HeyGenAccessDeniedError('digital twin not enabled for this account'));
-    const { createVideoAvatarAction } = await import('./actions');
 
-    const result = await createVideoAvatarAction(makeVideoForm());
+    const result = await createVideoAvatar();
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/aren't enabled.*Digital Twin/i);
