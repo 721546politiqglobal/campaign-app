@@ -26,7 +26,11 @@ vi.mock('@/lib/supabase', () => ({
     from: vi.fn(() => ({ select: vi.fn(), insert: vi.fn(), update: vi.fn(), delete: vi.fn() })),
     storage: {
       from: vi.fn(() => ({
-        upload: vi.fn(() => Promise.resolve({ error: null })),
+        createSignedUploadUrl: vi.fn((path: string) => Promise.resolve({ data: { path, token: `token-${path}` }, error: null })),
+        download: vi.fn(() => Promise.resolve({
+          data: { arrayBuffer: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer), type: 'image/jpeg' },
+          error: null,
+        })),
         getPublicUrl: vi.fn((path: string) => ({ data: { publicUrl: `https://media.test/${path}` } })),
       })),
     },
@@ -60,14 +64,17 @@ vi.mock('@/lib/services', () => ({
 
 vi.mock('@/lib/repos', () => ({ contentRepo: {}, approvalRepo: {}, disclosureRepo: {}, auditRepo: { append: vi.fn() } }));
 
-function makePhotos(count: number): FormData {
-  const fd = new FormData();
-  fd.set('consent', 'on');
-  fd.set('name', 'Candidate');
-  for (let i = 0; i < count; i++) {
-    fd.append('photos', new File([new Uint8Array([1, 2, 3])], `p${i}.jpg`, { type: 'image/jpeg' }));
-  }
-  return fd;
+function photoMetas(count: number) {
+  return Array.from({ length: count }, (_, i) => ({ name: `p${i}.jpg`, type: 'image/jpeg', size: 3 }));
+}
+
+// Mirrors what AvatarManager does: begin (validation + quota/billing +
+// signed upload URLs) then finalize (download from storage + HeyGen calls).
+async function createAvatar(count: number, name = 'Candidate') {
+  const { beginAvatarUploadAction, finalizeAvatarAction } = await import('./actions');
+  const begin = await beginAvatarUploadAction(true, photoMetas(count));
+  if (!begin.ok) return begin;
+  return finalizeAvatarAction(begin.avatarId!, name, begin.uploads!.map(u => u.path));
 }
 
 beforeEach(() => {
@@ -77,12 +84,12 @@ beforeEach(() => {
   quotaGate.checkAvatarCap.mockResolvedValue(undefined);
 });
 
-describe('createAvatarAction billing', () => {
-  it('checks the avatar cap before calling HeyGen, and never calls HeyGen if the cap is exceeded', async () => {
+describe('beginAvatarUploadAction billing', () => {
+  it('checks the avatar cap before ever touching storage or HeyGen', async () => {
     quotaGate.checkAvatarCap.mockRejectedValue(new QuotaExceeded('avatar', 'Your plan includes up to 1 avatars. Delete one or upgrade your plan to create another.'));
-    const { createAvatarAction } = await import('./actions');
+    const { beginAvatarUploadAction } = await import('./actions');
 
-    const result = await createAvatarAction(makePhotos(4));
+    const result = await beginAvatarUploadAction(true, photoMetas(4));
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/avatars/);
@@ -90,14 +97,20 @@ describe('createAvatarAction billing', () => {
     expect(photoAvatarProvider.createAvatarLook).not.toHaveBeenCalled();
   });
 
-  it('checks the avatar cap (with the plan limit) before processing all photos', async () => {
+  it('checks the avatar cap with the plan limit', async () => {
+    const { beginAvatarUploadAction } = await import('./actions');
+    await beginAvatarUploadAction(true, photoMetas(4));
+    expect(quotaGate.checkAvatarCap).toHaveBeenCalledWith('c-1', null);
+  });
+});
+
+describe('finalizeAvatarAction billing', () => {
+  it('processes all photos through HeyGen', async () => {
     photoAvatarProvider.uploadAsset.mockResolvedValue({ assetId: 'asset-1' });
     photoAvatarProvider.createAvatarLook.mockResolvedValue({ lookId: 'look-1', groupId: 'group-1' });
-    const { createAvatarAction } = await import('./actions');
 
-    await createAvatarAction(makePhotos(4));
+    await createAvatar(4);
 
-    expect(quotaGate.checkAvatarCap).toHaveBeenCalledWith('c-1', null);
     expect(photoAvatarProvider.createAvatarLook).toHaveBeenCalledTimes(4);
   });
 
@@ -107,9 +120,8 @@ describe('createAvatarAction billing', () => {
       .mockResolvedValueOnce({ lookId: 'look-1', groupId: 'group-1' })
       .mockResolvedValueOnce({ lookId: 'look-2', groupId: 'group-1' })
       .mockRejectedValueOnce(new Error('HeyGen training failed'));
-    const { createAvatarAction } = await import('./actions');
 
-    await createAvatarAction(makePhotos(4));
+    await createAvatar(4);
 
     expect(photoAvatarProvider.createAvatarLook).toHaveBeenCalledTimes(3);
     expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'failed', expect.objectContaining({ errorMessage: 'HeyGen training failed' }));
@@ -117,8 +129,7 @@ describe('createAvatarAction billing', () => {
 
   it('returns ok:false when the HeyGen creation loop fails', async () => {
     photoAvatarProvider.uploadAsset.mockRejectedValue(new Error('HeyGen upload error: bad file'));
-    const { createAvatarAction } = await import('./actions');
-    const result = await createAvatarAction(makePhotos(4));
+    const result = await createAvatar(4);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/bad file|failed/i);
     expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'failed', expect.objectContaining({ errorMessage: expect.any(String) }));

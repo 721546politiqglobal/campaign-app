@@ -23,19 +23,27 @@ export async function startCheckoutAction(planId: string): Promise<void> {
   // covers the window right after paying, before the webhook has landed.
   if (campaign.stripeSubscriptionId) redirect('/billing');
 
-  const session = await stripe.checkout.sessions.create({
-    mode: 'subscription',
-    client_reference_id: s.campaignId,
-    // Reuse the existing Stripe Customer (e.g. from a previously canceled,
-    // admin-assigned plan) so Checkout doesn't mint a duplicate one.
-    ...(campaign.stripeCustomerId ? { customer: campaign.stripeCustomerId } : {}),
-    line_items: [{ price: plan.stripeFlatPriceId, quantity: 1 }],
-    // Land back on /pricing, not /dashboard: /pricing is not wrapped in
-    // AppFrame, so it renders immediately (no race with the webhook that sets
-    // plan_id) and shows the "Payment received — activating your plan" banner.
-    success_url: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/pricing?checkout=success`,
-    cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/pricing?checkout=canceled`,
-  });
+  let session: Awaited<ReturnType<typeof stripe.checkout.sessions.create>>;
+  try {
+    session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      client_reference_id: s.campaignId,
+      // Reuse the existing Stripe Customer (e.g. from a previously canceled,
+      // admin-assigned plan) so Checkout doesn't mint a duplicate one.
+      ...(campaign.stripeCustomerId ? { customer: campaign.stripeCustomerId } : {}),
+      line_items: [{ price: plan.stripeFlatPriceId, quantity: 1 }],
+      // Land back on /pricing, not /dashboard: /pricing is not wrapped in
+      // AppFrame, so it renders immediately (no race with the webhook that sets
+      // plan_id) and shows the "Payment received — activating your plan" banner.
+      success_url: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/pricing?checkout=success`,
+      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/pricing?checkout=canceled`,
+    });
+  } catch (e) {
+    // A bad/unsynced Stripe price id or a wrong-mode API key surfaces here as
+    // a StripeInvalidRequestError — without this catch it was an unhandled
+    // 500 instead of the "Couldn't change plan" banner the page already has.
+    redirect(`/pricing?error=${encodeURIComponent(e instanceof Error ? e.message : 'Could not start checkout.')}`);
+  }
   if (!session.url) return;
   redirect(session.url);
 }
@@ -50,14 +58,22 @@ export async function changePlanAction(planId: string): Promise<{ ok: boolean; e
   if (!plan) return { ok: false, error: 'Plan not found.' };
   if (!campaign.stripeSubscriptionId) return { ok: false, error: 'No active subscription to change. Subscribe to a plan first.' };
 
-  const subscription = await stripe.subscriptions.retrieve(campaign.stripeSubscriptionId);
-  const currentItemId = subscription.items.data[0]?.id;
-  if (!currentItemId) return { ok: false, error: 'Could not find the current subscription item to update.' };
+  try {
+    const subscription = await stripe.subscriptions.retrieve(campaign.stripeSubscriptionId);
+    const currentItemId = subscription.items.data[0]?.id;
+    if (!currentItemId) return { ok: false, error: 'Could not find the current subscription item to update.' };
 
-  await stripe.subscriptions.update(campaign.stripeSubscriptionId, {
-    items: [{ id: currentItemId, price: plan.stripeFlatPriceId }],
-    proration_behavior: 'always_invoice',
-  });
+    await stripe.subscriptions.update(campaign.stripeSubscriptionId, {
+      items: [{ id: currentItemId, price: plan.stripeFlatPriceId }],
+      proration_behavior: 'always_invoice',
+    });
+  } catch (e) {
+    // A bad/unsynced Stripe price id, a canceled subscription, or a wrong-mode
+    // API key surfaces here as a Stripe error — without this catch it was an
+    // unhandled 500 instead of the "Couldn't change plan" banner the page
+    // already has.
+    return { ok: false, error: e instanceof Error ? e.message : 'Could not change plan.' };
+  }
 
   return { ok: true };
 }

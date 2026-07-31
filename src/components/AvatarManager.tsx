@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  createAvatarAction, checkAvatarStatusAction, setActiveAvatarAction, deleteAvatarAction, generatePromptLookAction,
-  createVideoAvatarAction,
+  beginAvatarUploadAction, finalizeAvatarAction, checkAvatarStatusAction, setActiveAvatarAction, deleteAvatarAction,
+  generatePromptLookAction, beginVideoAvatarUploadAction, finalizeVideoAvatarAction,
 } from '@/app/actions';
+import { supabaseBrowser } from '@/lib/supabase-browser';
 import { useToast } from '@/components/Toast';
 import type { Avatar } from '@/domain/types';
 
@@ -117,11 +118,30 @@ export function AvatarManager({
   async function handleVideoSubmit() {
     if (!videoFile) return;
     setVideoSubmitting(true);
-    const formData = new FormData();
-    formData.set('consent', videoConsent ? 'on' : 'off');
-    formData.set('name', videoName);
-    formData.set('video', videoFile);
-    const result = await createVideoAvatarAction(formData);
+
+    const begin = await beginVideoAvatarUploadAction(videoConsent, {
+      name: videoFile.name, type: videoFile.type, size: videoFile.size,
+    });
+    if (!begin.ok) {
+      setVideoSubmitting(false);
+      toast(begin.error, 'error');
+      return;
+    }
+    if (!begin.path || !begin.token || !begin.avatarId) {
+      setVideoSubmitting(false);
+      toast('Failed to create video avatar', 'error');
+      return;
+    }
+
+    const { error: uploadError } = await supabaseBrowser.storage.from('media')
+      .uploadToSignedUrl(begin.path, begin.token, videoFile);
+    if (uploadError) {
+      setVideoSubmitting(false);
+      toast(`Upload failed: ${uploadError.message}`, 'error');
+      return;
+    }
+
+    const result = await finalizeVideoAvatarAction(begin.avatarId, videoName, begin.path);
     setVideoSubmitting(false);
     if (result.ok) {
       toast('Video avatar creation started — send the candidate the consent link shown on this avatar.');
@@ -144,11 +164,31 @@ export function AvatarManager({
 
   async function handleSubmit() {
     setSubmitting(true);
-    const formData = new FormData();
-    formData.set('consent', consent ? 'on' : 'off');
-    formData.set('name', name);
-    files.forEach(f => formData.append('photos', f));
-    const result = await createAvatarAction(formData);
+
+    const begin = await beginAvatarUploadAction(consent, files.map(f => ({ name: f.name, type: f.type, size: f.size })));
+    if (!begin.ok) {
+      setSubmitting(false);
+      toast(begin.error, 'error');
+      return;
+    }
+    if (!begin.uploads || !begin.avatarId) {
+      setSubmitting(false);
+      toast('Failed to create avatar', 'error');
+      return;
+    }
+
+    const uploads = begin.uploads;
+    for (let i = 0; i < uploads.length; i++) {
+      const { error: uploadError } = await supabaseBrowser.storage.from('media')
+        .uploadToSignedUrl(uploads[i].path, uploads[i].token, files[i]);
+      if (uploadError) {
+        setSubmitting(false);
+        toast(`Upload failed: ${uploadError.message}`, 'error');
+        return;
+      }
+    }
+
+    const result = await finalizeAvatarAction(begin.avatarId, name, uploads.map(u => u.path));
     setSubmitting(false);
     if (result.ok) {
       toast('Avatar creation started — this can take a few minutes.');

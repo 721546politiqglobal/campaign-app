@@ -1,0 +1,214 @@
+{
+  "name": "Command Center — Opposition Monitoring (NewsData + GDELT)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "hours", "hoursInterval": 2 }] }
+      },
+      "id": "11111111-1111-1111-1111-111111111111",
+      "name": "Every 2 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "f1", "name": "app_base_url", "value": "={{ $env.APP_BASE_URL || 'http://localhost:3001' }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "22222222-2222-2222-2222-222222222222",
+      "name": "App Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [420, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.app_base_url + '/api/monitoring/campaigns' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "22222222-2222-2222-2222-222222222299",
+      "name": "Get Campaigns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 400],
+      "credentials": {
+        "httpHeaderAuth": { "id": "1", "name": "Campaign App Service Auth" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const appCfg = $('App Config').first().json;\n// Get Campaigns returns one n8n item per campaign already (the HTTP node\n// splits the JSON array response), so map over every input item rather than\n// assuming a single item wraps the whole array.\nreturn $input.all().map(item => {\n  const c = item.json;\n  const opp = [c.opponent_name, ...(c.opponent_aliases || [])].filter(Boolean);\n  const kw = c.monitoring_keywords || [];\n  const terms = [...opp, ...kw].slice(0, 5);\n  // Quote multi-word terms so NewsData/GDELT treat them as phrases,\n  // not an ambiguous mix of implicit AND/OR on bare words.\n  const quoted = terms.map(t => t.includes(' ') ? '\"' + t + '\"' : t);\n  return { json: {\n    ...c,\n    app_base_url: appCfg.app_base_url,\n    opponent_names_array: opp,\n    keywords_array: kw,\n    query_string: quoted.join(' OR '),\n    gdelt_query_string: quoted.join(' OR '),\n  }};\n});"
+      },
+      "id": "33333333-3333-3333-3333-333333333333",
+      "name": "Prepare Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://newsdata.io/api/1/news",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "q",        "value": "={{ $json.query_string }}" },
+            { "name": "language", "value": "en" },
+            { "name": "country",  "value": "us" },
+            { "name": "size",     "value": "10" }
+          ]
+        },
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "id": "44444444-4444-4444-4444-444444444444",
+      "name": "NewsData: Fetch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 260],
+      "continueOnFail": true,
+      "credentials": {
+        "httpQueryAuth": { "id": "2", "name": "NewsData API Key" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// One NewsData response comes in per campaign (Run Once for All Items), and\n// each response fans out into up to 15 articles — a one-to-many transform,\n// so we can't rely on automatic pairedItem tracking. itemMatching() explicitly\n// looks up each input item's originating campaign row by index instead.\nconst output = [];\n$input.all().forEach((item, idx) => {\n  const cfg = $('Prepare Query').itemMatching(idx).json;\n  const res = item.json;\n  if (!res || !Array.isArray(res.results)) return;\n  res.results\n    .filter(a => a && a.link)\n    .slice(0, 15)\n    .forEach(a => output.push({ json: {\n      campaign_id: cfg.campaign_id,\n      source: String(a.source_id || 'NewsData'),\n      opponent: cfg.opponent_names_array.find(o =>\n        (String(a.title || '') + ' ' + String(a.description || '')).toLowerCase().includes(o.toLowerCase())\n      ) || null,\n      excerpt: String(a.description || a.title || '').substring(0, 500),\n      url: String(a.link),\n      app_base_url: cfg.app_base_url,\n    }}));\n});\nreturn output;"
+      },
+      "id": "55555555-5555-5555-5555-555555555555",
+      "name": "NewsData: Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.app_base_url + '/api/monitoring/ingest' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": { "parameters": [
+          { "name": "campaign_id", "value": "={{ $json.campaign_id }}" },
+          { "name": "source",      "value": "={{ $json.source }}" },
+          { "name": "opponent",    "value": "={{ $json.opponent }}" },
+          { "name": "excerpt",     "value": "={{ $json.excerpt }}" },
+          { "name": "url",         "value": "={{ $json.url }}" }
+        ]},
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "id": "66666666-6666-6666-6666-666666666666",
+      "name": "NewsData: Send to App",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 260],
+      "continueOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": { "id": "1", "name": "Campaign App Service Auth" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.gdeltproject.org/api/v2/doc/doc",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "query",      "value": "={{ $json.gdelt_query_string }}" },
+            { "name": "mode",       "value": "artlist" },
+            { "name": "maxrecords", "value": "20" },
+            { "name": "format",     "value": "json" },
+            { "name": "timespan",   "value": "24h" },
+            { "name": "sort",       "value": "DateDesc" },
+            { "name": "sourcelang", "value": "eng" }
+          ]
+        },
+        "options": {
+          "batching": { "batch": { "batchSize": 1, "batchInterval": 5500 } },
+          "response": { "response": { "neverError": true } }
+        }
+      },
+      "id": "77777777-7777-7777-7777-777777777777",
+      "name": "GDELT: Fetch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 540],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Same one-to-many issue as NewsData: Format — one GDELT response comes in\n// per campaign, each fanning into up to 15 articles, so look up each input\n// item's originating campaign row explicitly via itemMatching() rather than\n// relying on automatic pairedItem tracking.\nconst output = [];\n$input.all().forEach((item, idx) => {\n  const cfg = $('Prepare Query').itemMatching(idx).json;\n  const res = item.json;\n  // GDELT returns a plain-text error body (not JSON) on a malformed query —\n  // catch that case explicitly instead of a no-op `res.data` check.\n  if (!res || typeof res === 'string' || !Array.isArray(res.articles)) return;\n  res.articles\n    .filter(a => a && a.url)\n    .slice(0, 15)\n    .forEach(a => output.push({ json: {\n      campaign_id: cfg.campaign_id,\n      source: 'GDELT',\n      opponent: cfg.opponent_names_array.find(o =>\n        String(a.title || '').toLowerCase().includes(o.toLowerCase())\n      ) || null,\n      excerpt: String(a.title || '').substring(0, 500),\n      url: String(a.url),\n      app_base_url: cfg.app_base_url,\n    }}));\n});\nreturn output;"
+      },
+      "id": "88888888-8888-8888-8888-888888888888",
+      "name": "GDELT: Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 540]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.app_base_url + '/api/monitoring/ingest' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": { "parameters": [
+          { "name": "campaign_id", "value": "={{ $json.campaign_id }}" },
+          { "name": "source",      "value": "={{ $json.source }}" },
+          { "name": "opponent",    "value": "={{ $json.opponent }}" },
+          { "name": "excerpt",     "value": "={{ $json.excerpt }}" },
+          { "name": "url",         "value": "={{ $json.url }}" }
+        ]},
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "id": "99999999-9999-9999-9999-999999999999",
+      "name": "GDELT: Send to App",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 540],
+      "continueOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": { "id": "1", "name": "Campaign App Service Auth" }
+      }
+    }
+  ],
+  "connections": {
+    "Every 2 Hours": {
+      "main": [[{ "node": "App Config", "type": "main", "index": 0 }]]
+    },
+    "App Config": {
+      "main": [[{ "node": "Get Campaigns", "type": "main", "index": 0 }]]
+    },
+    "Get Campaigns": {
+      "main": [[{ "node": "Prepare Query", "type": "main", "index": 0 }]]
+    },
+    "Prepare Query": {
+      "main": [[
+        { "node": "NewsData: Fetch", "type": "main", "index": 0 },
+        { "node": "GDELT: Fetch",    "type": "main", "index": 0 }
+      ]]
+    },
+    "NewsData: Fetch":  { "main": [[{ "node": "NewsData: Format",     "type": "main", "index": 0 }]] },
+    "NewsData: Format": { "main": [[{ "node": "NewsData: Send to App", "type": "main", "index": 0 }]] },
+    "GDELT: Fetch":     { "main": [[{ "node": "GDELT: Format",        "type": "main", "index": 0 }]] },
+    "GDELT: Format":    { "main": [[{ "node": "GDELT: Send to App",    "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeff",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "commandcenter"
+  },
+  "id": "monitoring-workflow-basic-001",
+  "tags": []
+}
