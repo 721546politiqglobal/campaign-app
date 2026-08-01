@@ -3,15 +3,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-function LogoMark({ size = 24 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M4 12L12 4L20 12L12 20L4 12Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
-      <circle cx="12" cy="12" r="3.5" fill="currentColor"/>
-    </svg>
-  );
-}
-
 const FEATURES = [
   {
     icon: (
@@ -92,7 +83,7 @@ const STEPS = [
   {
     n: '01',
     title: 'Draft in seconds',
-    desc: "Describe what you need. Command Center's AI drafts press releases, social posts, email blasts, and talking points instantly.",
+    desc: "Describe what you need. PolitIQ's AI drafts press releases, social posts, email blasts, and talking points instantly.",
   },
   {
     n: '02',
@@ -114,7 +105,7 @@ function AppPreview() {
           <div className="lp-dots">
             <span /><span /><span />
           </div>
-          <div className="lp-url">commandcenter.ai/dashboard</div>
+          <div className="lp-url">politiq.ai/dashboard</div>
         </div>
         <div className="lp-app">
           <div className="lp-sidebar">
@@ -207,8 +198,7 @@ export default function LandingPage() {
       <nav className={`lp-nav${scrolled ? ' scrolled' : ''}`}>
         <div className="lp-nav-inner">
           <Link href="/" className="lp-brand">
-            <span style={{ color: 'var(--accent)' }}><LogoMark size={22} /></span>
-            <span className="lp-brand-name">Command Center</span>
+            <img src="/politiq-logo.png" alt="PolitIQ" className="lp-brand-logo-img" />
           </Link>
           <div className="lp-navlinks">
             <a href="#features">Features</a>
@@ -334,8 +324,7 @@ export default function LandingPage() {
           <div className="lp-footer-top">
             <div className="lp-footer-brand">
               <div className="lp-brand" style={{ marginBottom: 12 }}>
-                <span style={{ color: 'var(--accent)' }}><LogoMark size={20} /></span>
-                <span className="lp-brand-name">Command Center</span>
+                <img src="/politiq-logo.png" alt="PolitIQ" className="lp-brand-logo-img" />
               </div>
               <p className="lp-footer-tagline">
                 AI campaign communications<br />with compliance built in.
@@ -361,7 +350,7 @@ export default function LandingPage() {
             </div>
           </div>
           <div className="lp-footer-bottom">
-            <span>© 2026 Command Center. All rights reserved.</span>
+            <span>© 2026 PolitIQ. All rights reserved.</span>
             <span>Built for campaigns that play to win.</span>
           </div>
         </div>
