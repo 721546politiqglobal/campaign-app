@@ -30,20 +30,23 @@ export async function GET(req: NextRequest) {
 
     if (groupRes.ok) {
       const groupJson = await groupRes.json();
-      // The real v2 response uses avatar_id/avatar_name/preview_image_url/
-      // preview_video_url (no `status` field) — NOT id/name/image_url/
-      // motion_preview_url. Every entry in avatar_list is already a usable
-      // look, so there's nothing to filter on beyond having an avatar_id.
-      const list: { avatar_id?: string; avatar_name?: string; preview_image_url?: string; preview_video_url?: string }[] =
-        groupJson?.data?.avatar_list ?? [];
+      // avatar_list mixes two schemas: the original photo-avatar look uses
+      // avatar_id/avatar_name/preview_image_url/preview_video_url, but looks
+      // created via createPromptLook (type: 'prompt') come back as
+      // id/name/image_url/motion_preview_url/status instead. Normalize both —
+      // filtering on avatar_id alone silently dropped every generated look.
+      const list: {
+        avatar_id?: string; avatar_name?: string; preview_image_url?: string; preview_video_url?: string;
+        id?: string; name?: string; image_url?: string; motion_preview_url?: string; status?: string;
+      }[] = groupJson?.data?.avatar_list ?? [];
 
       const photoAvatars: NormalizedAvatar[] = list
-        .filter(a => a.avatar_id)
+        .filter(a => a.avatar_id || (a.id && (!a.status || a.status === 'completed')))
         .map(a => ({
-          avatar_id: a.avatar_id!,
-          avatar_name: a.avatar_name ?? 'Look',
-          preview_image_url: a.preview_image_url,
-          preview_video_url: a.preview_video_url,
+          avatar_id: (a.avatar_id ?? a.id)!,
+          avatar_name: a.avatar_name ?? a.name ?? 'Look',
+          preview_image_url: a.preview_image_url ?? a.image_url,
+          preview_video_url: a.preview_video_url ?? a.motion_preview_url,
         }));
 
       if (photoAvatars.length > 0) {
