@@ -95,13 +95,7 @@ export function AdminSidebar({ name }: { name: string }) {
     <aside className="admin-sidebar">
       <div className="admin-brand">
         <div className="brand-mark">
-          <div className="brand-icon" style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171' }}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-              <path d="M1.5 6L6 1.5L10.5 6L6 10.5L1.5 6Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
-              <circle cx="6" cy="6" r="1.8" fill="currentColor"/>
-            </svg>
-          </div>
-          <span className="brand-name">Command Center</span>
+          <img src="/politiq-logo.png" alt="PolitIQ" className="brand-logo-img" />
         </div>
         <div className="admin-badge">
           <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden>

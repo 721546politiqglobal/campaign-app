@@ -24,13 +24,7 @@ export default async function SetupPage({
     <div className="setup-wrap">
       <div style={{ width: '100%', maxWidth: 640 }}>
         <div className="setup-brand">
-          <div className="login-logo-icon">
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
-              <path d="M3 9L9 3L15 9L9 15L3 9Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-              <circle cx="9" cy="9" r="2.5" fill="currentColor" />
-            </svg>
-          </div>
-          <span className="login-title">Command Center</span>
+          <img src="/politiq-logo.png" alt="PolitIQ" className="login-logo-img" />
         </div>
         <div style={{ marginBottom: 32 }}>
           <span className="eyebrow">Welcome · Step 1 of 1</span>

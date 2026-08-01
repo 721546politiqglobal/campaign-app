@@ -41,13 +41,7 @@ export default async function JoinPage({
     <div className="login-wrap">
       <div className="login-card">
         <Link href="/" className="login-logo">
-          <div className="login-logo-icon">
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
-              <path d="M3 9L9 3L15 9L9 15L3 9Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
-              <circle cx="9" cy="9" r="2.5" fill="currentColor"/>
-            </svg>
-          </div>
-          <span className="login-title">Command Center</span>
+          <img src="/politiq-logo.png" alt="PolitIQ" className="login-logo-img" />
         </Link>
 
         <div style={{ marginBottom: 24 }}>

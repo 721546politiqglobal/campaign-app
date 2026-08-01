@@ -18,7 +18,7 @@ const manrope = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'Command Center',
+  title: 'PolitIQ',
   description: 'AI campaign communications — human approval and disclosure built in.',
 };
 

@@ -92,7 +92,7 @@ export function AvatarLibrary({
                     padding: 0, borderRadius: 12, overflow: 'hidden', cursor: 'pointer',
                     border: `3px solid ${isSelected ? 'var(--accent)' : 'var(--line)'}`,
                     background: 'var(--bg-hover)', position: 'relative', textAlign: 'left',
-                    width: 140, flexShrink: 0,
+                    width: 140, flexShrink: 0, color: 'var(--text)',
                     boxShadow: isSelected ? '0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent)' : 'none',
                     transition: 'border-color 0.15s, box-shadow 0.15s',
                   }}>
