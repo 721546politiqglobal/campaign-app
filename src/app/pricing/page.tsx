@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { requireSession } from '@/lib/session';
 import { getCampaign, getBillingPlans } from '@/lib/data';
 import { getCandidateProfile } from '@/lib/candidate';
@@ -33,12 +34,22 @@ export default async function PricingPage({
   return (
     <div className="setup-wrap">
       <div style={{ width: '100%', maxWidth: 960 }}>
-        <div style={{ marginBottom: 32 }}>
-          <span className="eyebrow">{campaign?.planId ? 'Change plan' : 'Choose a plan'}</span>
-          <h1 style={{ margin: '6px 0 8px' }}>{campaign?.planId ? 'Change your plan' : 'Subscribe to get started'}</h1>
-          <p className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>
-            Every plan includes AI drafting, avatars, and video generation — the limits below are what changes between tiers.
-          </p>
+        <div style={{ marginBottom: 32, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+          <div>
+            <span className="eyebrow">{campaign?.planId ? 'Change plan' : 'Choose a plan'}</span>
+            <h1 style={{ margin: '6px 0 8px' }}>{campaign?.planId ? 'Change your plan' : 'Subscribe to get started'}</h1>
+            <p className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>
+              Every plan includes AI drafting, avatars, and video generation — the limits below are what changes between tiers.
+            </p>
+          </div>
+          {/* /pricing renders outside AppFrame (no sidebar nav) so it isn't
+              wrapped in the race-with-the-webhook problem I3 fixes for
+              success_url — but that leaves nothing to click back into the
+              app with once a plan is active. Only show this once a plan
+              exists; with no plan, AppFrame itself redirects back here. */}
+          {campaign?.planId && (
+            <Link href="/dashboard" className="btn" style={{ flexShrink: 0 }}>Go to dashboard →</Link>
+          )}
         </div>
 
         {searchParams.checkout === 'success' && (
