@@ -15,7 +15,7 @@ const FEATURES = [
       </svg>
     ),
     label: 'AI Content Generation',
-    desc: 'Draft social posts, press releases, emails, and talking points in seconds. Every piece runs through your brand voice.',
+    desc: "Draft social posts, press releases, emails, and talking points in seconds. Every piece is tailored to your campaign's brand voice.",
   },
   {
     icon: (
@@ -25,7 +25,7 @@ const FEATURES = [
       </svg>
     ),
     label: 'Human Approval Workflow',
-    desc: 'Route every piece of content through role-based review before it ever goes public. Full chain of custody.',
+    desc: 'Route every piece of content through role-based review before it ever goes public. Complete chain of custody.',
   },
   {
     icon: (
@@ -36,7 +36,7 @@ const FEATURES = [
       </svg>
     ),
     label: 'Automatic Disclosures',
-    desc: 'Jurisdiction-aware disclosure rules applied instantly. State-specific AI disclosure requirements handled automatically.',
+    desc: 'Jurisdiction-aware disclosure rules applied instantly. State-specific AI disclosure requirements are handled automatically.',
   },
   {
     icon: (
@@ -50,7 +50,7 @@ const FEATURES = [
       </svg>
     ),
     label: 'Opponent Monitoring',
-    desc: 'Track what the other side is saying in real time. Surface rebuttal opportunities before they become narratives.',
+    desc: 'Track what the other side is saying in real time. Identify rebuttal opportunities before they become dominant narratives.',
   },
   {
     icon: (
@@ -62,7 +62,7 @@ const FEATURES = [
       </svg>
     ),
     label: 'Spend Controls',
-    desc: 'Set monthly cost caps per campaign. AI drafting, video generation, and voice synthesis all tracked against your budget.',
+    desc: 'Set monthly cost caps per campaign. Track AI drafting, video generation, and voice synthesis against your campaign budget.',
   },
   {
     icon: (
@@ -75,24 +75,24 @@ const FEATURES = [
       </svg>
     ),
     label: 'Full Audit Trail',
-    desc: 'Every action logged with actor, timestamp, and context. FEC-ready records at your fingertips come disclosure season.',
+    desc: 'Every action is logged with actor, timestamp, and context. FEC-ready records at your fingertips come disclosure season.',
   },
 ];
 
 const STEPS = [
   {
     n: '01',
-    title: 'Draft in seconds',
+    title: 'Draft in Seconds',
     desc: "Describe what you need. PolitIQ's AI drafts press releases, social posts, email blasts, and talking points instantly.",
   },
   {
     n: '02',
-    title: 'Review and approve',
-    desc: 'Content routes to your approval team. Managers, approvers, and legal all get the right view at the right time.',
+    title: 'Review and Approve',
+    desc: 'Content is routed to your approval team. Managers, approvers, and legal all get the right view at the right time.',
   },
   {
     n: '03',
-    title: 'Publish with confidence',
+    title: 'Publish with Confidence',
     desc: 'Disclosures are auto-applied by jurisdiction before anything goes live. One click to publish across every platform.',
   },
 ];
@@ -202,11 +202,11 @@ export default function LandingPage() {
           </Link>
           <div className="lp-navlinks">
             <a href="#features">Features</a>
-            <a href="#workflow">How it works</a>
+            <a href="#workflow">How It Works</a>
           </div>
           <div className="lp-nav-actions">
-            <Link href="/login" className="lp-nav-signin">Sign in</Link>
-            <Link href="/login" className="lp-nav-cta">Get started</Link>
+            <Link href="/login" className="lp-nav-signin">Sign In</Link>
+            <Link href="/login" className="lp-nav-cta">Get Started</Link>
           </div>
         </div>
       </nav>
@@ -216,23 +216,23 @@ export default function LandingPage() {
         <div className="lp-hero-inner">
           <div className="lp-hero-text">
             <h1 className="lp-h1">
-              The war room<br />
+              The PolitIQ<br />
               for modern<br />
               <span className="lp-h1-accent">campaigns.</span>
             </h1>
             <p className="lp-hero-sub">
-              AI-drafted content, human-reviewed, legally disclosed.{' '}
+              AI-drafted content. Human-reviewed. Fully compliant.{' '}
               Run your entire communications operation from one command center.
             </p>
             <div className="lp-hero-ctas">
               <Link href="/login" className="lp-btn-primary">
-                Get started
+                Get Started
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
                   <path d="M3 7H11M8 4L11 7L8 10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </Link>
               <a href="#features" className="lp-btn-ghost">
-                See the platform
+                See the Platform
               </a>
             </div>
             <div className="lp-hero-trust">
@@ -258,7 +258,7 @@ export default function LandingPage() {
               Everything your campaign<br />needs to communicate.
             </h2>
             <p className="lp-section-sub">
-              Built specifically for political campaigns — every feature is designed around the unique demands of election law and campaign operations.
+              Purpose-built for political campaigns, every feature is designed to meet the unique demands of election law, compliance, and campaign operations.
             </p>
           </div>
           <div className="lp-features-grid">
@@ -277,7 +277,7 @@ export default function LandingPage() {
       <section className="lp-section lp-workflow-section" id="workflow">
         <div className="lp-container">
           <div className="lp-section-head">
-            <span className="lp-section-eyebrow">How it works</span>
+            <span className="lp-section-eyebrow">How It Works</span>
             <h2 className="lp-section-title">
               From brief to published<br />in minutes, not days.
             </h2>
@@ -307,12 +307,12 @@ export default function LandingPage() {
             </p>
             <div className="lp-hero-ctas" style={{ justifyContent: 'center' }}>
               <Link href="/login" className="lp-btn-primary">
-                Get started
+                Get Started
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
                   <path d="M3 7H11M8 4L11 7L8 10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </Link>
-              <a href="mailto:ceo@ivac.org" className="lp-btn-ghost">Talk to the team</a>
+              <a href="mailto:ceo@ivac.org" className="lp-btn-ghost">Talk to the Team</a>
             </div>
           </div>
         </div>
@@ -334,13 +334,13 @@ export default function LandingPage() {
               <div className="lp-footer-col">
                 <div className="lp-footer-col-title">Product</div>
                 <a href="#features">Features</a>
-                <a href="#workflow">How it works</a>
+                <a href="#workflow">How It Works</a>
               </div>
               <div className="lp-footer-col">
                 <div className="lp-footer-col-title">Legal</div>
-                <a href="#">Privacy policy</a>
-                <a href="#">Terms of service</a>
-                <a href="#">FEC compliance</a>
+                <a href="#">Privacy Policy</a>
+                <a href="#">Terms of Service</a>
+                <a href="#">FEC Compliance</a>
               </div>
               <div className="lp-footer-col">
                 <div className="lp-footer-col-title">Company</div>
