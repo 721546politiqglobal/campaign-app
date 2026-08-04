@@ -33,6 +33,7 @@ export function TeamManager({
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
+  const [roleValues, setRoleValues] = useState<Record<string, string>>({});
 
   async function handleInvite(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -50,9 +51,12 @@ export function TeamManager({
 
   async function handleRoleChange(userId: string, newRole: string) {
     setError(null);
+    setRoleValues(prev => ({ ...prev, [userId]: newRole }));
     const result = await changeTeammateRoleAction(userId, newRole);
     if (!result.ok) {
       setError(result.error ?? 'Failed to change role.');
+      const actualRole = members.find(m => m.id === userId)?.role ?? newRole;
+      setRoleValues(prev => ({ ...prev, [userId]: actualRole }));
       return;
     }
     router.refresh();
@@ -101,7 +105,7 @@ export function TeamManager({
                       <select
                         className="input"
                         style={{ width: 110 }}
-                        defaultValue={u.role}
+                        value={roleValues[u.id] ?? u.role}
                         onChange={e => handleRoleChange(u.id, e.target.value)}
                       >
                         {INVITABLE_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
