@@ -1,10 +1,11 @@
 import { revalidatePath } from 'next/cache';
 import { AppFrame } from '@/components/AppFrame';
 import { requireSession } from '@/lib/session';
-import { getCampaign, getDisclosureRules, getUsers } from '@/lib/data';
+import { getCampaign, getDisclosureRules, getUsers, getInviteCodes, getCampaignSeatUsage } from '@/lib/data';
 import { getCandidateProfile } from '@/lib/candidate';
 import { upsertCandidateProfile } from '@/lib/candidate';
 import { can } from '@/lib/permissions';
+import { TeamManager } from '@/components/TeamManager';
 import { PARTIES } from '@/lib/profile-validation';
 import type { VoiceTone } from '@/domain/types';
 
@@ -69,13 +70,23 @@ export default async function Settings({
   searchParams: { error?: string };
 }) {
   const s = await requireSession();
-  const [campaign, rules, users, profile] = await Promise.all([
+  const [campaign, rules, users, profile, inviteCodes, seatUsage] = await Promise.all([
     getCampaign(s.campaignId),
     getDisclosureRules(),
     getUsers(s.campaignId),
     getCandidateProfile(s.campaignId),
+    getInviteCodes(s.campaignId),
+    getCampaignSeatUsage(s.campaignId),
   ]);
   const canEdit = can(s.role, 'edit_settings');
+  const canManageTeam = can(s.role, 'manage_team');
+  const invitesWithShareUrl = inviteCodes.map(inv => ({
+    code: inv.code,
+    role: inv.role,
+    expiresAt: inv.expiresAt,
+    usedAt: inv.usedAt,
+    shareUrl: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/join?code=${inv.code}`,
+  }));
 
   return (
     <AppFrame>
@@ -227,23 +238,12 @@ export default async function Settings({
       </div>
 
       <div className="spacer-y" />
-      <div className="card">
-        <h2>Team</h2>
-        <table>
-          <thead><tr><th>Name</th><th>Role</th></tr></thead>
-          <tbody>
-            {users.map(u => (
-              <tr key={u.id}>
-                <td>{u.name}</td>
-                <td className="muted">{u.role}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
-          To add a team member, contact your platform administrator.
-        </p>
-      </div>
+      <TeamManager
+        members={users.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role }))}
+        invites={invitesWithShareUrl}
+        seatUsage={seatUsage}
+        canManage={canManageTeam}
+      />
     </AppFrame>
   );
 }
