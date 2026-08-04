@@ -240,7 +240,7 @@ export default async function Settings({
       <div className="spacer-y" />
       <TeamManager
         members={users.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role }))}
-        invites={invitesWithShareUrl}
+        invites={canManageTeam ? invitesWithShareUrl : []}
         seatUsage={seatUsage}
         canManage={canManageTeam}
       />

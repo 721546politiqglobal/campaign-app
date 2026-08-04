@@ -40,36 +40,51 @@ export function TeamManager({
     setError(null);
     setInviting(true);
     const formData = new FormData(e.currentTarget);
-    const result = await inviteTeammateAction(formData);
-    setInviting(false);
-    if (!result.ok) {
-      setError(result.error ?? 'Failed to create invite.');
-      return;
+    try {
+      const result = await inviteTeammateAction(formData);
+      if (!result.ok) {
+        setError(result.error ?? 'Failed to create invite.');
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError('Something went wrong. Please try again.');
+    } finally {
+      setInviting(false);
     }
-    router.refresh();
   }
 
   async function handleRoleChange(userId: string, newRole: string) {
     setError(null);
     setRoleValues(prev => ({ ...prev, [userId]: newRole }));
-    const result = await changeTeammateRoleAction(userId, newRole);
-    if (!result.ok) {
-      setError(result.error ?? 'Failed to change role.');
+    try {
+      const result = await changeTeammateRoleAction(userId, newRole);
+      if (!result.ok) {
+        setError(result.error ?? 'Failed to change role.');
+        const actualRole = members.find(m => m.id === userId)?.role ?? newRole;
+        setRoleValues(prev => ({ ...prev, [userId]: actualRole }));
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError('Something went wrong. Please try again.');
       const actualRole = members.find(m => m.id === userId)?.role ?? newRole;
       setRoleValues(prev => ({ ...prev, [userId]: actualRole }));
-      return;
     }
-    router.refresh();
   }
 
   async function handleRemove(userId: string) {
     setError(null);
-    const result = await removeTeammateAction(userId);
-    if (!result.ok) {
-      setError(result.error ?? 'Failed to remove teammate.');
-      return;
+    try {
+      const result = await removeTeammateAction(userId);
+      if (!result.ok) {
+        setError(result.error ?? 'Failed to remove teammate.');
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError('Something went wrong. Please try again.');
     }
-    router.refresh();
   }
 
   const seatLimitReached = seatUsage.limit !== null && seatUsage.used >= seatUsage.limit;

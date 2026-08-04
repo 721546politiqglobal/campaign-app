@@ -15,8 +15,11 @@ export async function inviteTeammateAction(formData: FormData): Promise<{ ok: bo
   const role = String(formData.get('role') ?? '');
   if (!isInvitableRole(role)) return { ok: false, error: 'Invalid role.' };
 
-  // An unused invite is a reserved seat — count it against the plan limit too,
-  // same rule the admin's generateInviteAction already enforces.
+  // Blocks new invites once the campaign already has `limit` members — matches
+  // the admin's existing generateInviteAction check. Note: this counts current
+  // users only, not other pending unused invites, so it's possible to still
+  // exceed the seat limit once several pending invites are all redeemed (same
+  // limitation the admin flow has today).
   const seats = await getCampaignSeatUsage(s.campaignId);
   if (seats.limit !== null && seats.used >= seats.limit) {
     return { ok: false, error: "Your plan's seat limit is reached. Upgrade your plan to add more teammates." };
@@ -45,7 +48,11 @@ export async function removeTeammateAction(userId: string): Promise<{ ok: boolea
   if (!target || target.campaign_id !== s.campaignId) return { ok: false, error: 'User not found.' };
   if (target.role === 'owner') return { ok: false, error: "The campaign owner can't be removed." };
 
-  await throwOnError(adminDb.from('users').delete().eq('id', userId), 'users.remove_teammate');
+  try {
+    await throwOnError(adminDb.from('users').delete().eq('id', userId), 'users.remove_teammate');
+  } catch {
+    return { ok: false, error: "This teammate has created content in the campaign and can't be removed right now." };
+  }
   revalidatePath('/settings');
   return { ok: true };
 }
