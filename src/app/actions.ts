@@ -7,7 +7,7 @@ import { adminDb, throwOnError } from '@/lib/supabase';
 import { uid, prefixedId } from '@/lib/store';
 import { getCampaign, getBillingPlan } from '@/lib/data';
 import { lifecycle, disclosureEngine, quotaGate, billingGate, contentGenerator, publisher, videoProvider, voiceProvider, photoAvatarProvider } from '@/lib/services';
-import { HeyGenAccessDeniedError } from '@/integrations';
+import { HeyGenAccessDeniedError, HeyGenVoiceCloneLimitError } from '@/integrations';
 import { contentRepo, approvalRepo, disclosureRepo, auditRepo } from '@/lib/repos';
 import { ContentType, ContentStatus, ContentItem, Platform, VIDEO_CONTENT_TYPES, isContentType } from '@/domain/types';
 import { GateError } from '@/domain/content-lifecycle';
@@ -362,7 +362,13 @@ export async function generateVideoAction(
   // that's a single global avatar shared across every tenant, so silently using
   // it would generate video of the wrong (possibly non-consented) candidate.
   if (!avatarId) return { ok: false, error: 'No avatar is set up for this campaign yet. Add one on the Avatars page first.' };
-  const heygenVoiceId = overrides?.voiceId ?? profile?.heygenVoiceId ?? undefined;
+  const heygenVoiceId = overrides?.voiceId
+    // A ready self-clone takes precedence over the admin-assigned heygen_voice_id
+    // — self-service is the primary path once it exists, admin assignment is
+    // the fallback for campaigns that haven't cloned their own voice.
+    ?? (profile?.selfVoiceCloneStatus === 'ready' ? profile?.selfVoiceCloneId ?? undefined : undefined)
+    ?? profile?.heygenVoiceId
+    ?? undefined;
   // Do not fall back to the global HEYGEN_VOICE_ID — that narrates every
   // tenant's video with one shared voice. And never pass the ElevenLabs id
   // here: HeyGen uses a different voice-id namespace and 400s on it (INT-7).
@@ -1004,6 +1010,181 @@ export async function deleteAvatarAction(avatarId: string): Promise<Result> {
   await deleteAvatarRow(avatarId);
   revalidatePath('/avatars');
   return { ok: true };
+}
+
+// ── Self-service voice cloning ────────────────────────────────────────────────
+// Mirrors the begin/finalize split used for avatars (see the comment above
+// beginAvatarUploadAction): raw audio bytes never travel through a Server
+// Action body, avoiding Vercel's function payload limit.
+
+const MAX_VOICE_SAMPLE_BYTES = 50 * 1024 * 1024;
+// Exact match after stripping any codec parameter: browser-recorded audio
+// (MediaRecorder) reports a MIME type with a codec suffix, e.g.
+// "audio/webm;codecs=opus", which never exact-matches a bare "audio/webm"
+// entry, so the `;codecs=...` portion is stripped before comparing.
+const ALLOWED_VOICE_SAMPLE_TYPES = ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a', 'audio/webm', 'audio/ogg'];
+
+export async function beginVoiceCloneUploadAction(
+  consent: boolean,
+  file: { name: string; type: string; size: number },
+): Promise<Result & { path?: string; token?: string }> {
+  const s = await requireSession();
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+  if (!consent) return { ok: false, error: 'Consent confirmation is required.' };
+
+  if (!file || file.size === 0) return { ok: false, error: 'Upload an audio sample.' };
+  if (file.size > MAX_VOICE_SAMPLE_BYTES) return { ok: false, error: 'Audio sample must be under 50 MB.' };
+  if (!ALLOWED_VOICE_SAMPLE_TYPES.includes(file.type.split(';')[0])) {
+    return { ok: false, error: 'Only MP3, WAV, M4A, WebM, or OGG audio files are allowed.' };
+  }
+
+  try {
+    await billingGate.check(s.campaignId);
+  } catch (e) {
+    if (e instanceof QuotaExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
+    throw e;
+  }
+
+  const attemptId = uid();
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? 'mp3';
+  const path = `voices/${s.campaignId}/${attemptId}/sample.${ext}`;
+  const { data, error } = await adminDb.storage.from('media').createSignedUploadUrl(path);
+  if (error) return { ok: false, error: error.message };
+
+  return { ok: true, path, token: data.token };
+}
+
+export async function finalizeVoiceCloneAction(name: string, path: string): Promise<Result> {
+  const s = await requireSession();
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+
+  const prefix = `voices/${s.campaignId}/`;
+  if (!path.startsWith(prefix)) return { ok: false, error: 'Invalid upload.' };
+
+  const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
+  const trimmedName = name.trim() || 'My voice';
+
+  const { data, error: downloadError } = await adminDb.storage.from('media').download(path);
+  if (downloadError || !data) return { ok: false, error: downloadError?.message ?? 'Uploaded audio not found.' };
+  const buffer = Buffer.from(await data.arrayBuffer());
+  // Strip any codec parameter (e.g. a browser-recorded file's
+  // "audio/webm;codecs=opus") before handing it to HeyGen's asset-upload
+  // endpoint, which expects a bare content type.
+  const contentType = data.type.split(';')[0];
+
+  const existingProfile = await getCandidateProfile(s.campaignId);
+  if (existingProfile?.selfVoiceCloneId) {
+    // Best-effort: a failure here must not block creating the replacement —
+    // worst case is a stale HeyGen-side voice consuming a slot until manually
+    // cleaned up (matches the digital-twin spec's precedent that partial
+    // multi-step HeyGen failures don't roll back already-created state).
+    try {
+      await photoAvatarProvider.deleteVoiceClone(existingProfile.selfVoiceCloneId);
+    } catch (e) {
+      console.error(`Failed to delete previous voice clone for campaign ${s.campaignId}: ${e}`);
+    }
+  }
+
+  let cloneError: string | null = null;
+  let cloneLimitHit = false;
+  let voiceCloneId: string | null = null;
+  try {
+    const { assetId } = await photoAvatarProvider.uploadAsset(buffer, contentType);
+    const result = await photoAvatarProvider.cloneVoice({ name: trimmedName, assetId });
+    voiceCloneId = result.voiceCloneId;
+  } catch (e) {
+    cloneLimitHit = e instanceof HeyGenVoiceCloneLimitError;
+    cloneError = cloneLimitHit
+      ? 'Voice cloning is temporarily at capacity across the platform — contact support.'
+      : e instanceof Error ? e.message : String(e);
+  }
+
+  // Best-effort cleanup of the raw uploaded sample regardless of outcome —
+  // once HeyGen has consumed it (or failed to), the local copy in Storage has
+  // no further purpose: nothing in the UI displays it back (unlike avatar
+  // photos/video, which are deliberately kept for sourcePhotoUrls/
+  // sourceVideoUrl display). A cleanup failure here must not change the
+  // action's success/failure result, matching the deleteVoiceClone
+  // best-effort pattern above.
+  try {
+    await adminDb.storage.from('media').remove([path]);
+  } catch (e) {
+    console.error(`Failed to clean up voice sample at ${path}: ${e}`);
+  }
+
+  await upsertCandidateProfile(s.campaignId, cloneError
+    ? { selfVoiceCloneStatus: 'failed', selfVoiceCloneError: cloneError }
+    : {
+        selfVoiceCloneId: voiceCloneId,
+        selfVoiceName: trimmedName,
+        selfVoiceCloneStatus: 'training',
+        selfVoiceCloneError: null,
+        selfVoiceConsentConfirmedBy: s.userId,
+        selfVoiceConsentConfirmedAt: new Date().toISOString(),
+      });
+
+  revalidatePath('/avatars');
+  // The clone-limit message is already complete and user-facing — don't wrap
+  // it with the generic "Voice cloning failed:" prefix below (mirrors the
+  // accessDenied handling in finalizeVideoAvatarAction).
+  if (cloneLimitHit) return { ok: false, error: cloneError as string };
+  if (cloneError) return { ok: false, error: `Voice cloning failed: ${cloneError}` };
+
+  // upsertCandidateProfile silently swallows Supabase write errors platform-wide
+  // (shared helper used by many unrelated flows — out of scope to change here).
+  // Verify the write actually landed before reporting success, so a HeyGen
+  // clone that got created but never recorded doesn't look like it worked.
+  const verifyProfile = await getCandidateProfile(s.campaignId);
+  if (verifyProfile?.selfVoiceCloneId !== voiceCloneId) {
+    return { ok: false, error: 'Failed to save the new voice — please try again.' };
+  }
+
+  return { ok: true };
+}
+
+export async function checkVoiceCloneStatusAction(): Promise<Result> {
+  const s = await requireSession();
+  const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
+  const profile = await getCandidateProfile(s.campaignId);
+  if (profile?.selfVoiceCloneStatus !== 'training' || !profile.selfVoiceCloneId) return { ok: true };
+
+  const { status } = await photoAvatarProvider.getVoiceCloneStatus(profile.selfVoiceCloneId);
+  if (status === 'ready') {
+    await upsertCandidateProfile(s.campaignId, { selfVoiceCloneStatus: 'ready' });
+  } else if (status === 'failed') {
+    await upsertCandidateProfile(s.campaignId, { selfVoiceCloneStatus: 'failed', selfVoiceCloneError: 'HeyGen reported the voice clone failed.' });
+  }
+  revalidatePath('/avatars');
+  return { ok: true };
+}
+
+const VOICE_PREVIEW_TEXT = 'Hello, this is a preview of your cloned voice.';
+
+export async function previewVoiceCloneAction(): Promise<Result & { audioUrl?: string }> {
+  const s = await requireSession();
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+  const { getCandidateProfile } = await import('@/lib/candidate');
+  const profile = await getCandidateProfile(s.campaignId);
+  if (profile?.selfVoiceCloneStatus !== 'ready' || !profile.selfVoiceCloneId) {
+    return { ok: false, error: 'No cloned voice is ready yet.' };
+  }
+
+  try {
+    await billingGate.check(s.campaignId);
+  } catch (e) {
+    if (e instanceof QuotaExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
+    throw e;
+  }
+
+  try {
+    const { audioUrl } = await photoAvatarProvider.synthesizeSpeech({
+      voiceId: profile.selfVoiceCloneId,
+      text: VOICE_PREVIEW_TEXT,
+    });
+    return { ok: true, audioUrl };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export async function generatePromptLookAction(avatarId: string, name: string, prompt: string): Promise<Result> {

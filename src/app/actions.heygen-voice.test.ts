@@ -39,3 +39,46 @@ describe('generateVideoAction voice namespace', () => {
     expect(generateAvatarVideo).not.toHaveBeenCalled();
   });
 });
+
+describe('generateVideoAction voice resolution', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('prefers a ready self-clone over the admin-assigned heygenVoiceId', async () => {
+    getCandidateProfile.mockResolvedValue({
+      heygenAvatarId: 'avatar-1',
+      heygenVoiceId: 'admin-voice-1',
+      selfVoiceCloneId: 'self-clone-1',
+      selfVoiceCloneStatus: 'ready',
+    });
+    const { generateVideoAction } = await import('./actions');
+
+    await generateVideoAction('content-1', 'script text');
+
+    expect(generateAvatarVideo).toHaveBeenCalledWith(expect.objectContaining({ voiceId: 'self-clone-1' }));
+  });
+
+  it('falls back to the admin-assigned heygenVoiceId when there is no ready self-clone', async () => {
+    getCandidateProfile.mockResolvedValue({
+      heygenAvatarId: 'avatar-1',
+      heygenVoiceId: 'admin-voice-1',
+      selfVoiceCloneId: 'self-clone-1',
+      selfVoiceCloneStatus: 'training',
+    });
+    const { generateVideoAction } = await import('./actions');
+
+    await generateVideoAction('content-1', 'script text');
+
+    expect(generateAvatarVideo).toHaveBeenCalledWith(expect.objectContaining({ voiceId: 'admin-voice-1' }));
+  });
+
+  it('still errors when neither a ready self-clone nor an admin voice exists', async () => {
+    getCandidateProfile.mockResolvedValue({ heygenAvatarId: 'avatar-1', heygenVoiceId: null, selfVoiceCloneId: null, selfVoiceCloneStatus: null });
+    const { generateVideoAction } = await import('./actions');
+
+    const result = await generateVideoAction('content-1', 'script text');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/no video voice/i);
+    expect(generateAvatarVideo).not.toHaveBeenCalled();
+  });
+});

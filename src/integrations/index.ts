@@ -59,6 +59,10 @@ export interface PhotoAvatarProvider {
     error?: { code: string; message: string };
     consentStatus?: 'pending' | 'approved' | 'declined' | null;
   }>;
+  cloneVoice(input: { name: string; assetId: string; language?: string }): Promise<{ voiceCloneId: string }>;
+  getVoiceCloneStatus(voiceCloneId: string): Promise<{ status: 'training' | 'ready' | 'failed' }>;
+  deleteVoiceClone(voiceCloneId: string): Promise<void>;
+  synthesizeSpeech(input: { voiceId: string; text: string }): Promise<{ audioUrl: string }>;
 }
 
 export interface Publisher {
@@ -204,6 +208,19 @@ export class HeyGenAccessDeniedError extends Error {
   }
 }
 
+// Thrown specifically when HeyGen's platform-wide voice clone cap (10 per
+// account, shared across all campaigns using this HeyGen account) appears to
+// have been hit, so callers can show a clear, actionable message instead of a
+// generic one. HeyGen doesn't document a stable error code for this case, so
+// detection is a best-effort heuristic (400 + a message that mentions
+// "limit") rather than an exact match — see the cloneVoice comment below.
+export class HeyGenVoiceCloneLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'HeyGenVoiceCloneLimitError';
+  }
+}
+
 export class HeyGenPhotoAvatarProvider implements PhotoAvatarProvider {
   constructor(private apiKey: string) {}
 
@@ -320,6 +337,76 @@ export class HeyGenPhotoAvatarProvider implements PhotoAvatarProvider {
       error: json.data?.error,
       consentStatus,
     };
+  }
+
+  async cloneVoice({ name, assetId, language }: { name: string; assetId: string; language?: string }) {
+    const res = await fetch('https://api.heygen.com/v3/voices/clone', {
+      method: 'POST',
+      headers: { 'X-Api-Key': this.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        voice_name: name,
+        audio: { type: 'asset_id', asset_id: assetId },
+        ...(language && { language }),
+        remove_background_noise: true,
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      const message = json.error?.message ?? res.status;
+      // HeyGen doesn't document a stable error code for the platform-wide
+      // 10-voice-clone cap, so this is the only signal available: a 400
+      // whose message plausibly mentions a limit. Not a confirmed match on
+      // HeyGen's actual error shape — see HeyGenVoiceCloneLimitError comment.
+      if (res.status === 400 && typeof message === 'string' && /limit/i.test(message)) {
+        throw new HeyGenVoiceCloneLimitError(message);
+      }
+      throw new Error(`HeyGen clone voice error: ${message}`);
+    }
+    const voiceCloneId = json.data?.voice_clone_id;
+    if (!voiceCloneId) throw new Error('HeyGen did not return a voice_clone_id.');
+    return { voiceCloneId };
+  }
+
+  async getVoiceCloneStatus(voiceCloneId: string) {
+    const res = await fetch(`https://api.heygen.com/v3/voices/${encodeURIComponent(voiceCloneId)}`, {
+      headers: { 'X-Api-Key': this.apiKey },
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(`HeyGen get voice clone error: ${json.error?.message ?? res.status}`);
+    const raw = json.data?.status;
+    // Unrecognized/missing status maps to 'training' (still waiting), not
+    // 'failed' or 'ready' — an unexpected status string is far more likely to
+    // mean "still processing" than a real terminal state, and 'ready' would
+    // be actively wrong (the clone might not exist yet).
+    if (raw === 'complete') return { status: 'ready' as const };
+    if (raw === 'failed') return { status: 'failed' as const };
+    return { status: 'training' as const };
+  }
+
+  async deleteVoiceClone(voiceCloneId: string) {
+    const res = await fetch(`https://api.heygen.com/v3/voices/${encodeURIComponent(voiceCloneId)}`, {
+      method: 'DELETE',
+      headers: { 'X-Api-Key': this.apiKey },
+    });
+    if (res.ok) return;
+    const json = await res.json().catch(() => ({} as Record<string, unknown>));
+    // HeyGen returns 404 voice_not_found for an already-deleted voice — treat
+    // that as success so a delete-then-list flow never fails on a stale id.
+    if (res.status === 404) return;
+    throw new Error(`HeyGen delete voice error: ${(json as { error?: { message?: string } }).error?.message ?? res.status}`);
+  }
+
+  async synthesizeSpeech({ voiceId, text }: { voiceId: string; text: string }) {
+    const res = await fetch('https://api.heygen.com/v3/voices/speech', {
+      method: 'POST',
+      headers: { 'X-Api-Key': this.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice_id: voiceId }),
+    });
+    const json = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (!res.ok) throw new Error(`HeyGen synthesize speech error: ${(json as { error?: { message?: string } }).error?.message ?? res.status}`);
+    const audioUrl = (json as { data?: { audio_url?: unknown } }).data?.audio_url;
+    if (typeof audioUrl !== 'string') throw new Error('HeyGen did not return an audio_url.');
+    return { audioUrl };
   }
 }
 
@@ -469,6 +556,10 @@ export class MockPhotoAvatarProvider implements PhotoAvatarProvider {
   async getAvatarGroupStatus(_groupId: string) {
     return { status: 'completed' as const, previewImageUrl: 'https://example.com/mock-avatar.jpg' };
   }
+  async cloneVoice(_input: { name: string; assetId: string; language?: string }) { return { voiceCloneId: 'mock-voice-clone-id' }; }
+  async getVoiceCloneStatus(_voiceCloneId: string) { return { status: 'ready' as const }; }
+  async deleteVoiceClone(_voiceCloneId: string) { return; }
+  async synthesizeSpeech(_input: { voiceId: string; text: string }) { return { audioUrl: 'https://example.com/mock-voice-preview.mp3' }; }
 }
 
 export class MockMonitoringSource implements MonitoringSource {

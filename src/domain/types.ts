@@ -134,6 +134,12 @@ export interface CandidateProfile {
   activeAvatarId?: string | null;
   elevenLabsVoiceId?: string | null;
   heygenVoiceId?: string | null;
+  selfVoiceCloneId?: string | null;
+  selfVoiceName?: string | null;
+  selfVoiceCloneStatus?: 'training' | 'ready' | 'failed' | null;
+  selfVoiceCloneError?: string | null;
+  selfVoiceConsentConfirmedBy?: string | null;
+  selfVoiceConsentConfirmedAt?: string | null;
   videoAspectRatio: '16:9' | '9:16' | '1:1';
   videoBackground: string;
   createdAt: string;
