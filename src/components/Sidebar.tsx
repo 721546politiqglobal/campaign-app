@@ -54,6 +54,18 @@ export const NAV = [
     ),
   },
   {
+    href: '/team',
+    label: 'Team',
+    icon: (
+      <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <circle cx="5.5" cy="5" r="2.25" stroke="currentColor" strokeWidth="1.4"/>
+        <path d="M1.5 13c0-2.3 1.79-3.75 4-3.75s4 1.45 4 3.75" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+        <circle cx="11.5" cy="5.5" r="1.75" stroke="currentColor" strokeWidth="1.3"/>
+        <path d="M10 9.6c1.6.15 2.9 1.25 3.1 3.15" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
     href: '/settings',
     label: 'Settings',
     icon: (

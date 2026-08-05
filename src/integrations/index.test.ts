@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import Anthropic from '@anthropic-ai/sdk';
-import { HeyGenPhotoAvatarProvider, MockPhotoAvatarProvider, ClaudeContentGenerator, HeyGenAccessDeniedError } from './index';
+import { HeyGenPhotoAvatarProvider, MockPhotoAvatarProvider, ClaudeContentGenerator, HeyGenAccessDeniedError, HeyGenVoiceCloneLimitError } from './index';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -279,6 +279,186 @@ describe('HeyGenPhotoAvatarProvider.getAvatarGroupStatus', () => {
     const result = await provider.getAvatarGroupStatus('group_dt_1');
 
     expect(result).toEqual({ status: 'pending_consent', previewImageUrl: undefined, error: undefined, consentStatus: 'pending' });
+  });
+});
+
+describe('HeyGenPhotoAvatarProvider.cloneVoice', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('posts to /v3/voices/clone and returns the voice_clone_id', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: { voice_clone_id: 'clone-123' } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+
+    const result = await provider.cloneVoice({ name: 'My voice', assetId: 'asset-1' });
+
+    expect(result).toEqual({ voiceCloneId: 'clone-123' });
+    expect(fetchMock).toHaveBeenCalledWith('https://api.heygen.com/v3/voices/clone', expect.objectContaining({
+      method: 'POST',
+      headers: expect.objectContaining({ 'X-Api-Key': 'test-key' }),
+    }));
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body).toEqual({ voice_name: 'My voice', audio: { type: 'asset_id', asset_id: 'asset-1' }, remove_background_noise: true });
+  });
+
+  it('throws with the HeyGen error message on a non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      json: () => Promise.resolve({ error: { message: 'clone limit reached' } }),
+    }));
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+
+    await expect(provider.cloneVoice({ name: 'x', assetId: 'a' })).rejects.toThrow(/clone limit reached/);
+  });
+
+  // HeyGen doesn't document a stable error code for the platform-wide
+  // 10-voice-clone cap, so detection is a best-effort heuristic: a 400
+  // response whose message plausibly mentions a limit.
+  it('throws HeyGenVoiceCloneLimitError specifically on a 400 whose message mentions a limit', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: () => Promise.resolve({ error: { message: 'voice clone limit reached for this account' } }),
+    }));
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+
+    await expect(provider.cloneVoice({ name: 'x', assetId: 'a' })).rejects.toBeInstanceOf(HeyGenVoiceCloneLimitError);
+  });
+
+  it('throws a generic error (not the limit error) for an unrelated 400', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: () => Promise.resolve({ error: { message: 'invalid audio format' } }),
+    }));
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+
+    await expect(provider.cloneVoice({ name: 'x', assetId: 'a' }))
+      .rejects.not.toBeInstanceOf(HeyGenVoiceCloneLimitError);
+  });
+});
+
+describe('HeyGenPhotoAvatarProvider.getVoiceCloneStatus', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('maps HeyGen "complete" to "ready"', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: { status: 'complete' } }),
+    }));
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+
+    const result = await provider.getVoiceCloneStatus('clone-123');
+
+    expect(result).toEqual({ status: 'ready' });
+  });
+
+  it('maps an unrecognized status to "training" rather than propagating it', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: { status: 'something-new' } }),
+    }));
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+
+    const result = await provider.getVoiceCloneStatus('clone-123');
+
+    expect(result).toEqual({ status: 'training' });
+  });
+});
+
+describe('HeyGenPhotoAvatarProvider.deleteVoiceClone', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('calls DELETE /v3/voices/{id}', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ data: { voice_id: 'clone-123' } }) });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+
+    await provider.deleteVoiceClone('clone-123');
+
+    expect(fetchMock).toHaveBeenCalledWith('https://api.heygen.com/v3/voices/clone-123', expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('treats a 404 voice_not_found response as success, not an error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: () => Promise.resolve({ error: { code: 'voice_not_found' } }),
+    }));
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+
+    await expect(provider.deleteVoiceClone('already-gone')).resolves.toBeUndefined();
+  });
+
+  it('throws on any other error status', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ error: { message: 'server error' } }),
+    }));
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+
+    await expect(provider.deleteVoiceClone('clone-123')).rejects.toThrow(/server error/);
+  });
+});
+
+describe('HeyGenPhotoAvatarProvider.synthesizeSpeech', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('posts to /v3/voices/speech and returns the audio_url', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: { audio_url: 'https://heygen.test/preview.mp3', duration: 3.2 } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { HeyGenPhotoAvatarProvider } = await import('./index');
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+
+    const result = await provider.synthesizeSpeech({ voiceId: 'clone-123', text: 'Hello, this is a preview.' });
+
+    expect(result).toEqual({ audioUrl: 'https://heygen.test/preview.mp3' });
+    expect(fetchMock).toHaveBeenCalledWith('https://api.heygen.com/v3/voices/speech', expect.objectContaining({
+      method: 'POST',
+      headers: expect.objectContaining({ 'X-Api-Key': 'test-key' }),
+    }));
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body).toEqual({ text: 'Hello, this is a preview.', voice_id: 'clone-123' });
+  });
+
+  it('throws if HeyGen does not return an audio_url', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: {} }),
+    }));
+    const { HeyGenPhotoAvatarProvider } = await import('./index');
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+
+    await expect(provider.synthesizeSpeech({ voiceId: 'clone-123', text: 'x' })).rejects.toThrow(/did not return an audio/i);
+  });
+
+  it('throws if audio_url is not a string', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: { audio_url: 12345 } }),
+    }));
+    const { HeyGenPhotoAvatarProvider } = await import('./index');
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+
+    await expect(provider.synthesizeSpeech({ voiceId: 'clone-123', text: 'x' })).rejects.toThrow(/did not return an audio/i);
+  });
+
+  it('throws with the HeyGen error message on a non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      json: () => Promise.resolve({ error: { message: 'invalid voice_id' } }),
+    }));
+    const { HeyGenPhotoAvatarProvider } = await import('./index');
+    const provider = new HeyGenPhotoAvatarProvider('test-key');
+
+    await expect(provider.synthesizeSpeech({ voiceId: 'bad-id', text: 'x' })).rejects.toThrow(/invalid voice_id/);
   });
 });
 

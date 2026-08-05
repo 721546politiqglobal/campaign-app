@@ -1,7 +1,7 @@
 import { revalidatePath } from 'next/cache';
 import { AppFrame } from '@/components/AppFrame';
 import { requireSession } from '@/lib/session';
-import { getCampaign, getDisclosureRules, getUsers } from '@/lib/data';
+import { getCampaign, getDisclosureRules } from '@/lib/data';
 import { getCandidateProfile } from '@/lib/candidate';
 import { upsertCandidateProfile } from '@/lib/candidate';
 import { can } from '@/lib/permissions';
@@ -69,10 +69,9 @@ export default async function Settings({
   searchParams: { error?: string };
 }) {
   const s = await requireSession();
-  const [campaign, rules, users, profile] = await Promise.all([
+  const [campaign, rules, profile] = await Promise.all([
     getCampaign(s.campaignId),
     getDisclosureRules(),
-    getUsers(s.campaignId),
     getCandidateProfile(s.campaignId),
   ]);
   const canEdit = can(s.role, 'edit_settings');
@@ -224,25 +223,6 @@ export default async function Settings({
             ))}
           </tbody>
         </table>
-      </div>
-
-      <div className="spacer-y" />
-      <div className="card">
-        <h2>Team</h2>
-        <table>
-          <thead><tr><th>Name</th><th>Role</th></tr></thead>
-          <tbody>
-            {users.map(u => (
-              <tr key={u.id}>
-                <td>{u.name}</td>
-                <td className="muted">{u.role}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
-          To add a team member, contact your platform administrator.
-        </p>
       </div>
     </AppFrame>
   );

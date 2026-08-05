@@ -36,11 +36,18 @@ describe('can – manage_avatars', () => {
   it('denies staff',    () => expect(can('staff',    'manage_avatars')).toBe(false));
 });
 
+describe('can – manage_team', () => {
+  it('allows owner',    () => expect(can('owner',    'manage_team')).toBe(true));
+  it('allows manager',  () => expect(can('manager',  'manage_team')).toBe(true));
+  it('denies approver', () => expect(can('approver', 'manage_team')).toBe(false));
+  it('denies staff',    () => expect(can('staff',    'manage_team')).toBe(false));
+});
+
 describe('can – super_admin is intentionally denied every campaign-level action', () => {
   // super_admin operates admin surfaces via requireAdmin/requireAdminSession,
   // NOT via can(). It must never appear in any PERMISSIONS list, or it would
   // gain campaign-scoped approve/schedule/publish rights it is not meant to hold.
-  const actions = ['approve', 'schedule', 'publish', 'edit_settings', 'manage_avatars'] as const;
+  const actions = ['approve', 'schedule', 'publish', 'edit_settings', 'manage_avatars', 'manage_team'] as const;
   for (const action of actions) {
     it(`denies super_admin '${action}'`, () => {
       expect(can('super_admin', action)).toBe(false);
