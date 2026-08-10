@@ -13,8 +13,9 @@ import {
   ElevenLabsVoiceProvider, MockVoiceProvider,
   AyrsharePublisher, MockPublisher,
   NewsDataMonitoringSource, MockMonitoringSource,
+  AyrshareAnalyticsProvider, MockAnalyticsProvider,
 } from '@/integrations';
-import type { PhotoAvatarProvider, Publisher } from '@/integrations';
+import type { PhotoAvatarProvider, Publisher, AnalyticsProvider } from '@/integrations';
 
 export const lifecycle = new ContentLifecycle(contentRepo, approvalRepo, disclosureRepo, auditRepo);
 export const disclosureEngine = new DisclosureEngine(rulesRepo);
@@ -56,6 +57,11 @@ export const publisher: Publisher = realOrMock(
   process.env.AYRSHARE_API_KEY,
   () => new AyrsharePublisher(process.env.AYRSHARE_API_KEY!),
   () => new MockPublisher());
+
+export const analyticsProvider: AnalyticsProvider = realOrMock(
+  process.env.AYRSHARE_API_KEY,
+  () => new AyrshareAnalyticsProvider(process.env.AYRSHARE_API_KEY!),
+  () => new MockAnalyticsProvider());
 
 export const monitoringSource = realOrMock(
   process.env.NEWSDATA_API_KEY,

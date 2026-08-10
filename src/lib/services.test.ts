@@ -37,4 +37,18 @@ describe('provider seam mocks missing keys instead of crashing', () => {
     const { AyrsharePublisher } = await import('@/integrations');
     expect(mod.publisher).toBeInstanceOf(AyrsharePublisher);
   });
+
+  it('analyticsProvider uses the mock (empty array, no throw) when the key is missing', async () => {
+    vi.stubEnv('AYRSHARE_API_KEY', '');
+    const mod = await import('./services');
+    const out = await mod.analyticsProvider.getPostAnalytics([{ platform: 'x', postId: 'p1' }]);
+    expect(out).toEqual([]);
+  });
+
+  it('analyticsProvider uses the real adapter when the key is present', async () => {
+    vi.stubEnv('AYRSHARE_API_KEY', 'k');
+    const mod = await import('./services');
+    const { AyrshareAnalyticsProvider } = await import('@/integrations');
+    expect(mod.analyticsProvider).toBeInstanceOf(AyrshareAnalyticsProvider);
+  });
 });
