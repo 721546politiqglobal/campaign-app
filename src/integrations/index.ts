@@ -67,7 +67,7 @@ export interface PhotoAvatarProvider {
 
 export interface Publisher {
   publish(input: { platforms: Platform[]; text: string; disclosureText: string; mediaUrl?: string }):
-    Promise<{ platform: Platform; status: 'scheduled' | 'failed'; error?: string }[]>;
+    Promise<{ platform: Platform; status: 'scheduled' | 'failed'; error?: string; postId?: string }[]>;
 }
 
 export interface MonitoringSource {
@@ -461,7 +461,7 @@ export class AyrsharePublisher implements Publisher {
     platforms: Platform[]; text: string; disclosureText: string; mediaUrl?: string;
   }) {
     const post = disclosureText ? `${text}\n\n${disclosureText}` : text;
-    const results: { platform: Platform; status: 'scheduled' | 'failed'; error?: string }[] = [];
+    const results: { platform: Platform; status: 'scheduled' | 'failed'; error?: string; postId?: string }[] = [];
 
     for (const platform of platforms) {
       try {
@@ -480,7 +480,8 @@ export class AyrsharePublisher implements Publisher {
         if (!res.ok) {
           results.push({ platform, status: 'failed', error: json.message ?? `HTTP ${res.status}` });
         } else {
-          results.push({ platform, status: 'scheduled' });
+          const postId = json.postIds?.[0]?.id;
+          results.push(postId ? { platform, status: 'scheduled', postId } : { platform, status: 'scheduled' });
         }
       } catch (e) {
         results.push({ platform, status: 'failed', error: String(e) });
