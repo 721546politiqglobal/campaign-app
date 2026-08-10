@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk';
 import { adminDb, throwOnError } from './supabase';
 
 export interface PerformanceTotals {
@@ -127,4 +128,65 @@ export async function upsertPostMetrics(input: {
     }, { onConflict: 'content_item_id,platform,captured_on' }),
     'upsertPostMetrics',
   );
+}
+
+export async function generateInsight(
+  campaignId: string,
+  now: Date = new Date(),
+  anthropicClient?: { messages: { create: (...args: any[]) => Promise<any> } },
+): Promise<{ summary: string; recommendations: string[] } | null> {
+  if (!anthropicClient && !process.env.LLM_API_KEY) return null;
+
+  const summary = await getPerformanceSummary(campaignId, 30, now);
+  if (summary.totals.postsCount === 0) return null;
+
+  const client = anthropicClient ?? new Anthropic({ apiKey: process.env.LLM_API_KEY! });
+  const msg = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 512,
+    system: 'You are a political campaign performance analyst. Given 30 days of social content metrics as JSON, write a concise, honest summary and 2-3 concrete recommendations. Respond ONLY in this exact format:\nSummary: <2-3 sentences>\nRecommendations:\n- <recommendation>\n- <recommendation>',
+    messages: [{ role: 'user', content: JSON.stringify(summary) }],
+  });
+
+  const block = msg.content[0];
+  if (!block || block.type !== 'text') return null;
+
+  const text = block.text as string;
+  const summaryMatch = text.match(/Summary:\s*(.+?)(?=\n\s*Recommendations:|$)/s);
+  const recommendations = text
+    .split('\n')
+    .filter(line => line.trim().startsWith('-'))
+    .map(line => line.replace(/^\s*-\s*/, '').trim());
+
+  return {
+    summary: summaryMatch ? summaryMatch[1].trim() : text.trim(),
+    recommendations,
+  };
+}
+
+export async function insertInsightSnapshot(
+  campaignId: string, insight: { summary: string; recommendations: string[] },
+): Promise<void> {
+  await throwOnError(
+    adminDb.from('insight_snapshots').insert({
+      campaign_id: campaignId,
+      summary: insight.summary,
+      recommendations: insight.recommendations,
+    }),
+    'insertInsightSnapshot',
+  );
+}
+
+export async function getLatestInsight(
+  campaignId: string,
+): Promise<{ summary: string; recommendations: string[]; generatedAt: string } | null> {
+  const { data } = await adminDb
+    .from('insight_snapshots')
+    .select('summary, recommendations, generated_at')
+    .eq('campaign_id', campaignId)
+    .order('generated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  return { summary: data.summary, recommendations: data.recommendations ?? [], generatedAt: data.generated_at };
 }
