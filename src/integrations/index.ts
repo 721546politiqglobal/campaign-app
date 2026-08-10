@@ -491,6 +491,49 @@ export class AyrsharePublisher implements Publisher {
   }
 }
 
+export interface AnalyticsProvider {
+  getPostAnalytics(posts: { platform: Platform; postId: string }[]): Promise<{
+    platform: Platform; impressions: number; reach: number; likes: number;
+    comments: number; shares: number; saves: number;
+    videoViews: number; videoAvgWatchSeconds: number;
+  }[]>;
+}
+
+export class AyrshareAnalyticsProvider implements AnalyticsProvider {
+  constructor(private apiKey: string) {}
+
+  async getPostAnalytics(posts: { platform: Platform; postId: string }[]) {
+    const out: { platform: Platform; impressions: number; reach: number; likes: number; comments: number; shares: number; saves: number; videoViews: number; videoAvgWatchSeconds: number }[] = [];
+    for (const { platform, postId } of posts) {
+      try {
+        const res = await fetch('https://app.ayrshare.com/api/analytics/post', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: postId }),
+        });
+        const json = await res.json();
+        if (!res.ok) continue; // e.g. plan doesn't include analytics, or unknown post id — skip, never throw
+        const a = json.analytics?.[PLATFORM_MAP[platform]];
+        if (!a) continue;
+        out.push({
+          platform,
+          impressions: a.impressions ?? 0,
+          reach: a.reach ?? 0,
+          likes: a.likes ?? 0,
+          comments: a.comments ?? 0,
+          shares: a.shares ?? 0,
+          saves: a.saves ?? 0,
+          videoViews: a.videoViews ?? 0,
+          videoAvgWatchSeconds: a.videoAvgWatchTime ?? 0,
+        });
+      } catch {
+        // network failure — skip this one post, don't fail the whole batch
+      }
+    }
+    return out;
+  }
+}
+
 // ── NewsData monitoring source ────────────────────────────────────────────────
 
 export class NewsDataMonitoringSource implements MonitoringSource {
@@ -530,6 +573,10 @@ export class MockPublisher implements Publisher {
   async publish({ platforms }: { platforms: Platform[] }) {
     return platforms.map(p => ({ platform: p, status: 'scheduled' as const }));
   }
+}
+
+export class MockAnalyticsProvider implements AnalyticsProvider {
+  async getPostAnalytics() { return []; }
 }
 
 export class MockVideoProvider implements VideoProvider {
