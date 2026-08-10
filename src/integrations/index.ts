@@ -576,7 +576,7 @@ export class MockPublisher implements Publisher {
 }
 
 export class MockAnalyticsProvider implements AnalyticsProvider {
-  async getPostAnalytics() { return []; }
+  async getPostAnalytics(_posts: { platform: Platform; postId: string }[]) { return []; }
 }
 
 export class MockVideoProvider implements VideoProvider {
