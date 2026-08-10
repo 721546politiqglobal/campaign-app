@@ -63,8 +63,12 @@ export async function GET(req: NextRequest) {
         results_out.push({ id: item.id, ok: false, error: 'all platforms failed' });
         continue;
       }
+      const postIds: Record<string, string> = {};
+      for (const r of results) {
+        if (r.status === 'scheduled' && r.postId) postIds[r.platform] = r.postId;
+      }
       await adminDb.from('content_items')
-        .update({ status: 'published', updated_at: new Date().toISOString() })
+        .update({ status: 'published', updated_at: new Date().toISOString(), ayrshare_post_ids: postIds })
         .eq('id', item.id);
       await adminDb.from('audit_entries').insert({
         campaign_id: item.campaign_id,
