@@ -49,26 +49,26 @@ export async function updateCampaignAction(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get('id'));
   const name = String(formData.get('name') ?? '').trim();
-  const capDollars = Number(formData.get('cap'));
   const jurisdictions = String(formData.get('jurisdictions') ?? '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  const tags = String(formData.get('tags') ?? '')
     .split(',').map(s => s.trim()).filter(Boolean);
 
   if (!name) return;
   await adminDb.from('campaigns').update({
     name,
-    monthly_cost_cap_cents: Number.isFinite(capDollars) && capDollars >= 0
-      ? Math.round(capDollars * 100) : undefined,
     ...(jurisdictions.length ? { jurisdictions } : {}),
+    tags,
   }).eq('id', id);
 
   revalidatePath(`/admin/campaigns/${id}`);
   revalidatePath('/admin');
+  revalidatePath('/admin/campaigns');
 }
 
 export async function createCampaignAction(formData: FormData) {
   await requireAdmin();
   const name = String(formData.get('name') ?? '').trim();
-  const capDollars = Number(formData.get('cap') || 1000);
   const jurisdictionsInput = String(formData.get('jurisdictions') ?? '')
     .split(',').map(s => s.trim()).filter(Boolean);
   // A campaign with no jurisdiction silently disables all disclosure
@@ -79,10 +79,7 @@ export async function createCampaignAction(formData: FormData) {
   if (!name) return;
   const id = prefixedId('camp-');
   await throwOnError(
-    adminDb.from('campaigns').insert({
-      id, name, jurisdictions,
-      monthly_cost_cap_cents: Math.round(capDollars * 100),
-    }),
+    adminDb.from('campaigns').insert({ id, name, jurisdictions }),
     'campaigns.create',
   );
   revalidatePath('/admin');

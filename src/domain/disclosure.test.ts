@@ -24,14 +24,28 @@ describe('DisclosureEngine.requiredFor', () => {
     expect(await engine.requiredFor(['US-CA'], false)).toEqual([]);
   });
 
-  it('skips jurisdictions with no rule and jurisdictions that do not require an AI label', async () => {
+  it('still skips a jurisdiction whose rule explicitly says no AI label is required', async () => {
     const engine = new DisclosureEngine(repoWith({
       'US-CA': rule({ jurisdiction: 'US-CA', requiresAiLabel: true, requiredText: 'CA text' }),
       'US-TX': rule({ jurisdiction: 'US-TX', requiresAiLabel: false }),
     }));
-    const out = await engine.requiredFor(['US-CA', 'US-TX', 'US-NOWHERE'], true);
+    const out = await engine.requiredFor(['US-CA', 'US-TX'], true);
     expect(out).toHaveLength(1);
     expect(out[0]).toEqual({ jurisdiction: 'US-CA', disclosureText: 'CA text', placement: 'overlay', needsLegalReview: false });
+  });
+
+  it('falls back to a generic default disclosure for a jurisdiction with no rule row at all, instead of skipping it', async () => {
+    const engine = new DisclosureEngine(repoWith({
+      'US-CA': rule({ jurisdiction: 'US-CA', requiresAiLabel: true, requiredText: 'CA text' }),
+    }));
+    const out = await engine.requiredFor(['US-CA', 'US-NOWHERE'], true);
+    expect(out).toHaveLength(2);
+    expect(out.find(o => o.jurisdiction === 'US-NOWHERE')).toEqual({
+      jurisdiction: 'US-NOWHERE',
+      disclosureText: DEFAULT_LABEL,
+      placement: 'overlay',
+      needsLegalReview: true,
+    });
   });
 
   it('falls back to the DEFAULT_LABEL when a required rule has no required text', async () => {
@@ -50,6 +64,24 @@ describe('DisclosureEngine.requiredFor', () => {
     const out = await engine.requiredFor(['US-CA', 'US-NY'], true);
     expect(out.map(o => o.jurisdiction)).toEqual(['US-CA', 'US-NY']);
     expect(out.find(o => o.jurisdiction === 'US-CA')!.needsLegalReview).toBe(true);
+  });
+
+  it('deduplicates duplicate jurisdictions in the input to avoid duplicate disclosure records', async () => {
+    const engine = new DisclosureEngine(repoWith({
+      'US-CA': rule({ jurisdiction: 'US-CA', requiresAiLabel: true, requiredText: 'CA text' }),
+    }));
+    const out = await engine.requiredFor(['US-CA', 'US-CA', 'US-CA'], true);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toEqual({ jurisdiction: 'US-CA', disclosureText: 'CA text', placement: 'overlay', needsLegalReview: false });
+  });
+
+  it('defaults needsLegalReview to true for jurisdictions with no rule row', async () => {
+    const engine = new DisclosureEngine(repoWith({
+      'US-CA': rule({ jurisdiction: 'US-CA', requiresAiLabel: true, requiredText: 'CA text', needsLegalReview: false }),
+    }));
+    const out = await engine.requiredFor(['US-CA', 'US-NOWHERE'], true);
+    const nowhereRule = out.find(o => o.jurisdiction === 'US-NOWHERE');
+    expect(nowhereRule?.needsLegalReview).toBe(true);
   });
 });
 

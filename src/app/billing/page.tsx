@@ -91,7 +91,7 @@ export default async function Billing() {
               )}
             </div>
             <div className="muted" style={{ fontSize: 13 }}>
-              {plan ? <>Campaign subscription · <span className="data" style={{ color: 'var(--text)' }}>{usd(plan.monthlyPriceCents)}</span>/mo</> : 'No plan assigned yet.'}
+              {plan ? <>Campaign subscription · <span className="data" style={{ color: 'var(--text)' }}>{usd(plan.monthlyPriceCents)}</span>/{plan.billingInterval === 'week' ? 'wk' : 'mo'}</> : 'No plan assigned yet.'}
             </div>
           </div>
           {canEdit && (
@@ -107,7 +107,7 @@ export default async function Billing() {
         </div>
 
         <div style={{ padding: '6px 24px 22px' }}>
-          <Meter label="Content pieces this month" used={contentUsed} limit={plan?.contentLimitMonthly ?? null} />
+          <Meter label="Content pieces this period" used={contentUsed} limit={plan?.contentLimitMonthly ?? null} />
           <Meter label="Videos today" used={videoUsed} limit={plan?.videoLimitDaily ?? null} />
           <Meter label="Avatars" used={avatarCount} limit={plan?.avatarLimit ?? null} />
         </div>

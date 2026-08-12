@@ -5,7 +5,7 @@ import { adminDb } from './supabase';
 import { ContentStatus, ContentType } from '@/domain/types';
 
 export interface Campaign {
-  id: string; name: string; jurisdictions: string[]; monthlyCostCapCents: number;
+  id: string; name: string; jurisdictions: string[]; tags: string[];
   planId: string | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
@@ -25,7 +25,7 @@ export async function getCampaign(campaignId: string): Promise<Campaign | null> 
   const { data } = await adminDb.from('campaigns').select('*').eq('id', campaignId).single();
   if (!data) return null;
   return {
-    id: data.id, name: data.name, jurisdictions: data.jurisdictions, monthlyCostCapCents: data.monthly_cost_cap_cents,
+    id: data.id, name: data.name, jurisdictions: data.jurisdictions, tags: data.tags ?? [],
     planId: data.plan_id ?? null,
     stripeCustomerId: data.stripe_customer_id ?? null,
     stripeSubscriptionId: data.stripe_subscription_id ?? null,
@@ -177,9 +177,13 @@ export interface DisclosureRule {
 }
 
 export interface BillingPlan {
-  id: string; name: string; monthlyPriceCents: number; seatLimit: number | null;
+  id: string; name: string; monthlyPriceCents: number; billingInterval: 'week' | 'month'; seatLimit: number | null;
   avatarLimit: number | null; contentLimitMonthly: number | null; videoLimitDaily: number | null;
   stripeProductId: string; stripeFlatPriceId: string;
+  // Stripe price ids this plan has rotated away from (price/interval edits archive
+  // the old price). Kept so the Stripe webhook can still resolve a checkout or
+  // subscription created against an old price id — see planIdFromPriceId.
+  retiredStripePriceIds: string[];
   isActive: boolean;
 }
 
@@ -187,12 +191,14 @@ function toBillingPlan(r: Record<string, unknown>): BillingPlan {
   return {
     id: r.id as string, name: r.name as string,
     monthlyPriceCents: r.monthly_price_cents as number,
+    billingInterval: (r.billing_interval as 'week' | 'month') ?? 'month',
     seatLimit: (r.seat_limit as number | null) ?? null,
     avatarLimit: (r.avatar_limit as number | null) ?? null,
     contentLimitMonthly: (r.content_limit_monthly as number | null) ?? null,
     videoLimitDaily: (r.video_limit_daily as number | null) ?? null,
     stripeProductId: r.stripe_product_id as string,
     stripeFlatPriceId: r.stripe_flat_price_id as string,
+    retiredStripePriceIds: (r.retired_stripe_price_ids as string[] | null) ?? [],
     isActive: r.is_active as boolean,
   };
 }
@@ -239,8 +245,8 @@ export async function getAllCampaigns(): Promise<CampaignWithStats[]> {
   return campaigns.map(camp => {
     const campaignStart = windowStarts.get(camp.id)!;
     return {
-      id: camp.id, name: camp.name, jurisdictions: camp.jurisdictions,
-      monthlyCostCapCents: camp.monthly_cost_cap_cents, createdAt: camp.created_at,
+      id: camp.id, name: camp.name, jurisdictions: camp.jurisdictions, tags: camp.tags ?? [],
+      createdAt: camp.created_at,
       planId: camp.plan_id ?? null,
       stripeCustomerId: camp.stripe_customer_id ?? null,
       stripeSubscriptionId: camp.stripe_subscription_id ?? null,

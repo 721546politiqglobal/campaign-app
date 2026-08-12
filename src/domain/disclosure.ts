@@ -33,14 +33,16 @@ export class DisclosureEngine {
   async requiredFor(jurisdictions: string[], isAiGenerated: boolean): Promise<RequiredDisclosure[]> {
     if (!isAiGenerated) return [];
     const out: RequiredDisclosure[] = [];
-    for (const j of jurisdictions) {
+    for (const j of new Set(jurisdictions)) {
       const rule = await this.rules.get(j);
-      if (!rule || !rule.requiresAiLabel) continue;
+      // No rule row means "not configured yet," not "exempt" — only an
+      // explicit requiresAiLabel: false on a real rule is a genuine opt-out.
+      if (rule && !rule.requiresAiLabel) continue;
       out.push({
         jurisdiction: j,
-        disclosureText: rule.requiredText ?? DEFAULT_LABEL,
-        placement: rule.placement,
-        needsLegalReview: rule.needsLegalReview,
+        disclosureText: rule?.requiredText ?? DEFAULT_LABEL,
+        placement: rule?.placement ?? 'overlay',
+        needsLegalReview: rule?.needsLegalReview ?? true,
       });
     }
     return out;

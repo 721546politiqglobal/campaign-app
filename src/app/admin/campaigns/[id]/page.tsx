@@ -8,6 +8,7 @@ import {
 } from '../../actions';
 import { getCandidateProfile } from '@/lib/candidate';
 import { listAvatars } from '@/lib/avatars';
+import { SubmitButton } from '@/components/SubmitButton';
 
 function fmt(cents: number) {
   return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -19,7 +20,7 @@ export default async function CampaignDetail({
   params, searchParams,
 }: {
   params: { id: string };
-  searchParams: { billingError?: string };
+  searchParams: { billingError?: string; settingsSaved?: string };
 }) {
   const [campaign, users, content, audit, invites, profile, plans, avatars] = await Promise.all([
     getCampaignWithStats(params.id),
@@ -47,6 +48,12 @@ export default async function CampaignDetail({
     }
   }
 
+  async function saveSettings(formData: FormData) {
+    'use server';
+    await updateCampaignAction(formData);
+    redirect(`/admin/campaigns/${params.id}?settingsSaved=1`);
+  }
+
   return (
     <div>
       <div className="pagehead">
@@ -59,51 +66,48 @@ export default async function CampaignDetail({
         </div>
       </div>
 
+      {searchParams.settingsSaved && (
+        <div className="banner ok" style={{ marginBottom: 20 }}>
+          <div>
+            <div className="t">Campaign settings saved</div>
+            <div className="b">Name, jurisdictions, and tags are up to date.</div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 28 }}>
         {/* Edit campaign */}
         <div className="card">
           <span className="eyebrow">Settings</span>
           <h2 style={{ fontSize: 14, fontWeight: 700, margin: '6px 0 16px' }}>Edit campaign</h2>
-          <form action={updateCampaignAction} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <form action={saveSettings} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <input type="hidden" name="id" value={campaign.id} />
             <div>
               <label className="field-label">Name</label>
               <input name="name" className="input" defaultValue={campaign.name} required />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div>
-                <label className="field-label">Monthly cap (USD)</label>
-                <input name="cap" type="number" className="input"
-                  defaultValue={campaign.monthlyCostCapCents / 100} min="0" />
-              </div>
-              <div>
-                <label className="field-label">Jurisdictions</label>
-                <input name="jurisdictions" className="input"
-                  defaultValue={campaign.jurisdictions.join(', ')} />
-              </div>
+            <div>
+              <label className="field-label">Jurisdictions</label>
+              <input name="jurisdictions" className="input"
+                defaultValue={campaign.jurisdictions.join(', ')} />
             </div>
-            <button className="btn primary" style={{ alignSelf: 'flex-start', fontSize: 13 }}>
+            <div>
+              <label className="field-label">Tags</label>
+              <input name="tags" className="input" placeholder="2026-midterm, statewide"
+                defaultValue={campaign.tags.join(', ')} />
+            </div>
+            <SubmitButton style={{ alignSelf: 'flex-start', fontSize: 13 }} pendingText="Saving…">
               Save changes
-            </button>
+            </SubmitButton>
           </form>
         </div>
 
         {/* Spend summary */}
         <div className="card">
           <span className="eyebrow">Spend</span>
-          <h2 style={{ fontSize: 14, fontWeight: 700, margin: '6px 0 16px' }}>This month</h2>
+          <h2 style={{ fontSize: 14, fontWeight: 700, margin: '6px 0 16px' }}>This billing period</h2>
           <div className="data" style={{ fontSize: 28, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
             {fmt(campaign.monthlySpendCents)}
-          </div>
-          <div className="data" style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 14 }}>
-            of {fmt(campaign.monthlyCostCapCents)} cap
-          </div>
-          <div style={{ height: 6, background: 'var(--bg-hover)', borderRadius: 3 }}>
-            <div style={{
-              height: '100%', borderRadius: 3,
-              width: `${Math.min((campaign.monthlySpendCents / campaign.monthlyCostCapCents) * 100, 100)}%`,
-              background: campaign.monthlySpendCents > campaign.monthlyCostCapCents ? 'var(--bad)' : 'var(--accent)',
-            }} />
           </div>
           <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
             {[
