@@ -74,13 +74,14 @@ export default async function PricingPage({
                 <div>
                   <div style={{ fontSize: 18, fontWeight: 800 }}>{plan.name}</div>
                   <div className="data" style={{ fontSize: 26, fontWeight: 700, marginTop: 4 }}>
-                    {fmt(plan.monthlyPriceCents)}<span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>/mo</span>
+                    {fmt(plan.monthlyPriceCents)}
+                    <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>/{plan.billingInterval === 'week' ? 'wk' : 'mo'}</span>
                   </div>
                 </div>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
                   <li>{plan.seatLimit ?? 'Unlimited'} seats</li>
                   <li>{plan.avatarLimit ?? 'Unlimited'} avatars</li>
-                  <li>{plan.contentLimitMonthly ?? 'Unlimited'} content pieces/mo</li>
+                  <li>{plan.contentLimitMonthly ?? 'Unlimited'} content pieces/period</li>
                   <li>{plan.videoLimitDaily ?? 'Unlimited'} videos/day</li>
                 </ul>
                 {isCurrent ? (

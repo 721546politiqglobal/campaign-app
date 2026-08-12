@@ -35,10 +35,15 @@ export function isNewerEvent(eventCreatedSec: number, lastSeenSec: number | null
   return eventCreatedSec > lastSeenSec;
 }
 
+// Matches retired price ids too: a super_admin editing a plan's price archives the
+// old Stripe price and points the row at a new one, but a Checkout session opened
+// before the edit still completes against the old price. Without the retired-id
+// fallback that webhook finds no plan, 500s, and the paying campaign never gets a
+// plan_id — BillingGate then locks them out indefinitely.
 export function planIdFromPriceId(
   priceId: string | undefined,
-  plans: { id: string; stripeFlatPriceId: string }[],
+  plans: { id: string; stripeFlatPriceId: string; retiredStripePriceIds?: string[] }[],
 ): string | null {
   if (!priceId) return null;
-  return plans.find(p => p.stripeFlatPriceId === priceId)?.id ?? null;
+  return plans.find(p => p.stripeFlatPriceId === priceId || (p.retiredStripePriceIds ?? []).includes(priceId))?.id ?? null;
 }

@@ -4,8 +4,7 @@ import { AppFrame } from '@/components/AppFrame';
 import { StatusPill } from '@/components/StatusPill';
 import { requireSession } from '@/lib/session';
 import {
-  getContentItems, getMonitoringResults, getMonthlySpend,
-  getCampaign, getScheduledToday,
+  getContentItems, getMonitoringResults, getMonthlySpend, getScheduledToday,
 } from '@/lib/data';
 
 const PLATFORM_ICON: Record<string, string> = {
@@ -20,11 +19,10 @@ export default async function Dashboard() {
   const s = await requireSession();
   if (s.role === 'super_admin') redirect('/admin');
 
-  const [items, monitoring, spend, campaign, todayScheduled] = await Promise.all([
+  const [items, monitoring, spend, todayScheduled] = await Promise.all([
     getContentItems(s.campaignId),
     getMonitoringResults(s.campaignId),
     getMonthlySpend(s.campaignId),
-    getCampaign(s.campaignId),
     getScheduledToday(s.campaignId),
   ]);
 
@@ -37,10 +35,6 @@ export default async function Dashboard() {
   const scheduledN = count('scheduled');
   const publishedN = count('published');
   const signalsN = monitoring.length;
-
-  const cap = campaign?.monthlyCostCapCents ?? 0;
-  const spendPct = cap > 0 ? Math.min((spend / cap) * 100, 100) : 0;
-  const spendColor = spendPct > 90 ? 'var(--bad)' : spendPct > 70 ? 'var(--warn)' : 'var(--accent)';
 
   const tiles = [
     { label: 'Needs review', n: reviewN, tone: reviewN > 0 ? 'var(--warn)' : 'var(--text-3)', href: '/content?f=in_review', sub: reviewN === 1 ? '1 item waiting' : `${reviewN} items waiting` },
@@ -181,23 +175,10 @@ export default async function Dashboard() {
       <div className="card" style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 18 }}>
         <div style={{ minWidth: 0 }}>
           <div className="eyebrow" style={{ marginBottom: 4 }}>Spend this billing period</div>
-          <div style={{ fontSize: 14, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-            <span className="data" style={{ color: spendColor, fontWeight: 700, fontSize: 16 }}>
-              ${(spend / 100).toFixed(2)}
-            </span>
-            <span className="muted"> / ${(cap / 100).toFixed(2)} cap</span>
-          </div>
+          <span className="data" style={{ color: 'var(--accent)', fontWeight: 700, fontSize: 16 }}>
+            ${(spend / 100).toFixed(2)}
+          </span>
         </div>
-        <div style={{ flex: 1, height: 6, background: 'var(--bg-hover)', borderRadius: 999, minWidth: 0, overflow: 'hidden' }}>
-          <div style={{
-            height: '100%', borderRadius: 999, transition: 'width 0.4s ease',
-            width: `${spendPct}%`,
-            background: spendPct > 70 ? spendColor : 'var(--accent-grad)',
-          }} />
-        </div>
-        <span className="data" style={{ fontSize: 13, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>
-          {spendPct.toFixed(0)}%
-        </span>
       </div>
     </AppFrame>
   );

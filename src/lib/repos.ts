@@ -125,8 +125,9 @@ export const auditRepo: AuditRepo = {
 
 export const rulesRepo: DisclosureRulesRepo = {
   async get(jurisdiction) {
-    const { data } = await adminDb.from('disclosure_rules')
-      .select('*').eq('jurisdiction', jurisdiction).single();
+    const { data, error } = await adminDb.from('disclosure_rules')
+      .select('*').eq('jurisdiction', jurisdiction).maybeSingle();
+    if (error) throw error;
     return data ? toDisclosureRule(data) : null;
   },
   async all() {

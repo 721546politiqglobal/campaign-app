@@ -69,4 +69,22 @@ describe('planIdFromPriceId', () => {
   it('returns null when priceId is undefined', () => {
     expect(planIdFromPriceId(undefined, plans)).toBeNull();
   });
+
+  // A super_admin editing a plan's price rotates it to a new Stripe price and archives
+  // the old one. A Checkout session opened before that edit still completes against the
+  // old price id; if the webhook can't resolve it, the campaign pays but never gets a
+  // plan_id and BillingGate locks them out.
+  it('resolves a price id that is now only in retiredStripePriceIds', () => {
+    const rotated = [
+      { id: 'starter', stripeFlatPriceId: 'price_starter_v2', retiredStripePriceIds: ['price_starter_v1'] },
+      { id: 'pro', stripeFlatPriceId: 'price_pro', retiredStripePriceIds: [] },
+    ];
+    expect(planIdFromPriceId('price_starter_v1', rotated)).toBe('starter');
+    expect(planIdFromPriceId('price_starter_v2', rotated)).toBe('starter');
+    expect(planIdFromPriceId('price_never_used', rotated)).toBeNull();
+  });
+
+  it('still works for plans with no retiredStripePriceIds field at all', () => {
+    expect(planIdFromPriceId('price_starter', plans)).toBe('starter');
+  });
 });
