@@ -315,7 +315,7 @@ export async function publishAction(id: string, platforms: Platform[]): Promise<
   // Publish first, inspect the per-platform results, and only mark the item
   // published if at least one platform actually accepted the post.
   const results = await publisher.publish({
-    platforms, text: item.body,
+    platforms, title: item.title, text: item.body,
     disclosureText: combineDisclosureText(disc),
     mediaUrl: item.mediaUrl ?? undefined,
   });
@@ -324,6 +324,17 @@ export async function publishAction(id: string, platforms: Platform[]): Promise<
     return { ok: false, error: `Publishing failed: ${failed.map(f => `${f.platform} (${f.error ?? 'unknown'})`).join(', ')}` };
   }
   const r = await guard(() => lifecycle.markPublished(id, s.userId));
+  // Capture per-platform post ids the same way the cron publish path does —
+  // without this, analytics sync can never find this item's posts (it only
+  // looks up ayrshare_post_ids), so metrics silently never populate for
+  // anything published via the immediate "Publish now" button.
+  const postIds: Record<string, string> = {};
+  for (const res of results) {
+    if (res.status === 'scheduled' && res.postId) postIds[res.platform] = res.postId;
+  }
+  if (r.ok && Object.keys(postIds).length > 0) {
+    await adminDb.from('content_items').update({ ayrshare_post_ids: postIds }).eq('id', id);
+  }
   revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
   if (r.ok && failed.length) return { ok: false, error: `Published, but failed on: ${failed.map(f => f.platform).join(', ')}` };
   return r;
@@ -564,11 +575,12 @@ export async function generateFromMonitoringAction(
     await quotaGate.checkAndIncrement(s.campaignId, 'content', periodStart, plan?.contentLimitMonthly ?? null);
 
     const instruction =
-      `Respond to this news story${result.opponent ? ` about ${result.opponent}` : ''} on behalf of a political campaign.\n\n` +
+      `Respond to this ${result.source} post${result.opponent ? ` from ${result.opponent}` : ''} on behalf of a political campaign.\n\n` +
       `Source: ${result.source}\n` +
       `Excerpt: "${result.excerpt}"\n` +
-      (result.url ? `Article: ${result.url}\n` : '') +
-      `\nWrite a ${contentType.replace('_', ' ')} that directly addresses this story. ` +
+      (result.url ? `Original post/article: ${result.url}\n` : '') +
+      `\nWrite a ${contentType.replace('_', ' ')} that responds specifically to the excerpt above — reference its actual claims or content rather than writing something generic. ` +
+      `If the excerpt is too thin to respond to specifically (e.g. it's only engagement stats with no real quoted text or caption), say so plainly instead of inventing details that aren't there. ` +
       `Be factual, on-message, and persuasive.`;
 
     const out = await withQuotaRelease(s.campaignId, 'content', periodStart, () =>

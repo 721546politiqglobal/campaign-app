@@ -66,8 +66,8 @@ export interface PhotoAvatarProvider {
 }
 
 export interface Publisher {
-  publish(input: { platforms: Platform[]; text: string; disclosureText: string; mediaUrl?: string }):
-    Promise<{ platform: Platform; status: 'scheduled' | 'failed'; error?: string }[]>;
+  publish(input: { platforms: Platform[]; title: string; text: string; disclosureText: string; mediaUrl?: string }):
+    Promise<{ platform: Platform; status: 'scheduled' | 'failed'; error?: string; postId?: string }[]>;
 }
 
 export interface MonitoringSource {
@@ -457,11 +457,11 @@ const PLATFORM_MAP: Record<Platform, string> = {
 export class AyrsharePublisher implements Publisher {
   constructor(private apiKey: string) {}
 
-  async publish({ platforms, text, disclosureText, mediaUrl }: {
-    platforms: Platform[]; text: string; disclosureText: string; mediaUrl?: string;
+  async publish({ platforms, title, text, disclosureText, mediaUrl }: {
+    platforms: Platform[]; title: string; text: string; disclosureText: string; mediaUrl?: string;
   }) {
     const post = disclosureText ? `${text}\n\n${disclosureText}` : text;
-    const results: { platform: Platform; status: 'scheduled' | 'failed'; error?: string }[] = [];
+    const results: { platform: Platform; status: 'scheduled' | 'failed'; error?: string; postId?: string }[] = [];
 
     for (const platform of platforms) {
       try {
@@ -470,6 +470,9 @@ export class AyrsharePublisher implements Publisher {
           platforms: [PLATFORM_MAP[platform]],
         };
         if (mediaUrl) body.mediaUrls = [mediaUrl];
+        // YouTube requires its own video title, separate from the post/description
+        // text — without it Ayrshare rejects the upload entirely (verified live).
+        if (platform === 'youtube') body.youTubeOptions = { title };
 
         const res = await fetch('https://app.ayrshare.com/api/post', {
           method: 'POST',
@@ -480,13 +483,101 @@ export class AyrsharePublisher implements Publisher {
         if (!res.ok) {
           results.push({ platform, status: 'failed', error: json.message ?? `HTTP ${res.status}` });
         } else {
-          results.push({ platform, status: 'scheduled' });
+          // Ayrshare's analytics endpoint (/api/analytics/post) only recognizes
+          // the top-level `id` from this response — the per-platform
+          // postIds[].id (e.g. the YouTube video id) returns "Post ID not
+          // found" there (verified live). Each call here is single-platform,
+          // so json.id is already scoped to this one platform.
+          const postId = json.id;
+          results.push(postId ? { platform, status: 'scheduled', postId } : { platform, status: 'scheduled' });
         }
       } catch (e) {
         results.push({ platform, status: 'failed', error: String(e) });
       }
     }
     return results;
+  }
+}
+
+export interface AnalyticsProvider {
+  getPostAnalytics(posts: { platform: Platform; postId: string }[]): Promise<{
+    platform: Platform; impressions: number; reach: number; likes: number;
+    comments: number; shares: number; saves: number;
+    videoViews: number; videoAvgWatchSeconds: number;
+  }[]>;
+}
+
+// Ayrshare returns a completely different field shape per platform (verified
+// live against real posts) — there is no shared "analytics" field naming, so
+// each platform needs its own extractor. Only instagram/tiktok/youtube are
+// verified against real responses; facebook/x/linkedin are unverified best
+// guesses until confirmed live the same way.
+type RawAnalytics = Record<string, unknown>;
+type NormalizedAnalytics = {
+  impressions: number; reach: number; likes: number; comments: number;
+  shares: number; saves: number; videoViews: number; videoAvgWatchSeconds: number;
+};
+const num = (v: unknown): number => typeof v === 'number' ? v : 0;
+const ANALYTICS_EXTRACTORS: Partial<Record<string, (a: RawAnalytics) => NormalizedAnalytics>> = {
+  instagram: (a) => ({
+    impressions: 0, // not present on Reels analytics
+    reach: num(a.reachCount),
+    likes: num(a.likeCount),
+    comments: num(a.commentsCount),
+    shares: num(a.sharesCount),
+    saves: num(a.savedCount),
+    videoViews: num(a.viewsCount),
+    // ig_reels_avg_watch_time is reported in milliseconds
+    videoAvgWatchSeconds: num(a.igReelsAvgWatchTimeCount) / 1000,
+  }),
+  tiktok: (a) => ({
+    impressions: 0, // TikTok exposes impressionSources percentages, not a raw count
+    reach: num(a.reach),
+    likes: num(a.likeCount),
+    comments: num(a.commentsCount),
+    shares: num(a.shareCount),
+    saves: num(a.favorites),
+    videoViews: num(a.videoViews),
+    videoAvgWatchSeconds: num(a.averageTimeWatched),
+  }),
+  youtube: (a) => ({
+    impressions: 0, // no impressions concept in YouTube's per-video analytics
+    reach: 0,
+    likes: num(a.likes),
+    comments: num(a.comments),
+    shares: num(a.shares),
+    saves: 0, // no saves/favorites concept
+    videoViews: num(a.views),
+    videoAvgWatchSeconds: num(a.averageViewDuration),
+  }),
+};
+
+export class AyrshareAnalyticsProvider implements AnalyticsProvider {
+  constructor(private apiKey: string) {}
+
+  async getPostAnalytics(posts: { platform: Platform; postId: string }[]) {
+    const out: { platform: Platform; impressions: number; reach: number; likes: number; comments: number; shares: number; saves: number; videoViews: number; videoAvgWatchSeconds: number }[] = [];
+    for (const { platform, postId } of posts) {
+      try {
+        const res = await fetch('https://app.ayrshare.com/api/analytics/post', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: postId }),
+        });
+        const json = await res.json();
+        if (!res.ok) continue; // e.g. plan doesn't include analytics, or unknown post id — skip, never throw
+        // The platform key is a top-level property on the response, and the
+        // metrics are nested one level under it as `.analytics` — not
+        // `json.analytics[platform]` (verified live).
+        const a = json[PLATFORM_MAP[platform]]?.analytics;
+        const extract = ANALYTICS_EXTRACTORS[PLATFORM_MAP[platform]];
+        if (!a || !extract) continue;
+        out.push({ platform, ...extract(a) });
+      } catch {
+        // network failure — skip this one post, don't fail the whole batch
+      }
+    }
+    return out;
   }
 }
 
@@ -529,6 +620,26 @@ export class MockPublisher implements Publisher {
   async publish({ platforms }: { platforms: Platform[] }) {
     return platforms.map(p => ({ platform: p, status: 'scheduled' as const }));
   }
+}
+
+// Used in production when AYRSHARE_API_KEY is missing. A fake 'scheduled'
+// success here is uniquely dangerous compared to the other Mock* adapters:
+// campaign staff would believe real content went out to real social accounts
+// when nothing was posted anywhere. Reports each platform as failed instead —
+// callers (publishAction, the cron route) already know how to surface a
+// failed publish, so this fails loudly through the exact same paths.
+export class MissingKeyPublisher implements Publisher {
+  async publish({ platforms }: { platforms: Platform[] }) {
+    return platforms.map(p => ({
+      platform: p,
+      status: 'failed' as const,
+      error: 'AYRSHARE_API_KEY is not configured. Refusing to fake a successful publish.',
+    }));
+  }
+}
+
+export class MockAnalyticsProvider implements AnalyticsProvider {
+  async getPostAnalytics(_posts: { platform: Platform; postId: string }[]) { return []; }
 }
 
 export class MockVideoProvider implements VideoProvider {

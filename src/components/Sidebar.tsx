@@ -44,6 +44,18 @@ export const NAV = [
     ),
   },
   {
+    href: '/analytics',
+    label: 'Analytics',
+    icon: (
+      <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <line x1="2" y1="14" x2="14" y2="14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+        <rect x="3.5" y="8" width="2.4" height="5" rx="0.6" stroke="currentColor" strokeWidth="1.3"/>
+        <rect x="7.3" y="4.5" width="2.4" height="8.5" rx="0.6" stroke="currentColor" strokeWidth="1.3"/>
+        <rect x="11.1" y="6.5" width="2.4" height="6.5" rx="0.6" stroke="currentColor" strokeWidth="1.3"/>
+      </svg>
+    ),
+  },
+  {
     href: '/avatars',
     label: 'Avatars',
     icon: (

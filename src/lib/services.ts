@@ -11,13 +11,14 @@ import {
   HeyGenVideoProvider, MockVideoProvider,
   HeyGenPhotoAvatarProvider, MockPhotoAvatarProvider,
   ElevenLabsVoiceProvider, MockVoiceProvider,
-  AyrsharePublisher, MockPublisher,
+  AyrsharePublisher, MockPublisher, MissingKeyPublisher,
   NewsDataMonitoringSource, MockMonitoringSource,
+  AyrshareAnalyticsProvider, MockAnalyticsProvider,
 } from '@/integrations';
-import type { PhotoAvatarProvider, Publisher } from '@/integrations';
+import type { PhotoAvatarProvider, Publisher, AnalyticsProvider } from '@/integrations';
 
-export const lifecycle = new ContentLifecycle(contentRepo, approvalRepo, disclosureRepo, auditRepo);
 export const disclosureEngine = new DisclosureEngine(rulesRepo);
+export const lifecycle = new ContentLifecycle(contentRepo, approvalRepo, disclosureRepo, auditRepo, disclosureEngine);
 export const quotaGate = new QuotaGate(quotaRepo);
 export const billingGate = new BillingGate(billingRepo);
 
@@ -52,10 +53,21 @@ export const voiceProvider = realOrMock(
   () => new ElevenLabsVoiceProvider(process.env.ELEVENLABS_API_KEY!),
   () => new MockVoiceProvider());
 
-export const publisher: Publisher = realOrMock(
+// Publishing gets its own fallback instead of realOrMock: a fake success is
+// harmless for every other integration (a demo video/voice/draft), but a fake
+// *publish* means campaign staff believe real content went out to real social
+// accounts when nothing was posted anywhere. Mock locally/in tests for the
+// normal no-keys-configured dev experience; refuse to fake it in production.
+export const publisher: Publisher = process.env.AYRSHARE_API_KEY
+  ? new AyrsharePublisher(process.env.AYRSHARE_API_KEY)
+  : process.env.NODE_ENV === 'production'
+    ? new MissingKeyPublisher()
+    : new MockPublisher();
+
+export const analyticsProvider: AnalyticsProvider = realOrMock(
   process.env.AYRSHARE_API_KEY,
-  () => new AyrsharePublisher(process.env.AYRSHARE_API_KEY!),
-  () => new MockPublisher());
+  () => new AyrshareAnalyticsProvider(process.env.AYRSHARE_API_KEY!),
+  () => new MockAnalyticsProvider());
 
 export const monitoringSource = realOrMock(
   process.env.NEWSDATA_API_KEY,

@@ -84,7 +84,7 @@ export default async function AdminContent({
                 <td className="muted" style={{ fontSize: 12 }}>{c.isAiGenerated ? 'AI' : 'Human'}</td>
                 <td><StatusPill status={c.status as never} /></td>
                 <td className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                  {new Date(c.createdAt).toLocaleDateString()}
+                  {new Date(c.createdAt).toLocaleDateString('en-US')}
                 </td>
               </tr>
             ))}

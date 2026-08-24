@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { Role } from '@/domain/types';
 import { ContentItem, VIDEO_CONTENT_TYPES } from '@/domain/types';
 import { can } from '@/lib/permissions';
+import { zonedNaiveToUtc } from '@/lib/timezone';
 import { Platform } from '@/integrations';
 import { useToast } from '@/components/Toast';
 import {
@@ -21,6 +22,11 @@ const STEP_LABELS: Record<WizardStep, string> = {
   disclosure: 'Disclosure',
   publish: 'Publish',
 };
+
+const US_TIMEZONES = [
+  'America/New_York', 'America/Chicago', 'America/Denver',
+  'America/Los_Angeles', 'America/Anchorage', 'Pacific/Honolulu',
+];
 
 const CONTENT_TYPE_PLATFORMS: Record<string, Platform[]> = {
   social_post:    ['instagram', 'facebook', 'x', 'linkedin', 'tiktok'],
@@ -95,9 +101,18 @@ export function ContentWizard({
   const [dateDay, setDateDay] = useState('');
   const [dateYear, setDateYear] = useState('');
   const [timeStr, setTimeStr] = useState('');
-  const [timezone, setTimezone] = useState(
-    Intl.DateTimeFormat().resolvedOptions().timeZone
-  );
+  const [timezone, setTimezone] = useState(() => {
+    // Defaulting to the operator's own OS/browser zone silently breaks
+    // scheduling whenever that zone isn't one of the options below: the
+    // native <select> falls back to displaying its first option ("New
+    // York") while the real state stays whatever was detected, so the UI
+    // shows one timezone but converts using another (verified live — a
+    // Pakistan-based browser scheduling for a US campaign silently used
+    // Asia/Karachi while the dropdown read "New York"). Only trust the
+    // detected zone when it's actually one of the supported US options.
+    const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return US_TIMEZONES.includes(detected) ? detected : US_TIMEZONES[0];
+  });
   const [videoOverride, setVideoOverride] = useState<{
     background: string;
     aspectRatio: '16:9' | '9:16' | '1:1';
@@ -119,6 +134,19 @@ export function ContentWizard({
       setScheduledAt('');
     }
   }, [dateMonth, dateDay, dateYear, timeStr]);
+
+  // scheduledAt is a naive "wall clock in `timezone`" string — comparing it
+  // via bare `new Date(scheduledAt)` parses it in the *browser's* local zone
+  // instead, which is wrong whenever the person scheduling isn't in the same
+  // zone as the campaign (verified live: New York + a Pakistan-based browser
+  // made every valid future time register as "not 5 minutes from now yet").
+  // Convert through the actually-selected timezone before comparing/displaying.
+  let scheduledUtc: Date | null = null;
+  try {
+    scheduledUtc = scheduledAt ? zonedNaiveToUtc(scheduledAt, timezone) : null;
+  } catch {
+    scheduledUtc = null;
+  }
 
   const run = useCallback(async (
     fn: () => Promise<{ ok: boolean; error?: string }>,
@@ -544,15 +572,12 @@ export function ContentWizard({
                     value={timeStr} onChange={e => setTimeStr(e.target.value)}
                   />
                   <select className="input" style={{ width: 150 }} value={timezone} onChange={e => setTimezone(e.target.value)}>
-                    {[
-                      'America/New_York', 'America/Chicago', 'America/Denver',
-                      'America/Los_Angeles', 'America/Anchorage', 'Pacific/Honolulu',
-                    ].map(tz => (
+                    {US_TIMEZONES.map(tz => (
                       <option key={tz} value={tz}>{tz.replace('America/', '').replace('_', ' ')}</option>
                     ))}
                   </select>
                 </div>
-                {scheduledAt && new Date(scheduledAt) < new Date(Date.now() + 5 * 60 * 1000) && (
+                {scheduledUtc && scheduledUtc < new Date(Date.now() + 5 * 60 * 1000) && (
                   <div className="error" style={{ marginTop: 6, fontSize: 12 }}>
                     Pick a time at least 5 minutes from now.
                   </div>
@@ -580,10 +605,10 @@ export function ContentWizard({
             ) : (
               can(role, 'schedule') ? (
                 <button className="btn primary" style={{ width: '100%' }}
-                  disabled={busy || platforms.length === 0 || !scheduledAt || new Date(scheduledAt) < new Date(Date.now() + 5 * 60 * 1000)}
+                  disabled={busy || platforms.length === 0 || !scheduledUtc || scheduledUtc < new Date(Date.now() + 5 * 60 * 1000)}
                   onClick={() => run(() => scheduleWithTimeAction(item.id, platforms, scheduledAt, timezone), 'Content scheduled!')}>
-                  {busy ? 'Scheduling…' : scheduledAt
-                    ? `Schedule for ${new Date(scheduledAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+                  {busy ? 'Scheduling…' : scheduledUtc
+                    ? `Schedule for ${scheduledUtc.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: timezone })}`
                     : 'Pick a time above'}
                 </button>
               ) : (

@@ -15,7 +15,7 @@
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "f1", "name": "app_base_url", "value": "={{ $env.APP_BASE_URL || 'http://localhost:3001' }}", "type": "string" }
+            { "id": "f1", "name": "app_base_url", "value": "={{ $env.APP_BASE_URL || 'http://localhost:3000' }}", "type": "string" }
           ]
         },
         "options": {}
@@ -45,7 +45,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const appCfg = $('App Config').first().json;\nconst campaigns = $input.first().json;\nconst list = Array.isArray(campaigns) ? campaigns : [];\nreturn list.map(c => {\n  const opp = [c.opponent_name, ...(c.opponent_aliases || [])].filter(Boolean);\n  const kw = c.monitoring_keywords || [];\n  const terms = [...opp, ...kw].slice(0, 5);\n  // Quote multi-word terms so Twitter/NewsData/YouTube treat them as phrases,\n  // not an ambiguous mix of implicit AND/OR on bare words.\n  const quoted = terms.map(t => t.includes(' ') ? '\"' + t + '\"' : t);\n  return { json: {\n    ...c,\n    app_base_url: appCfg.app_base_url,\n    opponent_names_array: opp,\n    keywords_array: kw,\n    query_string: quoted.join(' OR '),\n    gdelt_query_string: quoted.join(' OR '),\n  }};\n});"
+        "jsCode": "const appCfg = $('App Config').first().json;\n// Get Campaigns returns one n8n item per campaign already (the HTTP node\n// splits the JSON array response), so map over every input item rather than\n// assuming a single item wraps the whole array.\nreturn $input.all().map(item => {\n  const c = item.json;\n  const opp = [c.opponent_name, ...(c.opponent_aliases || [])].filter(Boolean);\n  const kw = c.monitoring_keywords || [];\n  const terms = [...opp, ...kw].slice(0, 5);\n  // Quote multi-word terms so Twitter/NewsData/YouTube treat them as phrases,\n  // not an ambiguous mix of implicit AND/OR on bare words.\n  const quoted = terms.map(t => t.includes(' ') ? '\"' + t + '\"' : t);\n  return { json: {\n    ...c,\n    app_base_url: appCfg.app_base_url,\n    opponent_names_array: opp,\n    keywords_array: kw,\n    query_string: quoted.join(' OR '),\n    gdelt_query_string: quoted.join(' OR '),\n  }};\n});"
       },
       "id": "33333333-3333-3333-3333-333333333333",
       "name": "Prepare Query",
@@ -92,7 +92,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Prepare Query').item.json.app_base_url + '/api/monitoring/ingest' }}",
+        "url": "={{ $('Prepare Query').first().json.app_base_url + '/api/monitoring/ingest' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -131,7 +131,10 @@
             { "name": "sourcelang", "value": "eng" }
           ]
         },
-        "options": { "response": { "response": { "neverError": true } } }
+        "options": {
+          "response": { "response": { "neverError": true } },
+          "batching": { "batch": { "batchSize": 1, "batchInterval": 5500 } }
+        }
       },
       "id": "77777777-7777-7777-7777-777777777777",
       "name": "GDELT: Fetch",
@@ -153,7 +156,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Prepare Query').item.json.app_base_url + '/api/monitoring/ingest' }}",
+        "url": "={{ $('Prepare Query').first().json.app_base_url + '/api/monitoring/ingest' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -237,7 +240,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Prepare Query').item.json.app_base_url + '/api/monitoring/ingest' }}",
+        "url": "={{ $('Prepare Query').first().json.app_base_url + '/api/monitoring/ingest' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -301,7 +304,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Prepare Query').item.json.app_base_url + '/api/monitoring/ingest' }}",
+        "url": "={{ $('Prepare Query').first().json.app_base_url + '/api/monitoring/ingest' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -381,7 +384,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Prepare Query').item.json;\nconst res = $input.first().json;\nconst items = Array.isArray(res) ? res : (res && Array.isArray(res.items) ? res.items : []);\nif (!items.length) return [];\nreturn items\n  .filter(p => p && (p.url || p.shortCode))\n  .slice(0, 15)\n  .map(p => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'Instagram',\n    opponent: cfg.opponent_names_array.find(o =>\n      String(p.caption || p.text || '').toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(p.caption || p.text || '').substring(0, 500),\n    url: p.url || ('https://www.instagram.com/p/' + p.shortCode + '/')\n  }}));"
+        "jsCode": "const cfg = $('Prepare Query').item.json;\nconst res = $input.first().json;\n// The Instagram profile scraper returns one profile object per input item,\n// with recent posts nested under latestPosts — not a bare array or `.items`.\nconst items = Array.isArray(res) ? res\n  : (res && Array.isArray(res.latestPosts)) ? res.latestPosts\n  : (res && Array.isArray(res.items)) ? res.items\n  : [];\nif (!items.length) return [];\nreturn items\n  .filter(p => p && (p.url || p.shortCode))\n  .slice(0, 15)\n  .map(p => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'Instagram',\n    opponent: cfg.opponent_names_array.find(o =>\n      String(p.caption || p.text || '').toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(p.caption || p.text || '').substring(0, 500),\n    url: p.url || ('https://www.instagram.com/p/' + p.shortCode + '/')\n  }}));"
       },
       "id": "c3d4e5f6-a7b8-4912-cdef-000000000002",
       "name": "Instagram: Format",
@@ -392,7 +395,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Prepare Query').item.json.app_base_url + '/api/monitoring/ingest' }}",
+        "url": "={{ $('Prepare Query').first().json.app_base_url + '/api/monitoring/ingest' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -471,7 +474,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Prepare Query').item.json;\nconst res = $input.first().json;\nconst items = Array.isArray(res) ? res : (res && Array.isArray(res.items) ? res.items : []);\nif (!items.length) return [];\nreturn items\n  .filter(p => p && p.url)\n  .slice(0, 15)\n  .map(p => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'Facebook',\n    opponent: cfg.opponent_names_array.find(o =>\n      String(p.text || p.message || '').toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(p.text || p.message || '').substring(0, 500),\n    url: String(p.url)\n  }}));"
+        "jsCode": "const cfg = $('Prepare Query').item.json;\n// Facebook posts scraper returns a bare array of posts, which n8n auto-splits\n// into separate input items — map over every input item rather than\n// assuming a single item wraps the whole array (same bug class as Prepare Query).\nconst items = $input.all().map(item => item.json);\nif (!items.length) return [];\nreturn items\n  .filter(p => p && p.url)\n  .slice(0, 15)\n  .map(p => ({ json: {\n    campaign_id: cfg.campaign_id,\n    source: 'Facebook',\n    opponent: cfg.opponent_names_array.find(o =>\n      String(p.text || p.message || '').toLowerCase().includes(o.toLowerCase())\n    ) || null,\n    excerpt: String(p.text || p.message || '').substring(0, 500),\n    url: String(p.url)\n  }}));"
       },
       "id": "d4e5f6a7-b8c9-4023-def0-000000000002",
       "name": "Facebook: Format",
@@ -482,7 +485,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Prepare Query').item.json.app_base_url + '/api/monitoring/ingest' }}",
+        "url": "={{ $('Prepare Query').first().json.app_base_url + '/api/monitoring/ingest' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -552,7 +555,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Prepare Query').item.json.app_base_url + '/api/monitoring/ingest' }}",
+        "url": "={{ $('Prepare Query').first().json.app_base_url + '/api/monitoring/ingest' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
