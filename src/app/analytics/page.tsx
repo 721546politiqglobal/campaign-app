@@ -139,7 +139,7 @@ export default async function AnalyticsPage() {
                   ))}
                 </ul>
                 <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 10 }}>
-                  Generated {new Date(insight.generatedAt).toLocaleDateString()}
+                  Generated {new Date(insight.generatedAt).toLocaleDateString('en-US')}
                 </div>
               </>
             ) : (

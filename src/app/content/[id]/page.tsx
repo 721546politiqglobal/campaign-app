@@ -18,11 +18,17 @@ export default async function ContentDetail({ params }: { params: { id: string }
   ]);
   if (!item || item.campaignId !== s.campaignId) notFound();
 
-  const hasDisclosure = discs.length > 0;
+  const attachedDisclosures = discs.length > 0;
   const requiredDisclosures =
-    item.isAiGenerated && !hasDisclosure
+    item.isAiGenerated && !attachedDisclosures
       ? await disclosureEngine.requiredFor(item.targetJurisdictions, item.isAiGenerated)
       : [];
+  // Cleared either because real disclosures are attached, or because this
+  // jurisdiction genuinely requires none — mirrors the same distinction
+  // ContentLifecycle.schedule()'s gate makes. Without the second half, a
+  // zero-required jurisdiction could never satisfy `discs.length > 0` and
+  // the wizard would show the disclosure step forever.
+  const hasDisclosure = attachedDisclosures || (item.isAiGenerated && requiredDisclosures.length === 0);
 
   return (
     <AppFrame>
@@ -58,7 +64,7 @@ export default async function ContentDetail({ params }: { params: { id: string }
           {log.map(a => (
             <div key={a.id} style={{ display: 'flex', gap: 12, padding: '5px 0', fontSize: 13, borderBottom: '1px solid var(--line)' }}>
               <span className="mono" style={{ color: 'var(--text-3)', minWidth: 70 }}>
-                {new Date(a.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {new Date(a.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
               </span>
               <span style={{ fontWeight: 600, color: 'var(--text-2)' }}>
                 {a.action.replace(/_/g, ' ')}

@@ -131,7 +131,7 @@ export default async function Dashboard() {
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
                       <span className="mono" style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{c.type.replace('_', ' ')}</span>
                       <span style={{ color: 'var(--text-3)', fontSize: 11 }}>·</span>
-                      <span className="muted" style={{ fontSize: 11.5 }}>updated {new Date(c.updatedAt).toLocaleDateString()}</span>
+                      <span className="muted" style={{ fontSize: 11.5 }}>updated {new Date(c.updatedAt).toLocaleDateString('en-US')}</span>
                     </div>
                   </div>
                   <StatusPill status={c.status} />

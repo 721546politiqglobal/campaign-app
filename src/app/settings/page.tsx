@@ -55,7 +55,9 @@ async function saveProfileAction(formData: FormData) {
     opponentName:   String(formData.get('opponent_name')   ?? '').trim() || null,
     opponentAliases,
     monitoringKeywords,
-    opponentTwitterHandle:   String(formData.get('opponent_twitter_handle')   ?? '').trim() || null,
+    // Strip a leading @ — the n8n workflow builds `from:<handle>` for X search,
+    // and that operator rejects a handle prefixed with @.
+    opponentTwitterHandle:   String(formData.get('opponent_twitter_handle')   ?? '').trim().replace(/^@+/, '') || null,
     opponentInstagramHandle: String(formData.get('opponent_instagram_handle') ?? '').trim() || null,
     opponentFacebookPage:    String(formData.get('opponent_facebook_page')    ?? '').trim() || null,
     googleAlertsRssUrl:      String(formData.get('google_alerts_rss_url')    ?? '').trim() || null,

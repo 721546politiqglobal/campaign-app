@@ -149,7 +149,13 @@ export function TeamManager({
                 return (
                   <tr key={inv.code}>
                     <td className="muted">{inv.role}</td>
-                    <td className="muted" style={{ fontSize: 12 }}>{new Date(inv.expiresAt).toLocaleDateString()}</td>
+                    {/* Fixed locale: the default toLocaleDateString() uses the
+                        runtime's locale, which differs between the server
+                        (render) and the browser (hydrate) — e.g. en-US vs a
+                        DD/MM locale — producing a real hydration mismatch
+                        (verified live) and an ambiguous date for viewers
+                        outside the US. */}
+                    <td className="muted" style={{ fontSize: 12 }}>{new Date(inv.expiresAt).toLocaleDateString('en-US')}</td>
                     <td>
                       {inv.usedAt
                         ? <span className="tag cred-high">Used</span>

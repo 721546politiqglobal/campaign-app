@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
 
   const { data: dueItems } = await adminDb
     .from('content_items')
-    .select('id, campaign_id, body, media_url, platforms')
+    .select('id, campaign_id, title, body, media_url, platforms')
     .eq('status', 'scheduled')
     .not('scheduled_at', 'is', null)
     .lte('scheduled_at', new Date().toISOString())
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
       const disclosures = await disclosureRepo.listFor(item.id);
       const results = await publisher.publish({
         platforms: (item.platforms ?? []) as Platform[],
-        text: item.body,
+        title: item.title, text: item.body,
         disclosureText: combineDisclosureText(disclosures),
         mediaUrl: item.media_url ?? undefined,
       });

@@ -15,7 +15,18 @@ const CATEGORY_LABEL: Record<string, string> = {
   news: 'News', social: 'Social', blog: 'Blog', press_release: 'Press Release',
 };
 
-type Filter = 'all' | 'high' | 'medium' | 'low' | 'news' | 'social';
+// Sources are free text (the manual-add form lets a user type anything), so
+// only the exact strings our own integrations write get their own tab —
+// everything else (news wires, blogs, manual entries) buckets into 'news'.
+type Platform = 'twitter' | 'instagram' | 'youtube' | 'facebook' | 'news';
+const PLATFORM_LABEL: Record<string, Platform> = {
+  'Twitter/X': 'twitter', 'Instagram': 'instagram', 'YouTube': 'youtube', 'Facebook': 'facebook',
+};
+function platformOf(source: string): Platform {
+  return PLATFORM_LABEL[source] ?? 'news';
+}
+
+type Filter = 'all' | Platform;
 
 function detectTrending(results: MonitoringResult[]): Set<string> {
   const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
@@ -53,12 +64,7 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
 
   const trendingIds = detectTrending(results);
 
-  const filtered = results.filter(r => {
-    if (filter === 'all') return true;
-    if (filter === 'high' || filter === 'medium' || filter === 'low') return r.credibility === filter;
-    if (filter === 'news' || filter === 'social') return r.category === filter;
-    return true;
-  });
+  const filtered = results.filter(r => filter === 'all' || platformOf(r.source) === filter);
 
   function handleRebuttal(result: MonitoringResult) {
     if (result.credibility === 'low') {
@@ -82,13 +88,13 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
     router.refresh();
   }
 
-  const FILTERS: { key: Filter; label: string; dot?: string }[] = [
-    { key: 'all',    label: 'All' },
-    { key: 'high',   label: 'High',   dot: 'var(--ok)' },
-    { key: 'medium', label: 'Medium', dot: 'var(--warn)' },
-    { key: 'low',    label: 'Low',    dot: 'var(--bad)' },
-    { key: 'news',   label: 'News' },
-    { key: 'social', label: 'Social' },
+  const FILTERS: { key: Filter; label: string }[] = [
+    { key: 'all',       label: 'All' },
+    { key: 'twitter',   label: 'Twitter/X' },
+    { key: 'instagram', label: 'Instagram' },
+    { key: 'youtube',   label: 'YouTube' },
+    { key: 'facebook',  label: 'Facebook' },
+    { key: 'news',      label: 'News' },
   ];
 
   return (
@@ -98,9 +104,6 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
         {FILTERS.map(f => (
           <button key={f.key} className={`btn${filter === f.key ? ' active' : ''}`}
             onClick={() => setFilter(f.key)}>
-            {f.dot && (
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: f.dot, boxShadow: `0 0 6px ${f.dot}`, flexShrink: 0 }} />
-            )}
             {f.label}
           </button>
         ))}

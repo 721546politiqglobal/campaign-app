@@ -33,7 +33,7 @@ export default async function AdminAudit() {
             {entries.map(e => (
               <tr key={e.id}>
                 <td style={{ fontSize: 11.5, color: 'var(--text-3)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                  {new Date(e.createdAt).toLocaleString()}
+                  {new Date(e.createdAt).toLocaleString('en-US')}
                 </td>
                 <td style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{e.action}</td>
                 <td>

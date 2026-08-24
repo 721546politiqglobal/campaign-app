@@ -2,12 +2,20 @@ import {
   ContentItem, ContentStatus,
   ContentRepo, ApprovalRepo, DisclosureRepo, AuditRepo,
 } from './types';
+import { DisclosureEngine } from './disclosure';
 
 const TRANSITIONS: Record<ContentStatus, ContentStatus[]> = {
   draft:     ['in_review', 'archived'],
   in_review: ['approved', 'rejected', 'draft'],
-  approved:  ['scheduled', 'draft'],
-  scheduled: ['publishing', 'published', 'approved'],
+  approved:  ['scheduled', 'draft', 'published'],
+  // 'scheduled' includes itself: confirmDisclosureAction routes AI-generated
+  // content through schedule() as soon as its disclosure gate clears, then
+  // the wizard's own "Schedule for later" submit calls schedule() again once
+  // real platforms/time are picked — a second, idempotent pass through the
+  // same already-satisfied gate, not a new transition. Rejecting it here
+  // made every AI-generated item permanently unschedulable with a real date
+  // (verified live: "Can't move content from scheduled to scheduled").
+  scheduled: ['scheduled', 'publishing', 'published', 'approved'],
   publishing: ['published', 'approved'],
   published: ['archived'],
   rejected:  ['draft', 'archived'],
@@ -22,6 +30,7 @@ export class ContentLifecycle {
     private approvals: ApprovalRepo,
     private disclosures: DisclosureRepo,
     private audit: AuditRepo,
+    private disclosureEngine: DisclosureEngine,
   ) {}
 
   async submitForReview(itemId: string, actorUserId: string): Promise<void> {
@@ -54,8 +63,18 @@ export class ContentLifecycle {
     if (!(await this.approvals.hasApproval(itemId))) {
       throw new GateError('Can\u2019t schedule: no human approval on record.');
     }
-    if (item.isAiGenerated && (await this.disclosures.listFor(itemId)).length === 0) {
-      throw new GateError('Can\u2019t schedule: AI content needs a disclosure attached first.');
+    // Gate on whether a disclosure is actually REQUIRED, not merely on
+    // whether any disclosure row exists \u2014 a jurisdiction that legitimately
+    // requires none (requiresAiLabel: false, or unconfigured-as-exempt) would
+    // otherwise permanently block scheduling: confirmDisclosureAction only
+    // ever inserts rows for disclosures that are actually required, so zero
+    // required always meant zero rows, and this check couldn't tell that
+    // apart from "the disclosure step was never completed."
+    if (item.isAiGenerated) {
+      const required = await this.disclosureEngine.requiredFor(item.targetJurisdictions, item.isAiGenerated);
+      if (required.length > 0 && (await this.disclosures.listFor(itemId)).length === 0) {
+        throw new GateError('Can\u2019t schedule: AI content needs a disclosure attached first.');
+      }
     }
     await this.content.setStatus(itemId, 'scheduled');
     await this.log(item, actorUserId, 'schedule');

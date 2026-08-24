@@ -381,7 +381,7 @@ export default async function CampaignDetail({
                       <td className="mono" style={{ fontSize: 12 }}>{inv.code}</td>
                       <td><span className="tag">{inv.role}</span></td>
                       <td className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                        {new Date(inv.expiresAt).toLocaleDateString()}
+                        {new Date(inv.expiresAt).toLocaleDateString('en-US')}
                       </td>
                       <td>
                         {inv.usedAt ? (
@@ -446,7 +446,7 @@ export default async function CampaignDetail({
               {recentAudit.map(e => (
                 <tr key={e.id}>
                   <td className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                    {new Date(e.createdAt).toLocaleString()}
+                    {new Date(e.createdAt).toLocaleString('en-US')}
                   </td>
                   <td style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{e.action}</td>
                   <td className="muted" style={{ fontSize: 12 }}>
