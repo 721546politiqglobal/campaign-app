@@ -5,12 +5,6 @@ import { useRouter } from 'next/navigation';
 import type { MonitoringResult } from '@/lib/data';
 import { dismissMonitoringAction } from '@/app/actions';
 
-const CREDIBILITY_BADGE: Record<string, { label: string }> = {
-  high:   { label: 'High credibility' },
-  medium: { label: 'Medium credibility' },
-  low:    { label: 'Low credibility' },
-};
-
 const CATEGORY_LABEL: Record<string, string> = {
   news: 'News', social: 'Social', blog: 'Blog', press_release: 'Press Release',
 };
@@ -51,7 +45,6 @@ function detectTrending(results: MonitoringResult[]): Set<string> {
 export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>('all');
-  const [warnId, setWarnId] = useState<string | null>(null);
   const [dismissing, setDismissing] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   function toggleExpanded(id: string) {
@@ -65,14 +58,6 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
   const trendingIds = detectTrending(results);
 
   const filtered = results.filter(r => filter === 'all' || platformOf(r.source) === filter);
-
-  function handleRebuttal(result: MonitoringResult) {
-    if (result.credibility === 'low') {
-      setWarnId(result.id);
-      return;
-    }
-    goToRebuttal(result);
-  }
 
   function goToRebuttal(result: MonitoringResult) {
     const brief = encodeURIComponent(
@@ -109,33 +94,6 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
         ))}
       </div>
 
-      {/* Low-credibility rebuttal warning */}
-      {warnId && (() => {
-        const result = results.find(r => r.id === warnId)!;
-        return (
-          <div className="modal-backdrop" style={{ zIndex: 50 }}>
-            <div className="modal" style={{ width: 480 }}>
-              <div className="modal-step" style={{ color: 'var(--warn)' }}>Low-credibility source</div>
-              <h3 style={{ marginBottom: 10, fontSize: 16 }}>Think before you respond</h3>
-              <p className="muted" style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
-                <strong>{result.source}</strong> has a low credibility rating.
-                Responding publicly may give this story more attention than it deserves.
-                Many campaigns choose to monitor and ignore low-credibility sources.
-              </p>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button className="btn" style={{ flex: 1 }} onClick={() => setWarnId(null)}>
-                  Ignore this story
-                </button>
-                <button className="btn primary" style={{ flex: 1 }}
-                  onClick={() => { setWarnId(null); goToRebuttal(result); }}>
-                  Draft rebuttal anyway →
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
       {/* Empty state */}
       {filtered.length === 0 && (
         <div className="card" style={{ textAlign: 'center', padding: 40 }}>
@@ -146,16 +104,12 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
       {/* Results */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {filtered.map(result => {
-          const badge = CREDIBILITY_BADGE[result.credibility] ?? CREDIBILITY_BADGE.medium;
           const trending = trendingIds.has(result.id);
           return (
             <div key={result.id} className="card" style={{ padding: '16px 20px' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{result.source}</span>
-                  <span className={`tag cred-${result.credibility}`}>
-                    <span className="dot" />{badge.label}
-                  </span>
                   <span className="tag">{CATEGORY_LABEL[result.category] ?? result.category}</span>
                   {trending && <span className="tag trending">Trending</span>}
                 </div>
@@ -178,7 +132,7 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
 
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button className="btn primary" style={{ fontSize: 12, padding: '6px 14px' }}
-                  onClick={() => handleRebuttal(result)}>
+                  onClick={() => goToRebuttal(result)}>
                   Draft rebuttal
                 </button>
                 {result.url && (
