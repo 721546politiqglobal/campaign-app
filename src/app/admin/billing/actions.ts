@@ -7,6 +7,8 @@ import { stripe } from '@/lib/stripe';
 import { PLAN_DEFINITIONS } from '@/lib/billing-catalog';
 import { prefixedId } from '@/lib/store';
 
+const CORE_PLAN_IDS = new Set(PLAN_DEFINITIONS.map(d => d.id));
+
 export async function syncBillingPlansAction(): Promise<{ ok: boolean; error?: string }> {
   await requireAdmin();
   if (!stripe) return { ok: false, error: 'STRIPE_SECRET_KEY is not configured on this server.' };
@@ -175,6 +177,54 @@ export async function upsertBillingPlanAction(formData: FormData): Promise<{ ok:
     // otherwise surface as an unhandled 500 instead of the error banner
     // /admin/billing already renders for `{ ok: false, error }`.
     return { ok: false, error: e instanceof Error ? e.message : 'Could not save plan.' };
+  }
+
+  revalidatePath('/admin/billing');
+  return { ok: true };
+}
+
+export async function deleteBillingPlanAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
+  await requireAdmin();
+  if (!stripe) return { ok: false, error: 'STRIPE_SECRET_KEY is not configured on this server.' };
+
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Plan id is required.' };
+  // Starter, Pro, and Enterprise are the baseline catalog (re-created by
+  // syncBillingPlansAction) — deleting one would just have it reappear
+  // confusingly on the next sync, so only plans added beyond those are
+  // eligible for deletion.
+  if (CORE_PLAN_IDS.has(id)) {
+    return { ok: false, error: 'Starter, Pro, and Enterprise are core plans and can’t be deleted.' };
+  }
+
+  try {
+    const { count } = await adminDb.from('campaigns').select('id', { count: 'exact', head: true }).eq('plan_id', id);
+    if ((count ?? 0) > 0) {
+      return { ok: false, error: `Cannot delete: ${count} campaign${count === 1 ? ' is' : 's are'} still on this plan.` };
+    }
+
+    const plan = await throwOnError(
+      adminDb.from('billing_plans').select('*').eq('id', id).maybeSingle(),
+      'billing_plans.select',
+    );
+    if (!plan) return { ok: false, error: 'Plan not found.' };
+
+    await throwOnError(
+      adminDb.from('billing_plans').delete().eq('id', id),
+      'billing_plans.delete',
+    );
+
+    // Best-effort: archive the Stripe objects so they stop showing as active
+    // in the Stripe dashboard. Never fail the delete over this — the plan is
+    // already gone from our own catalog, which is the part that matters.
+    try {
+      if (plan.stripe_flat_price_id) await stripe.prices.update(plan.stripe_flat_price_id as string, { active: false });
+      if (plan.stripe_product_id) await stripe.products.update(plan.stripe_product_id as string, { active: false });
+    } catch {
+      // ignored — see comment above
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Could not delete plan.' };
   }
 
   revalidatePath('/admin/billing');

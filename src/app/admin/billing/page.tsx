@@ -1,8 +1,11 @@
 import { redirect } from 'next/navigation';
 import { getBillingPlans } from '@/lib/data';
-import { syncBillingPlansAction, upsertBillingPlanAction } from './actions';
+import { syncBillingPlansAction, upsertBillingPlanAction, deleteBillingPlanAction } from './actions';
+import { PLAN_DEFINITIONS } from '@/lib/billing-catalog';
 import type { BillingPlan } from '@/lib/data';
 import { SubmitButton } from '@/components/SubmitButton';
+
+const CORE_PLAN_IDS = new Set(PLAN_DEFINITIONS.map(d => d.id));
 
 function fmt(cents: number) {
   return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -86,6 +89,15 @@ export default async function AdminBillingPage({
     redirect('/admin/billing?saved=synced');
   }
 
+  async function del(formData: FormData) {
+    'use server';
+    const result = await deleteBillingPlanAction(formData);
+    if (!result.ok) {
+      redirect('/admin/billing?error=' + encodeURIComponent(result.error ?? 'Delete failed.'));
+    }
+    redirect('/admin/billing?saved=deleted');
+  }
+
   return (
     <div>
       <div className="pagehead">
@@ -111,11 +123,13 @@ export default async function AdminBillingPage({
               {searchParams.saved === 'created' && 'Plan created'}
               {searchParams.saved === 'updated' && 'Plan saved'}
               {searchParams.saved === 'synced' && 'Starter plans synced'}
+              {searchParams.saved === 'deleted' && 'Plan deleted'}
             </div>
             <div className="b">
               {searchParams.saved === 'created' && 'The new plan is live in Stripe and ready to assign to a campaign.'}
               {searchParams.saved === 'updated' && 'Your changes are saved — price or interval changes are already reflected in Stripe.'}
               {searchParams.saved === 'synced' && 'Starter, Pro, and Enterprise are ready to edit or assign below.'}
+              {searchParams.saved === 'deleted' && 'The plan is removed and its Stripe product/price archived.'}
             </div>
           </div>
         </div>
@@ -136,8 +150,14 @@ export default async function AdminBillingPage({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 24 }}>
         {plans.map(p => (
           <div key={p.id}>
-            <div className="eyebrow" style={{ marginBottom: 6 }}>
-              {p.name} · {fmt(p.monthlyPriceCents)}{intervalLabel(p.billingInterval)}
+            <div className="eyebrow" style={{ marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{p.name} · {fmt(p.monthlyPriceCents)}{intervalLabel(p.billingInterval)}</span>
+              {!CORE_PLAN_IDS.has(p.id) && (
+                <form action={del}>
+                  <input type="hidden" name="id" value={p.id} />
+                  <SubmitButton className="btn" style={{ fontSize: 12 }} pendingText="Deleting…">Delete plan</SubmitButton>
+                </form>
+              )}
             </div>
             <PlanForm plan={p} />
           </div>
