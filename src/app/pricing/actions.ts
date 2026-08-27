@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { requireSession } from '@/lib/session';
 import { stripe } from '@/lib/stripe';
+import { adminDb } from '@/lib/supabase';
 import { getCampaign, getBillingPlan } from '@/lib/data';
 import { can } from '@/lib/permissions';
 
@@ -74,6 +75,12 @@ export async function changePlanAction(planId: string): Promise<{ ok: boolean; e
     // already has.
     return { ok: false, error: e instanceof Error ? e.message : 'Could not change plan.' };
   }
+
+  // The Stripe subscription's price is updated above, but nothing else in the
+  // app knows the plan changed until this is written — without it, /billing
+  // (and every quota check) kept reading the OLD plan forever even though
+  // Stripe had genuinely switched.
+  await adminDb.from('campaigns').update({ plan_id: plan.id }).eq('id', s.campaignId);
 
   return { ok: true };
 }

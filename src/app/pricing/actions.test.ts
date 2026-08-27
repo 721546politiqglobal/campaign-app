@@ -10,14 +10,18 @@ const redirect = vi.fn((to: string) => { throw new RedirectError(to); });
 vi.mock('next/navigation', () => ({ redirect }));
 
 const checkoutCreate = vi.fn(() => Promise.resolve({ url: 'https://checkout.stripe.test/s/1' } as any));
-const subscriptionsRetrieve = vi.fn();
-const subscriptionsUpdate = vi.fn();
+const subscriptionsRetrieve = vi.fn(() => Promise.resolve({ items: { data: [{ id: 'si_1' }] } } as any));
+const subscriptionsUpdate = vi.fn(() => Promise.resolve({} as any));
 vi.mock('@/lib/stripe', () => ({
   stripe: {
     checkout: { sessions: { create: checkoutCreate } },
     subscriptions: { retrieve: subscriptionsRetrieve, update: subscriptionsUpdate },
   },
 }));
+
+const dbEq = vi.fn(() => Promise.resolve({ error: null }));
+const dbUpdate = vi.fn(() => ({ eq: dbEq }));
+vi.mock('@/lib/supabase', () => ({ adminDb: { from: vi.fn(() => ({ update: dbUpdate })) } }));
 
 const campaign = {
   id: 'c-1', name: 'C', planId: null,
@@ -34,6 +38,9 @@ beforeEach(() => {
   checkoutCreate.mockResolvedValue({ url: 'https://checkout.stripe.test/s/1' } as any);
   getCampaign.mockResolvedValue({ ...campaign } as any);
   getBillingPlan.mockResolvedValue({ id: 'pro', stripeFlatPriceId: 'price_pro' } as any);
+  subscriptionsRetrieve.mockResolvedValue({ items: { data: [{ id: 'si_1' }] } } as any);
+  subscriptionsUpdate.mockResolvedValue({} as any);
+  dbEq.mockResolvedValue({ error: null });
   process.env.NEXT_PUBLIC_SITE_URL = 'https://app.test';
 });
 
@@ -120,5 +127,30 @@ describe('changePlanAction Stripe API failure', () => {
     subscriptionsRetrieve.mockRejectedValue(new Error("No such subscription: 'sub_live'"));
     const result = await changePlanAction('pro');
     expect(result).toEqual({ ok: false, error: "No such subscription: 'sub_live'" });
+  });
+});
+
+// Regression: the Stripe subscription's price updated successfully, but
+// campaigns.plan_id was never written back to the database — the "Switch to
+// this plan" flow (pricing/page.tsx) redirects to /billing on ok:true
+// regardless, so the page kept showing the OLD plan forever even though
+// Stripe had genuinely switched. Verified live.
+describe('changePlanAction persists the new plan_id after a successful Stripe update', () => {
+  it('updates campaigns.plan_id to the new plan on success', async () => {
+    const { changePlanAction } = await import('./actions');
+    getCampaign.mockResolvedValue({ ...campaign, stripeSubscriptionId: 'sub_live' } as any);
+    const result = await changePlanAction('pro');
+    expect(result).toEqual({ ok: true });
+    expect(dbUpdate).toHaveBeenCalledWith(expect.objectContaining({ plan_id: 'pro' }));
+    expect(dbEq).toHaveBeenCalledWith('id', 'c-1');
+  });
+
+  it('does not touch the database when the Stripe update fails', async () => {
+    const { changePlanAction } = await import('./actions');
+    getCampaign.mockResolvedValue({ ...campaign, stripeSubscriptionId: 'sub_live' } as any);
+    subscriptionsUpdate.mockRejectedValue(new Error('Stripe down'));
+    const result = await changePlanAction('pro');
+    expect(result.ok).toBe(false);
+    expect(dbUpdate).not.toHaveBeenCalled();
   });
 });
