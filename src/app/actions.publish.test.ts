@@ -39,6 +39,27 @@ describe('publishAction does not mark published when everything fails', () => {
     expect(lifecycle.markPublished).not.toHaveBeenCalled();
   });
 
+  // Instagram/TikTok reject text-only posts with HTTP 400 — catch this before
+  // ever calling the publisher, with an error that actually explains why.
+  it('rejects instagram/tiktok up front for content with no media, without calling the publisher', async () => {
+    get.mockResolvedValue({ ...ITEM, mediaUrl: null });
+    const { publishAction } = await import('./actions');
+    const r = await publishAction('x', ['instagram', 'tiktok', 'facebook'] as any);
+    expect(r.ok).toBe(false);
+    expect(r).toMatchObject({ error: expect.stringContaining('instagram') });
+    expect(publish).not.toHaveBeenCalled();
+    expect(lifecycle.markPublished).not.toHaveBeenCalled();
+  });
+
+  it('allows instagram/tiktok when the content has media attached', async () => {
+    get.mockResolvedValue({ ...ITEM, mediaUrl: 'https://media.test/v.mp4' });
+    publish.mockResolvedValue([{ platform: 'instagram', status: 'scheduled' }]);
+    const { publishAction } = await import('./actions');
+    const r = await publishAction('x', ['instagram'] as any);
+    expect(r.ok).toBe(true);
+    expect(publish).toHaveBeenCalled();
+  });
+
   it('marks published when at least one platform succeeds', async () => {
     get.mockResolvedValue(ITEM);
     publish.mockResolvedValue([{ platform: 'x', status: 'scheduled' }]);

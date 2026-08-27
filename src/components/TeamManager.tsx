@@ -180,7 +180,7 @@ export function TeamManager({
           <div className="spacer-y" />
           {seatLimitReached ? (
             <div className="banner warn">
-              <div className="t">Seat limit reached</div>
+              <div className="t">Member limit reached</div>
               <div className="b">
                 Your plan doesn&rsquo;t have room for more teammates. <a href="/pricing">Upgrade your plan</a> to invite more.
               </div>

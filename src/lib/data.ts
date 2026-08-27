@@ -6,6 +6,7 @@ import { ContentStatus, ContentType } from '@/domain/types';
 
 export interface Campaign {
   id: string; name: string; jurisdictions: string[]; tags: string[];
+  defaultDisclosureText: string | null;
   planId: string | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
@@ -26,6 +27,7 @@ export async function getCampaign(campaignId: string): Promise<Campaign | null> 
   if (!data) return null;
   return {
     id: data.id, name: data.name, jurisdictions: data.jurisdictions, tags: data.tags ?? [],
+    defaultDisclosureText: data.default_disclosure_text ?? null,
     planId: data.plan_id ?? null,
     stripeCustomerId: data.stripe_customer_id ?? null,
     stripeSubscriptionId: data.stripe_subscription_id ?? null,
@@ -108,16 +110,6 @@ export async function getMonitoringResults(campaignId: string): Promise<Monitori
   }));
 }
 
-export async function getDisclosureRules() {
-  const { data } = await adminDb.from('disclosure_rules').select('*');
-  return (data ?? []).map(r => ({
-    jurisdiction: r.jurisdiction, requiresAiLabel: r.requires_ai_label,
-    requiredText: r.required_text, placement: r.placement,
-    blackoutDaysBeforeElection: r.blackout_days_before_election,
-    needsLegalReview: r.needs_legal_review,
-  }));
-}
-
 export async function getMonthlySpend(campaignId: string): Promise<number> {
   // Window on the Stripe billing period (falling back to UTC month) so this
   // matches the cap guard (reserve_usage) and both spend displays (BILL-11/UX-1).
@@ -169,11 +161,6 @@ export interface ContentItemWithCampaign {
   id: string; campaignId: string; campaignName: string;
   type: string; title: string; status: string;
   isAiGenerated: boolean; createdAt: string;
-}
-
-export interface DisclosureRule {
-  jurisdiction: string; requiresAiLabel: boolean; requiredText: string | null;
-  placement: string; blackoutDaysBeforeElection: number | null; needsLegalReview: boolean;
 }
 
 export interface BillingPlan {
@@ -246,6 +233,7 @@ export async function getAllCampaigns(): Promise<CampaignWithStats[]> {
     const campaignStart = windowStarts.get(camp.id)!;
     return {
       id: camp.id, name: camp.name, jurisdictions: camp.jurisdictions, tags: camp.tags ?? [],
+      defaultDisclosureText: camp.default_disclosure_text ?? null,
       createdAt: camp.created_at,
       planId: camp.plan_id ?? null,
       stripeCustomerId: camp.stripe_customer_id ?? null,
@@ -311,15 +299,6 @@ export async function getAllAuditEntries(limit = 100) {
     actorUserId: r.actor_user_id, actorName: userMap[r.actor_user_id] ?? r.actor_user_id ?? 'system',
     action: r.action, entityType: r.entity_type, entityId: r.entity_id,
     details: r.details, createdAt: r.created_at,
-  }));
-}
-
-export async function getAllDisclosureRules(): Promise<DisclosureRule[]> {
-  const { data } = await adminDb.from('disclosure_rules').select('*').order('jurisdiction');
-  return (data ?? []).map(r => ({
-    jurisdiction: r.jurisdiction, requiresAiLabel: r.requires_ai_label,
-    requiredText: r.required_text, placement: r.placement,
-    blackoutDaysBeforeElection: r.blackout_days_before_election, needsLegalReview: r.needs_legal_review,
   }));
 }
 

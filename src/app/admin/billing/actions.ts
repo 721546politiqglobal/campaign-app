@@ -106,8 +106,23 @@ export async function upsertBillingPlanAction(formData: FormData): Promise<{ ok:
     let stripeProductId = existing?.stripe_product_id as string | undefined;
     let stripeFlatPriceId = existing?.stripe_flat_price_id as string | undefined;
     const retiredPriceIds: string[] = (existing?.retired_stripe_price_ids as string[] | undefined) ?? [];
-    const priceOrIntervalChanged =
+    let priceOrIntervalChanged =
       !existing || existing.monthly_price_cents !== priceCents || existing.billing_interval !== billingInterval;
+
+    // The stored product id can belong to a different Stripe mode/account than
+    // whatever key is active right now (e.g. synced once against a test-mode
+    // key, now running with a live key) — verify it still exists before
+    // reusing it, otherwise prices.create below fails with "No such product"
+    // and this action can never repair itself. Force a price rotation too:
+    // the stored price belongs to that same stale product.
+    if (stripeProductId) {
+      try {
+        await stripe.products.retrieve(stripeProductId);
+      } catch {
+        stripeProductId = undefined;
+        priceOrIntervalChanged = true;
+      }
+    }
 
     if (!stripeProductId) {
       const product = await stripe.products.create({ name: `${name} plan` });

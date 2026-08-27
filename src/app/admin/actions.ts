@@ -71,9 +71,9 @@ export async function createCampaignAction(formData: FormData) {
   const name = String(formData.get('name') ?? '').trim();
   const jurisdictionsInput = String(formData.get('jurisdictions') ?? '')
     .split(',').map(s => s.trim()).filter(Boolean);
-  // A campaign with no jurisdiction silently disables all disclosure
-  // requirements (DisclosureEngine.requiredFor returns [] for an empty list) —
-  // always fall back to a default rather than allowing an empty array through.
+  // Jurisdictions no longer drive disclosure requirements (that's now a single
+  // campaign-level default in Settings) — this is just informational metadata,
+  // so default it rather than leaving it empty.
   const jurisdictions = jurisdictionsInput.length ? jurisdictionsInput : ['US-FEDERAL'];
 
   if (!name) return;
@@ -292,28 +292,6 @@ export async function removeUserAction(userId: string, campaignId: string) {
   );
   revalidatePath(`/admin/campaigns/${campaignId}`);
   revalidatePath('/admin/users');
-}
-
-export async function updateDisclosureRuleAction(formData: FormData) {
-  await requireAdmin();
-  const jurisdiction = String(formData.get('jurisdiction'));
-  const requiredText = String(formData.get('requiredText') ?? '').trim() || null;
-  const placement = String(formData.get('placement') ?? 'overlay');
-
-  // blackout_days_before_election is intentionally NOT written here: it was
-  // never enforced anywhere and enforcement needs a per-campaign election date
-  // the schema lacks (audit finding DATA-13). Column retained for future use.
-  await throwOnError(
-    adminDb.from('disclosure_rules').update({
-      requires_ai_label: formData.get('requiresAiLabel') === 'on',
-      required_text: requiredText,
-      placement,
-      needs_legal_review: formData.get('needsLegalReview') === 'on',
-    }).eq('jurisdiction', jurisdiction),
-    'disclosure_rules.update',
-  );
-
-  revalidatePath('/admin/disclosure-rules');
 }
 
 export async function adminLogoutAction() {

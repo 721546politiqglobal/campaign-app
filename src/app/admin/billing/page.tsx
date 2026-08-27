@@ -47,7 +47,7 @@ function PlanForm({ plan }: { plan?: BillingPlan }) {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12 }}>
         <div>
-          <label className="field-label">Seat limit</label>
+          <label className="field-label">Member limit</label>
           <input name="seatLimit" type="number" min="0" className="input" defaultValue={plan?.seatLimit ?? ''} placeholder="Unlimited" />
         </div>
         <div>

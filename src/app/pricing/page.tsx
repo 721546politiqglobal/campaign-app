@@ -79,7 +79,7 @@ export default async function PricingPage({
                   </div>
                 </div>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
-                  <li>{plan.seatLimit ?? 'Unlimited'} seats</li>
+                  <li>{plan.seatLimit ?? 'Unlimited'} team members</li>
                   <li>{plan.avatarLimit ?? 'Unlimited'} avatars</li>
                   <li>{plan.contentLimitMonthly ?? 'Unlimited'} content pieces/period</li>
                   <li>{plan.videoLimitDaily ?? 'Unlimited'} videos/day</li>

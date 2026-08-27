@@ -110,10 +110,16 @@ export function ContentEditor() {
             onChange={e => setBody(e.target.value)} required style={{ minHeight: 180 }} />
           <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center' }}>
             <button type="submit" className="btn primary">Save draft →</button>
-            <label className="checkrow" style={{ fontSize: 13 }}>
-              <input type="checkbox" checked={isAi} onChange={e => setIsAi(e.target.checked)} />
-              AI-generated (adds required disclosure)
-            </label>
+            {type === 'reel' ? (
+              <span className="muted" style={{ fontSize: 13 }}>
+                Reels always require AI disclosure — an avatar video is generated regardless of script authorship.
+              </span>
+            ) : (
+              <label className="checkrow" style={{ fontSize: 13 }}>
+                <input type="checkbox" checked={isAi} onChange={e => setIsAi(e.target.checked)} />
+                AI-generated (adds required disclosure)
+              </label>
+            )}
           </div>
         </div>
       )}

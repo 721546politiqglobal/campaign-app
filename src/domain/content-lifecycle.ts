@@ -2,7 +2,6 @@ import {
   ContentItem, ContentStatus,
   ContentRepo, ApprovalRepo, DisclosureRepo, AuditRepo,
 } from './types';
-import { DisclosureEngine } from './disclosure';
 
 const TRANSITIONS: Record<ContentStatus, ContentStatus[]> = {
   draft:     ['in_review', 'archived'],
@@ -30,7 +29,6 @@ export class ContentLifecycle {
     private approvals: ApprovalRepo,
     private disclosures: DisclosureRepo,
     private audit: AuditRepo,
-    private disclosureEngine: DisclosureEngine,
   ) {}
 
   async submitForReview(itemId: string, actorUserId: string): Promise<void> {
@@ -63,18 +61,12 @@ export class ContentLifecycle {
     if (!(await this.approvals.hasApproval(itemId))) {
       throw new GateError('Can\u2019t schedule: no human approval on record.');
     }
-    // Gate on whether a disclosure is actually REQUIRED, not merely on
-    // whether any disclosure row exists \u2014 a jurisdiction that legitimately
-    // requires none (requiresAiLabel: false, or unconfigured-as-exempt) would
-    // otherwise permanently block scheduling: confirmDisclosureAction only
-    // ever inserts rows for disclosures that are actually required, so zero
-    // required always meant zero rows, and this check couldn't tell that
-    // apart from "the disclosure step was never completed."
-    if (item.isAiGenerated) {
-      const required = await this.disclosureEngine.requiredFor(item.targetJurisdictions, item.isAiGenerated);
-      if (required.length > 0 && (await this.disclosures.listFor(itemId)).length === 0) {
-        throw new GateError('Can\u2019t schedule: AI content needs a disclosure attached first.');
-      }
+    // Every AI-generated item now always requires exactly one disclosure (the
+    // campaign's default text, or a generic fallback) \u2014 there's no more
+    // per-jurisdiction "genuinely requires none" exemption, so this can gate
+    // on "any row exists" directly.
+    if (item.isAiGenerated && (await this.disclosures.listFor(itemId)).length === 0) {
+      throw new GateError('Can\u2019t schedule: AI content needs a disclosure attached first.');
     }
     await this.content.setStatus(itemId, 'scheduled');
     await this.log(item, actorUserId, 'schedule');

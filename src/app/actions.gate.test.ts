@@ -5,7 +5,7 @@ const session = { userId: 'u-1', name: 'Owner', role: 'owner' as const, campaign
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', () => ({ redirect: vi.fn(), notFound: vi.fn(() => { throw new Error('NEXT_NOT_FOUND'); }) }));
 vi.mock('@/lib/session', () => ({ requireSession: vi.fn(() => session), signInAs: vi.fn(), signOut: vi.fn() }));
-vi.mock('@/lib/data', () => ({ getCampaign: vi.fn(() => Promise.resolve({ id: 'c-1', jurisdictions: [], monthlyCostCapCents: 100_00 })) }));
+vi.mock('@/lib/data', () => ({ getCampaign: vi.fn(() => Promise.resolve({ id: 'c-1', jurisdictions: [], defaultDisclosureText: null, monthlyCostCapCents: 100_00 })) }));
 
 const updateEq = vi.fn(() => Promise.resolve({ error: null }));
 const update = vi.fn(() => ({ eq: updateEq }));
@@ -25,7 +25,7 @@ const lifecycle = {
   markPublished: vi.fn(() => Promise.resolve()),
 };
 vi.mock('@/lib/services', () => ({
-  lifecycle, disclosureEngine: { requiredFor: vi.fn(() => []) },
+  lifecycle, disclosureEngine: { requiredFor: vi.fn(() => ({ disclosureText: 'AI disclosure', placement: 'overlay' })) },
   quotaGate: { checkAndIncrement: vi.fn(), checkAvatarCap: vi.fn(), release: vi.fn() }, billingGate: { check: vi.fn() },
   contentGenerator: {}, publisher: { publish: vi.fn(() => []) }, videoProvider: {}, voiceProvider: {}, photoAvatarProvider: {},
 }));

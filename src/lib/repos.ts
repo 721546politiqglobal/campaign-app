@@ -2,7 +2,6 @@ import { adminDb, throwOnError } from './supabase';
 import {
   ContentItem, ContentStatus, ContentRepo, ApprovalRepo, DisclosureRepo, AuditRepo,
 } from '@/domain/types';
-import { DisclosureRule, DisclosureRulesRepo } from '@/domain/disclosure';
 import { BillingRepo, CampaignBillingInfo } from '@/domain/billing';
 import { QuotaRepo } from '@/domain/quota';
 
@@ -24,17 +23,6 @@ function toContentItem(r: Record<string, unknown>): ContentItem {
     createdBy: r.created_by as string,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
-  };
-}
-
-function toDisclosureRule(r: Record<string, unknown>): DisclosureRule {
-  return {
-    jurisdiction: r.jurisdiction as string,
-    requiresAiLabel: r.requires_ai_label as boolean,
-    requiredText: r.required_text as string | null,
-    placement: r.placement as string,
-    blackoutDaysBeforeElection: r.blackout_days_before_election as number | null,
-    needsLegalReview: r.needs_legal_review as boolean,
   };
 }
 
@@ -84,7 +72,6 @@ export const disclosureRepo: DisclosureRepo = {
       adminDb.from('disclosure_records').insert({
         content_item_id: rec.contentItemId,
         campaign_id: rec.campaignId,
-        jurisdiction: rec.jurisdiction,
         disclosure_text: rec.disclosureText,
         placement: rec.placement,
       }),
@@ -99,7 +86,6 @@ export const disclosureRepo: DisclosureRepo = {
       id: r.id,
       contentItemId: r.content_item_id,
       campaignId: r.campaign_id,
-      jurisdiction: r.jurisdiction,
       disclosureText: r.disclosure_text,
       placement: r.placement,
       appliedAt: r.applied_at,
@@ -120,19 +106,6 @@ export const auditRepo: AuditRepo = {
       }),
       'audit_entries.append',
     );
-  },
-};
-
-export const rulesRepo: DisclosureRulesRepo = {
-  async get(jurisdiction) {
-    const { data, error } = await adminDb.from('disclosure_rules')
-      .select('*').eq('jurisdiction', jurisdiction).maybeSingle();
-    if (error) throw error;
-    return data ? toDisclosureRule(data) : null;
-  },
-  async all() {
-    const { data } = await adminDb.from('disclosure_rules').select('*');
-    return (data ?? []).map(toDisclosureRule);
   },
 };
 
@@ -177,4 +150,4 @@ export const quotaRepo: QuotaRepo = {
   },
 };
 
-export type { ContentItem, DisclosureRule };
+export type { ContentItem };

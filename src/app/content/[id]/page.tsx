@@ -5,30 +5,30 @@ import { StatusPill } from '@/components/StatusPill';
 import { ContentWizard } from '@/components/ContentWizard';
 import { requireSession } from '@/lib/session';
 import { disclosureEngine } from '@/lib/services';
-import { getContentItem, getDisclosuresForItem, getAuditEntries } from '@/lib/data';
+import { getContentItem, getDisclosuresForItem, getAuditEntries, getCampaign } from '@/lib/data';
 import { getCandidateProfile } from '@/lib/candidate';
 
 export default async function ContentDetail({ params }: { params: { id: string } }) {
   const s = await requireSession();
-  const [item, discs, log, profile] = await Promise.all([
+  const [item, discs, log, profile, campaign] = await Promise.all([
     getContentItem(params.id),
     getDisclosuresForItem(params.id),
     getAuditEntries(params.id),
     getCandidateProfile(s.campaignId),
+    getCampaign(s.campaignId),
   ]);
   if (!item || item.campaignId !== s.campaignId) notFound();
 
   const attachedDisclosures = discs.length > 0;
-  const requiredDisclosures =
+  // AI-generated content now always requires exactly one disclosure (the
+  // campaign default, or a generic fallback) — there's no more "genuinely
+  // requires none" exemption, so this is satisfied only once a real record
+  // is attached.
+  const requiredDisclosure =
     item.isAiGenerated && !attachedDisclosures
-      ? await disclosureEngine.requiredFor(item.targetJurisdictions, item.isAiGenerated)
-      : [];
-  // Cleared either because real disclosures are attached, or because this
-  // jurisdiction genuinely requires none — mirrors the same distinction
-  // ContentLifecycle.schedule()'s gate makes. Without the second half, a
-  // zero-required jurisdiction could never satisfy `discs.length > 0` and
-  // the wizard would show the disclosure step forever.
-  const hasDisclosure = attachedDisclosures || (item.isAiGenerated && requiredDisclosures.length === 0);
+      ? disclosureEngine.requiredFor(item.isAiGenerated, campaign?.defaultDisclosureText ?? null)
+      : null;
+  const hasDisclosure = attachedDisclosures;
 
   return (
     <AppFrame>
@@ -48,7 +48,7 @@ export default async function ContentDetail({ params }: { params: { id: string }
       <ContentWizard
         item={item}
         hasDisclosure={hasDisclosure}
-        requiredDisclosures={requiredDisclosures}
+        requiredDisclosure={requiredDisclosure}
         videoSettings={{
           avatarId: profile?.heygenAvatarId ?? undefined,
           voiceId: profile?.elevenLabsVoiceId ?? undefined,

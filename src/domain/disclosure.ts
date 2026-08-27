@@ -1,50 +1,23 @@
-export interface DisclosureRule {
-  jurisdiction: string;
-  requiresAiLabel: boolean;
-  requiredText: string | null;
-  placement: string;
-  blackoutDaysBeforeElection: number | null;
-  needsLegalReview: boolean;
-}
-
-export interface DisclosureRulesRepo {
-  get(jurisdiction: string): Promise<DisclosureRule | null>;
-  all(): Promise<DisclosureRule[]>;
-}
-
 export interface RequiredDisclosure {
-  jurisdiction: string;
   disclosureText: string;
   placement: string;
-  needsLegalReview: boolean;
 }
 
 const DEFAULT_LABEL = 'This content was generated or substantially altered using AI.';
+const DEFAULT_PLACEMENT = 'overlay';
 
-// Publishing must attach every distinct jurisdiction's required text, not just
-// one — a content item can target multiple jurisdictions with different rules.
+// Publishing must attach every distinct disclosure's text, not just one — kept
+// generic (dedup + join) even though a content item now carries at most one
+// disclosure record, since combineDisclosureText's contract is "any set of
+// disclosure records," not "exactly the current gate's shape."
 export function combineDisclosureText(records: { disclosureText: string }[]): string {
   return [...new Set(records.map(r => r.disclosureText).filter(Boolean))].join('\n\n');
 }
 
 export class DisclosureEngine {
-  constructor(private rules: DisclosureRulesRepo) {}
-
-  async requiredFor(jurisdictions: string[], isAiGenerated: boolean): Promise<RequiredDisclosure[]> {
-    if (!isAiGenerated) return [];
-    const out: RequiredDisclosure[] = [];
-    for (const j of new Set(jurisdictions)) {
-      const rule = await this.rules.get(j);
-      // No rule row means "not configured yet," not "exempt" — only an
-      // explicit requiresAiLabel: false on a real rule is a genuine opt-out.
-      if (rule && !rule.requiresAiLabel) continue;
-      out.push({
-        jurisdiction: j,
-        disclosureText: rule?.requiredText ?? DEFAULT_LABEL,
-        placement: rule?.placement ?? 'overlay',
-        needsLegalReview: rule?.needsLegalReview ?? true,
-      });
-    }
-    return out;
+  requiredFor(isAiGenerated: boolean, campaignDefaultText: string | null): RequiredDisclosure | null {
+    if (!isAiGenerated) return null;
+    const text = campaignDefaultText?.trim();
+    return { disclosureText: text || DEFAULT_LABEL, placement: DEFAULT_PLACEMENT };
   }
 }

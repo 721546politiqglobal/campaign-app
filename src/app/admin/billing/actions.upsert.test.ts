@@ -5,10 +5,14 @@ vi.mock('@/lib/session', () => ({ requireAdmin: vi.fn(async () => ({ userId: 'sa
 vi.mock('@/lib/store', () => ({ prefixedId: vi.fn(() => 'plan-new') }));
 
 const productsCreate = vi.fn(async () => ({ id: 'prod_new' }));
+const productsRetrieve = vi.fn(async () => ({ id: 'prod_existing' }));
 const pricesCreate = vi.fn(async () => ({ id: 'price_new' }));
 const pricesUpdate = vi.fn(async () => ({}));
 vi.mock('@/lib/stripe', () => ({
-  stripe: { products: { create: productsCreate }, prices: { create: pricesCreate, update: pricesUpdate } },
+  stripe: {
+    products: { create: productsCreate, retrieve: productsRetrieve },
+    prices: { create: pricesCreate, update: pricesUpdate },
+  },
 }));
 
 const maybeSingle = vi.fn(
@@ -179,6 +183,46 @@ describe('upsertBillingPlanAction', () => {
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/db unavailable/);
     expect(pricesUpdate).not.toHaveBeenCalled();
+  });
+
+  // Regression: the stored stripe_product_id can belong to a different Stripe
+  // mode/account than the key currently active (e.g. synced once against a
+  // test-mode key, now running with a live key). Blindly reusing it made
+  // prices.create fail with "No such product" and left the plan permanently
+  // unrepairable through this same action — verified live.
+  it('mints a fresh product and price when the stored product id no longer exists under the active key', async () => {
+    maybeSingle.mockResolvedValue({
+      data: {
+        id: 'plan-starter', monthly_price_cents: 4900, billing_interval: 'week',
+        stripe_product_id: 'prod_stale', stripe_flat_price_id: 'price_old',
+      },
+    });
+    productsRetrieve.mockRejectedValueOnce(new Error("No such product: 'prod_stale'"));
+    const { upsertBillingPlanAction } = await import('./actions');
+    // Price/interval unchanged from the stored row — without the fix this
+    // would skip price rotation entirely and never touch Stripe.
+    const r = await upsertBillingPlanAction(fd({ id: 'plan-starter' }));
+    expect(r).toEqual({ ok: true });
+    expect(productsRetrieve).toHaveBeenCalledWith('prod_stale');
+    expect(productsCreate).toHaveBeenCalledWith({ name: 'Weekly Starter plan' });
+    expect(pricesCreate).toHaveBeenCalledWith(expect.objectContaining({ product: 'prod_new' }));
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
+      stripe_product_id: 'prod_new', stripe_flat_price_id: 'price_new',
+    }));
+  });
+
+  it('reuses the stored product id when it still exists under the active key', async () => {
+    maybeSingle.mockResolvedValue({
+      data: {
+        id: 'plan-starter', monthly_price_cents: 4900, billing_interval: 'week',
+        stripe_product_id: 'prod_existing', stripe_flat_price_id: 'price_old',
+      },
+    });
+    const { upsertBillingPlanAction } = await import('./actions');
+    await upsertBillingPlanAction(fd({ id: 'plan-starter', seatLimit: '99' }));
+    expect(productsRetrieve).toHaveBeenCalledWith('prod_existing');
+    expect(productsCreate).not.toHaveBeenCalled();
+    expect(pricesCreate).not.toHaveBeenCalled();
   });
 
   it('returns { ok: false } instead of throwing when Stripe rejects the call', async () => {

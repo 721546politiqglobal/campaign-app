@@ -481,7 +481,8 @@ export class AyrsharePublisher implements Publisher {
         });
         const json = await res.json();
         if (!res.ok) {
-          results.push({ platform, status: 'failed', error: json.message ?? `HTTP ${res.status}` });
+          const message = json.errors?.[0]?.message ?? json.message;
+          results.push({ platform, status: 'failed', error: message ?? `HTTP ${res.status}` });
         } else {
           // Ayrshare's analytics endpoint (/api/analytics/post) only recognizes
           // the top-level `id` from this response — the per-platform

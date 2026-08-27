@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { ContentLifecycle, GateError } from './content-lifecycle';
-import type { RequiredDisclosure } from './disclosure';
 import type {
   ContentItem, ContentStatus, DisclosureRecord,
   ContentRepo, ApprovalRepo, DisclosureRepo, AuditRepo,
@@ -15,14 +14,7 @@ function makeItem(over: Partial<ContentItem> = {}): ContentItem {
   };
 }
 
-// A stand-in for the real DisclosureEngine: `required` simulates what
-// jurisdiction rules actually demand, independent of what's been attached —
-// exactly the distinction the schedule() gate needs to get right.
-function fakeEngine(required: RequiredDisclosure[] = []) {
-  return { async requiredFor() { return required; } };
-}
-
-function fakes(item: ContentItem, opts: { approved?: boolean; disclosures?: DisclosureRecord[]; required?: RequiredDisclosure[] } = {}) {
+function fakes(item: ContentItem, opts: { approved?: boolean; disclosures?: DisclosureRecord[] } = {}) {
   const state = { status: item.status };
   const audit: string[] = [];
   const content: ContentRepo = {
@@ -38,13 +30,9 @@ function fakes(item: ContentItem, opts: { approved?: boolean; disclosures?: Disc
     async listFor() { return opts.disclosures ?? []; },
   };
   const auditRepo: AuditRepo = { async append(e) { audit.push(e.action); } };
-  const lifecycle = new ContentLifecycle(content, approvals, disclosures, auditRepo, fakeEngine(opts.required) as never);
+  const lifecycle = new ContentLifecycle(content, approvals, disclosures, auditRepo);
   return { lifecycle, state, audit };
 }
-
-const A_REQUIRED_DISCLOSURE: RequiredDisclosure = {
-  jurisdiction: 'US-CA', disclosureText: 'AI disclosure', placement: 'overlay', needsLegalReview: false,
-};
 
 describe('ContentLifecycle.schedule — the hard gate', () => {
   it('blocks scheduling when there is no human approval on record', async () => {
@@ -56,7 +44,7 @@ describe('ContentLifecycle.schedule — the hard gate', () => {
 
   it('blocks scheduling AI content that has no disclosure attached, even when approved', async () => {
     const item = makeItem({ status: 'approved', isAiGenerated: true });
-    const { lifecycle, state } = fakes(item, { approved: true, disclosures: [], required: [A_REQUIRED_DISCLOSURE] });
+    const { lifecycle, state } = fakes(item, { approved: true, disclosures: [] });
     await expect(lifecycle.schedule('ci-1', 'u-1')).rejects.toThrow(/needs a disclosure/);
     expect(state.status).toBe('approved');
   });
@@ -64,27 +52,13 @@ describe('ContentLifecycle.schedule — the hard gate', () => {
   it('schedules AI content once approved AND a disclosure is attached', async () => {
     const item = makeItem({ status: 'approved', isAiGenerated: true });
     const disc: DisclosureRecord = {
-      id: 'd-1', contentItemId: 'ci-1', campaignId: 'c-1', jurisdiction: 'US-CA',
+      id: 'd-1', contentItemId: 'ci-1', campaignId: 'c-1',
       disclosureText: 'AI disclosure', placement: 'overlay', appliedAt: '2026-07-15T00:00:00Z',
     };
-    const { lifecycle, state, audit } = fakes(item, { approved: true, disclosures: [disc], required: [A_REQUIRED_DISCLOSURE] });
+    const { lifecycle, state, audit } = fakes(item, { approved: true, disclosures: [disc] });
     await lifecycle.schedule('ci-1', 'u-1');
     expect(state.status).toBe('scheduled');
     expect(audit).toContain('schedule');
-  });
-
-  // Regression: a jurisdiction can legitimately require zero disclosures
-  // (requiresAiLabel: false, or simply unconfigured-as-exempt). In that case
-  // confirmDisclosureAction never inserts any row — there's nothing required
-  // to attach — so gating on "any row exists" made AI content in such a
-  // jurisdiction permanently unschedulable, even after the disclosure step
-  // correctly reported "no disclosure required" and was confirmed. Verified
-  // live: this happened for real with the shipped US-FEDERAL/US-CA config.
-  it('schedules AI content with zero disclosure rows when the jurisdiction genuinely requires none', async () => {
-    const item = makeItem({ status: 'approved', isAiGenerated: true });
-    const { lifecycle, state } = fakes(item, { approved: true, disclosures: [], required: [] });
-    await lifecycle.schedule('ci-1', 'u-1');
-    expect(state.status).toBe('scheduled');
   });
 
   // Regression: confirmDisclosureAction (actions.ts) routes AI-generated
@@ -95,7 +69,11 @@ describe('ContentLifecycle.schedule — the hard gate', () => {
   // permanently unschedulable with a real date. Verified live.
   it('allows scheduling an already-scheduled item again (the disclosure-then-pick-a-time flow)', async () => {
     const item = makeItem({ status: 'scheduled', isAiGenerated: true });
-    const { lifecycle, state } = fakes(item, { approved: true, disclosures: [], required: [] });
+    const disc: DisclosureRecord = {
+      id: 'd-1', contentItemId: 'ci-1', campaignId: 'c-1',
+      disclosureText: 'AI disclosure', placement: 'overlay', appliedAt: '2026-07-15T00:00:00Z',
+    };
+    const { lifecycle, state } = fakes(item, { approved: true, disclosures: [disc] });
     await lifecycle.schedule('ci-1', 'u-1');
     expect(state.status).toBe('scheduled');
   });
@@ -123,7 +101,7 @@ describe('ContentLifecycle transition guards', () => {
     const approvals: ApprovalRepo = { async add() { added++; }, async hasApproval() { return true; } };
     const disclosures: DisclosureRepo = { async add() {}, async listFor() { return []; } };
     const audit: AuditRepo = { async append() {} };
-    const lifecycle = new ContentLifecycle(content, approvals, disclosures, audit, fakeEngine() as never);
+    const lifecycle = new ContentLifecycle(content, approvals, disclosures, audit);
     await lifecycle.approve('ci-1', 'u-approver', 'lgtm');
     expect(added).toBe(1);
     expect(item.status).toBe('approved');
@@ -137,7 +115,6 @@ describe('ContentLifecycle transition guards', () => {
       { async add() {}, async hasApproval() { return false; } },
       { async add() {}, async listFor() { return []; } },
       { async append() {} },
-      fakeEngine() as never,
     );
     await expect(lifecycle.approve('ci-1', 'u-1')).rejects.toThrow(GateError);
   });
