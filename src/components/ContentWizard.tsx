@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Role } from '@/domain/types';
-import { ContentItem, VIDEO_CONTENT_TYPES } from '@/domain/types';
+import { ContentItem, VIDEO_CONTENT_TYPES, MEDIA_REQUIRED_PLATFORMS } from '@/domain/types';
 import { can } from '@/lib/permissions';
 import { zonedNaiveToUtc } from '@/lib/timezone';
 import { Platform } from '@/integrations';
@@ -37,10 +37,8 @@ const CONTENT_TYPE_PLATFORMS: Record<string, Platform[]> = {
 };
 
 export interface RequiredDisclosure {
-  jurisdiction: string;
   disclosureText: string;
   placement: string;
-  needsLegalReview: boolean;
 }
 
 function getSteps(item: ContentItem): WizardStep[] {
@@ -65,13 +63,13 @@ function getCurrentStep(item: ContentItem, hasDisclosure: boolean): WizardStep {
 export function ContentWizard({
   item,
   hasDisclosure,
-  requiredDisclosures,
+  requiredDisclosure,
   videoSettings,
   role,
 }: {
   item: ContentItem;
   hasDisclosure: boolean;
-  requiredDisclosures: RequiredDisclosure[];
+  requiredDisclosure: RequiredDisclosure | null;
   videoSettings?: {
     avatarId?: string;
     voiceId?: string;
@@ -86,10 +84,15 @@ export function ContentWizard({
   const currentStep = getCurrentStep(item, hasDisclosure);
   const stepIndex = steps.indexOf(currentStep);
 
+  // Instagram/TikTok reject a post with no image/video attached — only offer
+  // them once this content actually has media (only reels do today).
+  const availablePlatforms = (CONTENT_TYPE_PLATFORMS[item.type] ?? [])
+    .filter(p => item.mediaUrl || !MEDIA_REQUIRED_PLATFORMS.includes(p));
+
   const [body, setBody] = useState(item.body);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [platforms, setPlatforms] = useState<Platform[]>(CONTENT_TYPE_PLATFORMS[item.type] ?? []);
+  const [platforms, setPlatforms] = useState<Platform[]>(availablePlatforms);
   const [videoId, setVideoId] = useState<string | null>(item.videoJobId ?? null);
   const [videoStatus, setVideoStatus] = useState<'idle' | 'generating' | 'ready' | 'failed' | 'timed_out'>(
     item.videoStatus === 'processing' && !item.mediaUrl ? 'generating' : 'idle',
@@ -120,9 +123,7 @@ export function ContentWizard({
     background: videoSettings?.background ?? 'plain',
     aspectRatio: videoSettings?.aspectRatio ?? '16:9',
   });
-  const [disclosureTexts, setDisclosureTexts] = useState<string[]>(
-    requiredDisclosures.map(d => d.disclosureText),
-  );
+  const [disclosureText, setDisclosureText] = useState(requiredDisclosure?.disclosureText ?? '');
 
   useEffect(() => {
     // American date-entry order (month, day, year) is the whole point of
@@ -456,57 +457,37 @@ export function ContentWizard({
           <div className="card">
             <h2>Required AI disclosure</h2>
             <p className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>
-              Because this content was AI-generated, the following disclosure must be attached
-              before publishing. Edit the wording to match your state&apos;s requirements — it
-              will be appended to every post automatically.
+              Because this content was AI-generated, this disclosure must be attached before
+              publishing. Edit the wording if needed — it will be appended to the post automatically.
             </p>
             <div className="spacer-y" />
-            {requiredDisclosures.length === 0 ? (
-              <p className="muted">No disclosure required for your jurisdictions.</p>
-            ) : (
-              requiredDisclosures.map((d, i) => (
-                <div key={i} style={{
-                  padding: 16,
-                  border: '1px solid var(--line)',
-                  borderRadius: 8,
-                  marginBottom: 10,
-                  background: 'var(--bg-hover)',
-                }}>
-                  <div className="eyebrow" style={{ marginBottom: 6 }}>
-                    {d.jurisdiction} · {d.placement}
-                    {d.needsLegalReview && (
-                      <span style={{
-                        marginLeft: 8, padding: '1px 6px', borderRadius: 4,
-                        background: 'color-mix(in srgb, var(--warn) 15%, transparent)',
-                        color: 'var(--warn)', fontSize: 10, fontWeight: 700,
-                      }}>Needs legal review</span>
-                    )}
-                  </div>
-                  <textarea
-                    className="input"
-                    value={disclosureTexts[i] ?? ''}
-                    onChange={e => setDisclosureTexts(texts => {
-                      const next = [...texts];
-                      next[i] = e.target.value;
-                      return next;
-                    })}
-                    style={{ minHeight: 70, fontStyle: 'italic', lineHeight: 1.6 }}
-                    placeholder="Enter the disclosure text required in this jurisdiction…"
-                  />
-                  {!disclosureTexts[i]?.trim() && (
-                    <div className="error" style={{ marginTop: 6, fontSize: 12 }}>
-                      Disclosure text is required.
-                    </div>
-                  )}
+            <div style={{
+              padding: 16,
+              border: '1px solid var(--line)',
+              borderRadius: 8,
+              marginBottom: 10,
+              background: 'var(--bg-hover)',
+            }}>
+              <div className="eyebrow" style={{ marginBottom: 6 }}>{requiredDisclosure?.placement ?? 'overlay'}</div>
+              <textarea
+                className="input"
+                value={disclosureText}
+                onChange={e => setDisclosureText(e.target.value)}
+                style={{ minHeight: 70, fontStyle: 'italic', lineHeight: 1.6 }}
+                placeholder="Enter the required disclosure text…"
+              />
+              {!disclosureText.trim() && (
+                <div className="error" style={{ marginTop: 6, fontSize: 12 }}>
+                  Disclosure text is required.
                 </div>
-              ))
-            )}
+              )}
+            </div>
             <div className="spacer-y" />
             <button
               className="btn primary"
               style={{ width: '100%' }}
-              disabled={busy || disclosureTexts.some(t => !t.trim())}
-              onClick={() => run(() => confirmDisclosureAction(item.id, disclosureTexts))}
+              disabled={busy || !disclosureText.trim()}
+              onClick={() => run(() => confirmDisclosureAction(item.id, disclosureText))}
             >
               {busy ? 'Confirming…' : 'Confirm disclosure — Continue →'}
             </button>
@@ -524,7 +505,7 @@ export function ContentWizard({
             {/* Platforms */}
             <div className="eyebrow" style={{ marginBottom: 8 }}>Platforms</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
-              {(CONTENT_TYPE_PLATFORMS[item.type] ?? []).map(p => {
+              {availablePlatforms.map(p => {
                 const selected = platforms.includes(p);
                 return (
                   <label key={p} className={`chip${selected ? ' on' : ''}`}>
@@ -534,6 +515,11 @@ export function ContentWizard({
                 );
               })}
             </div>
+            {availablePlatforms.length < (CONTENT_TYPE_PLATFORMS[item.type]?.length ?? 0) && (
+              <p className="muted" style={{ fontSize: 12, marginTop: -16, marginBottom: 24 }}>
+                Instagram and TikTok require an image or video, which this content doesn&apos;t have.
+              </p>
+            )}
 
             {/* Timing toggle */}
             <div className="eyebrow" style={{ marginBottom: 8 }}>Timing</div>

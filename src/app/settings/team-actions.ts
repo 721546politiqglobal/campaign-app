@@ -22,7 +22,7 @@ export async function inviteTeammateAction(formData: FormData): Promise<{ ok: bo
   // limitation the admin flow has today).
   const seats = await getCampaignSeatUsage(s.campaignId);
   if (seats.limit !== null && seats.used >= seats.limit) {
-    return { ok: false, error: "Your plan's seat limit is reached. Upgrade your plan to add more teammates." };
+    return { ok: false, error: "Your plan's member limit is reached. Upgrade your plan to add more teammates." };
   }
 
   await throwOnError(

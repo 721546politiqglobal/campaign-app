@@ -48,6 +48,32 @@ describe('AyrsharePublisher.publish', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.youTubeOptions).toBeUndefined();
   });
+
+  // Ayrshare's actual error shape nests the message under errors[0].message,
+  // not a top-level `message` field (verified against their docs) — reading
+  // json.message silently swallowed every real error and fell back to a bare
+  // "HTTP 400", hiding exactly why the post was rejected (e.g. "Instagram
+  // requires an image or video").
+  it('surfaces the real Ayrshare error message from errors[0].message, not just the HTTP status', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        status: 'error',
+        errors: [{ action: 'post', status: 'error', code: 138, message: 'Instagram Error: media is required', platform: 'instagram' }],
+      }),
+    }));
+    const publisher = new AyrsharePublisher('test-key');
+    const results = await publisher.publish({ platforms: ['instagram'], title: 't', text: 'hi', disclosureText: '' });
+    expect(results).toEqual([{ platform: 'instagram', status: 'failed', error: 'Instagram Error: media is required' }]);
+  });
+
+  it('falls back to HTTP status when the error response has neither errors[] nor a top-level message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({}) }));
+    const publisher = new AyrsharePublisher('test-key');
+    const results = await publisher.publish({ platforms: ['tiktok'], title: 't', text: 'hi', disclosureText: '' });
+    expect(results).toEqual([{ platform: 'tiktok', status: 'failed', error: 'HTTP 400' }]);
+  });
 });
 
 describe('AyrshareAnalyticsProvider.getPostAnalytics', () => {

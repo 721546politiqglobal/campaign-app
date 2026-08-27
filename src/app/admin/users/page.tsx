@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getAllUsersAdmin } from '@/lib/data';
-import { impersonateAction } from '../actions';
+import { impersonateAction, removeUserAction } from '../actions';
 
 export default async function AdminUsers() {
   const users = await getAllUsersAdmin();
@@ -59,9 +59,16 @@ export default async function AdminUsers() {
                   )}
                 </td>
                 <td>
-                  <form action={impersonateAction.bind(null, u.id)}>
-                    <button className="admin-impersonate-btn" type="submit">Sign in as</button>
-                  </form>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <form action={impersonateAction.bind(null, u.id)}>
+                      <button className="admin-impersonate-btn" type="submit">Sign in as</button>
+                    </form>
+                    {u.campaignId && (
+                      <form action={removeUserAction.bind(null, u.id, u.campaignId)}>
+                        <button className="admin-delete-btn" type="submit">Remove</button>
+                      </form>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

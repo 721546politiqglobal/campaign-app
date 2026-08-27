@@ -10,6 +10,15 @@ export type ContentType =
 
 export const VIDEO_CONTENT_TYPES: ContentType[] = ['reel'];
 
+// Instagram and TikTok reject a post with no image/video attached — unlike
+// Facebook, X, and LinkedIn, they don't support text-only posts.
+export const MEDIA_REQUIRED_PLATFORMS: Platform[] = ['instagram', 'tiktok'];
+
+export function platformsMissingRequiredMedia(platforms: Platform[], hasMedia: boolean): Platform[] {
+  if (hasMedia) return [];
+  return platforms.filter(p => MEDIA_REQUIRED_PLATFORMS.includes(p));
+}
+
 // Single source of truth for valid content types at runtime — used to reject
 // client-supplied values before they hit the DB (audit finding DATA-16).
 export const CONTENT_TYPES: readonly ContentType[] =
@@ -50,7 +59,6 @@ export interface DisclosureRecord {
   id: string;
   contentItemId: string;
   campaignId: string;
-  jurisdiction: string;
   disclosureText: string;
   placement: string;
   appliedAt: string;

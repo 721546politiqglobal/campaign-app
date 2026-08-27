@@ -64,17 +64,6 @@ const NAV = [
     ),
   },
   {
-    href: '/admin/disclosure-rules',
-    label: 'Disclosures',
-    icon: (
-      <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
-        <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4"/>
-        <path d="M8 7V11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-        <circle cx="8" cy="5" r="0.8" fill="currentColor"/>
-      </svg>
-    ),
-  },
-  {
     href: '/admin/billing',
     label: 'Billing',
     icon: (

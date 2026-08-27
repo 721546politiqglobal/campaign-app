@@ -1,12 +1,26 @@
 import { revalidatePath } from 'next/cache';
 import { AppFrame } from '@/components/AppFrame';
 import { requireSession } from '@/lib/session';
-import { getCampaign, getDisclosureRules } from '@/lib/data';
+import { adminDb } from '@/lib/supabase';
+import { getCampaign } from '@/lib/data';
 import { getCandidateProfile } from '@/lib/candidate';
 import { upsertCandidateProfile } from '@/lib/candidate';
 import { can } from '@/lib/permissions';
 import { PARTIES } from '@/lib/profile-validation';
 import type { VoiceTone } from '@/domain/types';
+
+async function saveDisclosureDefaultAction(formData: FormData) {
+  'use server';
+  const { requireSession } = await import('@/lib/session');
+  const { can } = await import('@/lib/permissions');
+  const s = await requireSession();
+  if (!can(s.role, 'edit_settings')) return;
+  const text = String(formData.get('default_disclosure_text') ?? '').trim();
+  await adminDb.from('campaigns')
+    .update({ default_disclosure_text: text || null })
+    .eq('id', s.campaignId);
+  revalidatePath('/settings');
+}
 
 async function saveProfileAction(formData: FormData) {
   'use server';
@@ -71,9 +85,8 @@ export default async function Settings({
   searchParams: { error?: string };
 }) {
   const s = await requireSession();
-  const [campaign, rules, profile] = await Promise.all([
+  const [campaign, profile] = await Promise.all([
     getCampaign(s.campaignId),
-    getDisclosureRules(),
     getCandidateProfile(s.campaignId),
   ]);
   const canEdit = can(s.role, 'edit_settings');
@@ -202,29 +215,28 @@ export default async function Settings({
         <div className="btnrow" style={{ marginTop: 6 }}>
           {(campaign?.jurisdictions ?? []).map(j => <span key={j} className="pill approved">{j}</span>)}
         </div>
-        <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
-          Jurisdictions decide which disclosure rules apply to AI content.
-        </p>
       </div>
 
       <div className="spacer-y" />
       <div className="card">
-        <h2>Disclosure rules</h2>
-        <table>
-          <thead><tr><th>Jurisdiction</th><th>Required text</th><th>Placement</th><th>Status</th></tr></thead>
-          <tbody>
-            {rules.map(r => (
-              <tr key={r.jurisdiction}>
-                <td className="mono">{r.jurisdiction}</td>
-                <td style={{ fontSize: 13 }}>{r.requiredText ?? <span className="muted">generic AI label</span>}</td>
-                <td className="muted">{r.placement}</td>
-                <td>{r.needsLegalReview
-                  ? <span className="pill in_review">Needs legal review</span>
-                  : <span className="pill published">Verified</span>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <h2>Default AI disclosure</h2>
+        <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
+          Shown for confirmation on every AI-generated content item before it can be scheduled.
+          Leave blank to use the generic default.
+        </p>
+        <form action={saveDisclosureDefaultAction} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <textarea
+            name="default_disclosure_text"
+            className="input"
+            style={{ minHeight: 90 }}
+            defaultValue={campaign?.defaultDisclosureText ?? ''}
+            placeholder="This content was generated or substantially altered using AI."
+            disabled={!canEdit}
+          />
+          {canEdit && (
+            <button className="btn primary" type="submit" style={{ alignSelf: 'flex-start' }}>Save disclosure</button>
+          )}
+        </form>
       </div>
     </AppFrame>
   );

@@ -5,7 +5,7 @@ import { ContentLifecycle } from '@/domain/content-lifecycle';
 import { DisclosureEngine } from '@/domain/disclosure';
 import { QuotaGate } from '@/domain/quota';
 import { BillingGate } from '@/domain/billing';
-import { contentRepo, approvalRepo, disclosureRepo, auditRepo, rulesRepo, quotaRepo, billingRepo } from './repos';
+import { contentRepo, approvalRepo, disclosureRepo, auditRepo, quotaRepo, billingRepo } from './repos';
 import {
   ClaudeContentGenerator, MockContentGenerator,
   HeyGenVideoProvider, MockVideoProvider,
@@ -17,8 +17,8 @@ import {
 } from '@/integrations';
 import type { PhotoAvatarProvider, Publisher, AnalyticsProvider } from '@/integrations';
 
-export const disclosureEngine = new DisclosureEngine(rulesRepo);
-export const lifecycle = new ContentLifecycle(contentRepo, approvalRepo, disclosureRepo, auditRepo, disclosureEngine);
+export const disclosureEngine = new DisclosureEngine();
+export const lifecycle = new ContentLifecycle(contentRepo, approvalRepo, disclosureRepo, auditRepo);
 export const quotaGate = new QuotaGate(quotaRepo);
 export const billingGate = new BillingGate(billingRepo);
 

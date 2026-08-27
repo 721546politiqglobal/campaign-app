@@ -9,7 +9,7 @@ import { getCampaign, getBillingPlan } from '@/lib/data';
 import { lifecycle, disclosureEngine, quotaGate, billingGate, contentGenerator, publisher, videoProvider, voiceProvider, photoAvatarProvider } from '@/lib/services';
 import { HeyGenAccessDeniedError, HeyGenVoiceCloneLimitError } from '@/integrations';
 import { contentRepo, approvalRepo, disclosureRepo, auditRepo } from '@/lib/repos';
-import { ContentType, ContentStatus, ContentItem, Platform, VIDEO_CONTENT_TYPES, isContentType } from '@/domain/types';
+import { ContentType, ContentStatus, ContentItem, Platform, VIDEO_CONTENT_TYPES, isContentType, platformsMissingRequiredMedia } from '@/domain/types';
 import { GateError } from '@/domain/content-lifecycle';
 import { combineDisclosureText } from '@/domain/disclosure';
 import { zonedNaiveToUtc } from '@/lib/timezone';
@@ -223,7 +223,11 @@ export async function createContentAction(formData: FormData) {
       title: String(formData.get('title') || 'Untitled'),
       body: String(formData.get('body') || ''),
       status: 'draft',
-      is_ai_generated: formData.get('isAiGenerated') === 'on',
+      // Reels always go through avatar-video generation, so the published
+      // artifact is AI-generated regardless of who wrote the script — the
+      // "Write it myself" toggle only covers script authorship and must not
+      // suppress the disclosure gate for video content types.
+      is_ai_generated: VIDEO_CONTENT_TYPES.includes(type) || formData.get('isAiGenerated') === 'on',
       target_jurisdictions: campaign.jurisdictions,
       created_by: s.userId,
     }),
@@ -282,21 +286,6 @@ export async function decideAction(id: string, decision: 'approve' | 'reject', n
   return r;
 }
 
-export async function attachDisclosureAction(id: string): Promise<Result> {
-  const s = await requireSession();
-  const item = await requireOwnedItem(id, s.campaignId);
-  if (!item) return NOT_FOUND;
-  const required = await disclosureEngine.requiredFor(item.targetJurisdictions, item.isAiGenerated);
-  for (const req of required) {
-    await disclosureRepo.add({
-      contentItemId: id, campaignId: s.campaignId,
-      jurisdiction: req.jurisdiction, disclosureText: req.disclosureText, placement: req.placement,
-    });
-  }
-  revalidatePath(`/content/${id}`);
-  return { ok: true };
-}
-
 export async function scheduleAction(id: string): Promise<Result> {
   const s = await requireSession();
   if (!can(s.role, 'schedule')) return { ok: false, error: 'Permission denied.' };
@@ -311,6 +300,13 @@ export async function publishAction(id: string, platforms: Platform[]): Promise<
   if (!can(s.role, 'publish')) return { ok: false, error: 'Permission denied.' };
   const item = await requireOwnedItem(id, s.campaignId);
   if (!item) return NOT_FOUND;
+  // Instagram/TikTok reject a post with no image/video attached — catch this
+  // before ever calling the publisher, with an error that actually explains
+  // why (Ayrshare's own HTTP 400 for this gives no usable message).
+  const blocked = platformsMissingRequiredMedia(platforms, !!item.mediaUrl);
+  if (blocked.length > 0) {
+    return { ok: false, error: `${blocked.join(', ')} require an image or video, and this content has none attached.` };
+  }
   const disc = await disclosureRepo.listFor(id);
   // Publish first, inspect the per-platform results, and only mark the item
   // published if at least one platform actually accepted the post.
@@ -618,23 +614,23 @@ export async function generateFromMonitoringAction(
   }
 }
 
-export async function confirmDisclosureAction(id: string, disclosureTexts?: string[]): Promise<Result> {
+export async function confirmDisclosureAction(id: string, disclosureText?: string): Promise<Result> {
   const s = await requireSession();
   if (!can(s.role, 'schedule')) return { ok: false, error: 'Permission denied.' };
   const item = await requireOwnedItem(id, s.campaignId);
   if (!item) return NOT_FOUND;
-  const required = await disclosureEngine.requiredFor(item.targetJurisdictions, item.isAiGenerated);
-  for (const [i, req] of required.entries()) {
-    // Campaigns edit disclosure wording per state, so the wizard's edited text
-    // (not the jurisdiction-rule default) is what actually gets attached.
-    const text = (disclosureTexts?.[i] ?? req.disclosureText).trim();
+  const campaign = await getCampaign(s.campaignId);
+  const required = disclosureEngine.requiredFor(item.isAiGenerated, campaign?.defaultDisclosureText ?? null);
+  if (required) {
+    // Campaigns edit the default wording per item, so the wizard's edited
+    // text (not the campaign default) is what actually gets attached.
+    const text = (disclosureText ?? required.disclosureText).trim();
     if (!text) return { ok: false, error: 'Disclosure text cannot be empty.' };
     await disclosureRepo.add({
       contentItemId: id,
       campaignId: s.campaignId,
-      jurisdiction: req.jurisdiction,
       disclosureText: text,
-      placement: req.placement,
+      placement: required.placement,
     });
   }
   // Route through the hard gate — enforces approval-on-record + disclosure-for-AI + valid transition.
@@ -715,6 +711,13 @@ export async function scheduleWithTimeAction(
 
     const item = await contentRepo.get(id);
     if (!item || item.campaignId !== s.campaignId) throw new GateError('Content not found.');
+
+    // Instagram/TikTok reject a post with no image/video attached — catch
+    // this before the schedule gate, with an error that explains why.
+    const blocked = platformsMissingRequiredMedia(platforms, !!item.mediaUrl);
+    if (blocked.length > 0) {
+      throw new GateError(`${blocked.join(', ')} require an image or video, and this content has none attached.`);
+    }
 
     // Hard gate: enforces human approval, and disclosure-on-file for AI content,
     // before status can move to 'scheduled' — same check scheduleAction uses.

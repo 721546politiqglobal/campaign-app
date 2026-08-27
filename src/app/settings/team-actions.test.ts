@@ -88,7 +88,7 @@ describe('inviteTeammateAction', () => {
     const { inviteTeammateAction } = await import('./team-actions');
     const result = await inviteTeammateAction(formData({ role: 'manager' }));
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/seat limit/i);
+    if (!result.ok) expect(result.error).toMatch(/member limit/i);
     expect(insertInviteCode).not.toHaveBeenCalled();
   });
 
