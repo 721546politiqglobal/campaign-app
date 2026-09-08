@@ -20,6 +20,7 @@ tsconfig.tsbuildinfo
 
 # claude session data
 .claude/
+.superpowers/
 
 # misc
 .DS_Store
