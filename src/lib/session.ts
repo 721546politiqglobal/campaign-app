@@ -8,6 +8,7 @@ export interface Session {
   name: string;
   role: Role;
   campaignId: string | null;   // null for super_admin (no tenant)
+  locale: string;
   exp: number;
 }
 
@@ -55,6 +56,27 @@ function parseToken(token: string): Session | null {
   }
 }
 
+// Reads only the locale carried in a validly-signed session cookie, without
+// the DB re-check getSession() does for role/campaignId. Used by the root
+// layout to pick a language before any DB call happens. Never use this for
+// anything access-control-related.
+export function peekSessionLocale(): string | null {
+  const raw = cookies().get(COOKIE)?.value;
+  if (!raw) return null;
+  const token = parseToken(raw);
+  return token?.locale ?? null;
+}
+
+// Cheap, DB-free "is someone logged in" check for cosmetic UI decisions (e.g.
+// hiding a pre-auth control) — not an access-control primitive. A validly
+// signed, unexpired cookie is good enough here; use requireSession() for
+// anything that gates data or actions.
+export function hasValidSession(): boolean {
+  const raw = cookies().get(COOKIE)?.value;
+  if (!raw) return false;
+  return parseToken(raw) !== null;
+}
+
 export function setSessionCookie(session: Session): void {
   cookies().set(COOKIE, makeToken(session), {
     httpOnly: true,
@@ -78,7 +100,7 @@ export async function getSession(): Promise<Session | null> {
   const { adminDb } = await import('./supabase');
   const { data: user } = await adminDb
     .from('users')
-    .select('id, name, role, campaign_id')
+    .select('id, name, role, campaign_id, locale')
     .eq('id', token.userId)
     .maybeSingle();
   if (!user) return null;
@@ -88,6 +110,7 @@ export async function getSession(): Promise<Session | null> {
     name: user.name,
     role: user.role as Role,
     campaignId: user.campaign_id,
+    locale: user.locale,
     exp: token.exp,
   };
 }
@@ -122,6 +145,7 @@ export async function signInAs(userId: string): Promise<void> {
     name: user.name,
     role: user.role as Role,
     campaignId: user.campaign_id,
+    locale: user.locale,
     exp: Math.floor(Date.now() / 1000) + WEEK_S,
   });
 }

@@ -87,7 +87,7 @@ describe('beginVoiceCloneUploadAction', () => {
   it('denies a role without manage_avatars', async () => {
     const { beginVoiceCloneUploadAction } = await import('./actions');
     const { requireSession } = await import('@/lib/session');
-    vi.mocked(requireSession).mockResolvedValueOnce({ ...session, role: 'staff' as const });
+    vi.mocked(requireSession).mockResolvedValueOnce({ ...session, role: 'staff' as const, locale: 'en' });
 
     const result = await beginVoiceCloneUploadAction(true, audioMeta());
 
@@ -313,7 +313,7 @@ describe('checkVoiceCloneStatusAction', () => {
 describe('previewVoiceCloneAction', () => {
   it('denies a role without manage_avatars', async () => {
     const { requireSession } = await import('@/lib/session');
-    vi.mocked(requireSession).mockResolvedValueOnce({ userId: 'u-1', name: 'Staff', role: 'staff' as const, campaignId: 'c-1', exp: 9_999_999_999 });
+    vi.mocked(requireSession).mockResolvedValueOnce({ userId: 'u-1', name: 'Staff', role: 'staff' as const, campaignId: 'c-1', locale: 'en', exp: 9_999_999_999 });
     const { previewVoiceCloneAction } = await import('./actions');
 
     const result = await previewVoiceCloneAction();

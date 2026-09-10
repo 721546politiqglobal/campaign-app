@@ -1,6 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/session';
 import { stripe } from '@/lib/stripe';
 import { adminDb } from '@/lib/supabase';
@@ -9,6 +10,7 @@ import { can } from '@/lib/permissions';
 
 export async function startCheckoutAction(planId: string): Promise<void> {
   const s = await requireSession();
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.pricing' });
   // Server actions are directly callable — the button being hidden in the UI is
   // not a permission check. Only roles that can manage billing may subscribe.
   if (!can(s.role, 'edit_settings')) return;
@@ -43,7 +45,7 @@ export async function startCheckoutAction(planId: string): Promise<void> {
     // A bad/unsynced Stripe price id or a wrong-mode API key surfaces here as
     // a StripeInvalidRequestError — without this catch it was an unhandled
     // 500 instead of the "Couldn't change plan" banner the page already has.
-    redirect(`/pricing?error=${encodeURIComponent(e instanceof Error ? e.message : 'Could not start checkout.')}`);
+    redirect(`/pricing?error=${encodeURIComponent(e instanceof Error ? e.message : t('couldNotStartCheckout'))}`);
   }
   if (!session.url) return;
   redirect(session.url);
@@ -51,18 +53,19 @@ export async function startCheckoutAction(planId: string): Promise<void> {
 
 export async function changePlanAction(planId: string): Promise<{ ok: boolean; error?: string }> {
   const s = await requireSession();
-  if (!can(s.role, 'edit_settings')) return { ok: false, error: 'Permission denied.' };
-  if (!stripe) return { ok: false, error: 'STRIPE_SECRET_KEY is not configured on this server.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.pricing' });
+  if (!can(s.role, 'edit_settings')) return { ok: false, error: t('permissionDenied') };
+  if (!stripe) return { ok: false, error: t('stripeNotConfigured') };
 
   const [campaign, plan] = await Promise.all([getCampaign(s.campaignId), getBillingPlan(planId)]);
-  if (!campaign) return { ok: false, error: 'Campaign not found.' };
-  if (!plan) return { ok: false, error: 'Plan not found.' };
-  if (!campaign.stripeSubscriptionId) return { ok: false, error: 'No active subscription to change. Subscribe to a plan first.' };
+  if (!campaign) return { ok: false, error: t('campaignNotFound') };
+  if (!plan) return { ok: false, error: t('planNotFound') };
+  if (!campaign.stripeSubscriptionId) return { ok: false, error: t('noActiveSubscription') };
 
   try {
     const subscription = await stripe.subscriptions.retrieve(campaign.stripeSubscriptionId);
     const currentItemId = subscription.items.data[0]?.id;
-    if (!currentItemId) return { ok: false, error: 'Could not find the current subscription item to update.' };
+    if (!currentItemId) return { ok: false, error: t('subscriptionItemNotFound') };
 
     await stripe.subscriptions.update(campaign.stripeSubscriptionId, {
       items: [{ id: currentItemId, price: plan.stripeFlatPriceId }],
@@ -73,7 +76,7 @@ export async function changePlanAction(planId: string): Promise<{ ok: boolean; e
     // API key surfaces here as a Stripe error — without this catch it was an
     // unhandled 500 instead of the "Couldn't change plan" banner the page
     // already has.
-    return { ok: false, error: e instanceof Error ? e.message : 'Could not change plan.' };
+    return { ok: false, error: e instanceof Error ? e.message : t('couldNotChangePlan') };
   }
 
   // The Stripe subscription's price is updated above, but nothing else in the

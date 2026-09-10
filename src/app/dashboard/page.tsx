@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { getTranslations } from 'next-intl/server';
 import { AppFrame } from '@/components/AppFrame';
 import { StatusPill } from '@/components/StatusPill';
 import { requireSession } from '@/lib/session';
@@ -16,6 +17,8 @@ const CRED_COLOR: Record<string, string> = {
 };
 
 export default async function Dashboard() {
+  const t = await getTranslations('dashboard');
+  const tType = await getTranslations('content.types');
   const s = await requireSession();
   if (s.role === 'super_admin') redirect('/admin');
 
@@ -37,10 +40,10 @@ export default async function Dashboard() {
   const signalsN = monitoring.length;
 
   const tiles = [
-    { label: 'Needs review', n: reviewN, tone: reviewN > 0 ? 'var(--warn)' : 'var(--text-3)', href: '/content?f=in_review', sub: reviewN === 1 ? '1 item waiting' : `${reviewN} items waiting` },
-    { label: 'Scheduled', n: scheduledN, tone: 'var(--purple)', href: '/content?f=scheduled', sub: 'queued to publish' },
-    { label: 'Published', n: publishedN, tone: 'var(--ok)', href: '/content?f=published', sub: 'live on socials' },
-    { label: 'Opp. signals', n: signalsN, tone: 'var(--live)', href: '/monitoring', sub: 'in the feed' },
+    { label: t('tiles.needsReview'), n: reviewN, tone: reviewN > 0 ? 'var(--warn)' : 'var(--text-3)', href: '/content?f=in_review', sub: t('tiles.itemsWaiting', { count: reviewN }) },
+    { label: t('tiles.scheduled'), n: scheduledN, tone: 'var(--purple)', href: '/content?f=scheduled', sub: t('tiles.queuedToPublish') },
+    { label: t('tiles.published'), n: publishedN, tone: 'var(--ok)', href: '/content?f=published', sub: t('tiles.liveOnSocials') },
+    { label: t('tiles.oppSignals'), n: signalsN, tone: 'var(--live)', href: '/monitoring', sub: t('tiles.inTheFeed') },
   ];
 
   return (
@@ -48,27 +51,27 @@ export default async function Dashboard() {
       {/* Action bar */}
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 22, gap: 16 }}>
         <div>
-          <span className="eyebrow">Overview</span>
-          <h1 style={{ margin: '4px 0 0' }}>Today</h1>
+          <span className="eyebrow">{t('overview')}</span>
+          <h1 style={{ margin: '4px 0 0' }}>{t('today')}</h1>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <Link className="btn" href="/monitoring">Opponent feed</Link>
-          <Link className="btn primary" href="/content/new">+ New content</Link>
+          <Link className="btn" href="/monitoring">{t('opponentFeed')}</Link>
+          <Link className="btn primary" href="/content/new">{t('newContent')}</Link>
         </div>
       </div>
 
       {/* KPI tiles */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
-        {tiles.map(t => (
-          <Link key={t.label} href={t.href} className="card interactive" style={{ padding: 16, textDecoration: 'none', color: 'inherit' }}>
+        {tiles.map(tile => (
+          <Link key={tile.label} href={tile.href} className="card interactive" style={{ padding: 16, textDecoration: 'none', color: 'inherit' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <span className="eyebrow">{t.label}</span>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: t.tone, boxShadow: `0 0 8px ${t.tone}`, flexShrink: 0 }} />
+              <span className="eyebrow">{tile.label}</span>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: tile.tone, boxShadow: `0 0 8px ${tile.tone}`, flexShrink: 0 }} />
             </div>
             <div className="data" style={{ fontSize: 34, fontWeight: 700, lineHeight: 1, color: 'var(--text)' }}>
-              {String(t.n).padStart(2, '0')}
+              {String(tile.n).padStart(2, '0')}
             </div>
-            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t.sub}</div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{tile.sub}</div>
           </Link>
         ))}
       </div>
@@ -76,7 +79,7 @@ export default async function Dashboard() {
       {/* Today's schedule strip */}
       {todayScheduled.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <div className="eyebrow" style={{ marginBottom: 10 }}>Going out today</div>
+          <div className="eyebrow" style={{ marginBottom: 10 }}>{t('goingOutToday')}</div>
           <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
             {todayScheduled.map(item => (
               <Link key={item.id} href={`/content/${item.id}`} className="card interactive" style={{
@@ -108,15 +111,15 @@ export default async function Dashboard() {
         {/* Needs attention */}
         <div className="card">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <h2 style={{ margin: 0 }}>Needs attention</h2>
+            <h2 style={{ margin: 0 }}>{t('needsAttention')}</h2>
             {needsAttention.length > 0 && (
               <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>{needsAttention.length}</span>
             )}
           </div>
           {needsAttention.length === 0 ? (
             <div style={{ padding: '32px 0', textAlign: 'center' }}>
-              <div className="muted" style={{ marginBottom: 14 }}>You&apos;re all caught up — nothing waiting on you.</div>
-              <Link className="btn primary" href="/content/new">Create new content</Link>
+              <div className="muted" style={{ marginBottom: 14 }}>{t('emptyCaughtUp')}</div>
+              <Link className="btn primary" href="/content/new">{t('createNewContent')}</Link>
             </div>
           ) : (
             <div style={{ marginTop: 6 }}>
@@ -129,9 +132,9 @@ export default async function Dashboard() {
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title}</div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-                      <span className="mono" style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{c.type.replace('_', ' ')}</span>
+                      <span className="mono" style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{tType(c.type)}</span>
                       <span style={{ color: 'var(--text-3)', fontSize: 11 }}>·</span>
-                      <span className="muted" style={{ fontSize: 11.5 }}>updated {new Date(c.updatedAt).toLocaleDateString('en-US')}</span>
+                      <span className="muted" style={{ fontSize: 11.5 }}>{t('updatedOn', { date: new Date(c.updatedAt).toLocaleDateString('en-US') })}</span>
                     </div>
                   </div>
                   <StatusPill status={c.status} />
@@ -144,15 +147,15 @@ export default async function Dashboard() {
         {/* Opponent pulse */}
         <div className="card">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <h2 style={{ margin: 0 }}>Opponent pulse</h2>
+            <h2 style={{ margin: 0 }}>{t('opponentPulse')}</h2>
             {signalsN > 0 && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--live)', letterSpacing: '0.08em' }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--live)', boxShadow: '0 0 8px var(--live)' }} />LIVE
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--live)', boxShadow: '0 0 8px var(--live)' }} />{t('live')}
               </span>
             )}
           </div>
           {monitoring.length === 0 ? (
-            <p className="muted" style={{ padding: '24px 0', textAlign: 'center' }}>No opponent activity picked up yet.</p>
+            <p className="muted" style={{ padding: '24px 0', textAlign: 'center' }}>{t('noOpponentActivity')}</p>
           ) : (
             <div style={{ marginTop: 6 }}>
               {monitoring.slice(0, 3).map(m => (
@@ -167,14 +170,14 @@ export default async function Dashboard() {
             </div>
           )}
           <div className="spacer-y" />
-          <Link className="btn" href="/monitoring" style={{ width: '100%', justifyContent: 'center' }}>See full feed</Link>
+          <Link className="btn" href="/monitoring" style={{ width: '100%', justifyContent: 'center' }}>{t('seeFullFeed')}</Link>
         </div>
       </div>
 
       {/* Spend */}
       <div className="card" style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 18 }}>
         <div style={{ minWidth: 0 }}>
-          <div className="eyebrow" style={{ marginBottom: 4 }}>Spend this billing period</div>
+          <div className="eyebrow" style={{ marginBottom: 4 }}>{t('spendThisBillingPeriod')}</div>
           <span className="data" style={{ color: 'var(--accent)', fontWeight: 700, fontSize: 16 }}>
             ${(spend / 100).toFixed(2)}
           </span>

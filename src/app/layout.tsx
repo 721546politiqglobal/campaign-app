@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
+import { NextIntlClientProvider } from 'next-intl';
+import { getMessages } from 'next-intl/server';
 import { ToastProvider } from '@/components/Toast';
+import { getLocale } from '@/lib/locale';
 import './globals.css';
 
 // Self-hosted so the build has no network dependency on Google Fonts — an
@@ -22,11 +25,16 @@ export const metadata: Metadata = {
   description: 'AI campaign communications — human approval and disclosure built in.',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const locale = getLocale();
+  const messages = await getMessages();
+
   return (
-    <html lang="en" className={manrope.variable}>
+    <html lang={locale} className={manrope.variable}>
       <body>
-        <ToastProvider>{children}</ToastProvider>
+        <NextIntlClientProvider messages={messages}>
+          <ToastProvider>{children}</ToastProvider>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

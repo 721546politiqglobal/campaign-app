@@ -931,6 +931,34 @@ textarea { min-height: 140px; resize: vertical; line-height: 1.6; }
   transition: background 0.1s, transform 0.1s;
 }
 .lp-nav-cta:hover { background: var(--accent-dark); transform: translateY(-1px); }
+.lang-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.lang-toggle:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-elevated);
+  border-color: var(--border-strong);
+}
+.lang-toggle:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.lang-toggle-icon {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
 
 /* ── Buttons ───────────────────────────────────────────────────────────────── */
 .lp-btn-primary {

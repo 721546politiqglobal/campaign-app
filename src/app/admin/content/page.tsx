@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { getTranslations } from 'next-intl/server';
 import { StatusPill } from '@/components/StatusPill';
 import { getAllContentAdmin } from '@/lib/data';
 
@@ -9,6 +10,9 @@ export default async function AdminContent({
 }: {
   searchParams: { status?: string; campaign?: string };
 }) {
+  const t = await getTranslations('admin.content');
+  const tStatus = await getTranslations('common.status');
+  const tType = await getTranslations('content.types');
   const filter = searchParams.status && searchParams.status !== 'all'
     ? searchParams.status : undefined;
   const items = await getAllContentAdmin(filter);
@@ -20,11 +24,11 @@ export default async function AdminContent({
     <div>
       <div className="pagehead">
         <div>
-          <span className="eyebrow">Library</span>
-          <h1>All content</h1>
+          <span className="eyebrow">{t('eyebrow')}</span>
+          <h1>{t('title')}</h1>
         </div>
         <div className="actions">
-          <span className="muted" style={{ fontSize: 13 }}>{filtered.length} items</span>
+          <span className="muted" style={{ fontSize: 13 }}>{t('itemsCount', { count: filtered.length })}</span>
         </div>
       </div>
 
@@ -36,7 +40,7 @@ export default async function AdminContent({
               key={f}
               className={`btn${active ? ' active' : ''}`}
               href={f === 'all' ? '/admin/content' : `/admin/content?status=${f}`}>
-              {f === 'all' ? 'All' : f.replace('_', ' ')}
+              {f === 'all' ? t('filterAll') : tStatus(f)}
             </Link>
           );
         })}
@@ -45,9 +49,9 @@ export default async function AdminContent({
       {searchParams.campaign && (
         <div className="banner" style={{ marginBottom: 14 }}>
           <div>
-            <span className="t">Filtered by campaign</span>
+            <span className="t">{t('filteredByCampaign')}</span>
             <Link href="/admin/content" style={{ marginLeft: 12, fontSize: 12, color: 'var(--text-3)' }}>
-              Clear filter →
+              {t('clearFilter')}
             </Link>
           </div>
         </div>
@@ -57,12 +61,12 @@ export default async function AdminContent({
         <table>
           <thead>
             <tr>
-              <th>Title</th>
-              <th>Campaign</th>
-              <th>Type</th>
-              <th>Source</th>
-              <th>Status</th>
-              <th>Created</th>
+              <th>{t('colTitle')}</th>
+              <th>{t('colCampaign')}</th>
+              <th>{t('colType')}</th>
+              <th>{t('colSource')}</th>
+              <th>{t('colStatus')}</th>
+              <th>{t('colCreated')}</th>
             </tr>
           </thead>
           <tbody>
@@ -80,8 +84,8 @@ export default async function AdminContent({
                     {c.campaignName}
                   </Link>
                 </td>
-                <td className="muted" style={{ fontSize: 12 }}>{c.type.replace('_', ' ')}</td>
-                <td className="muted" style={{ fontSize: 12 }}>{c.isAiGenerated ? 'AI' : 'Human'}</td>
+                <td className="muted" style={{ fontSize: 12 }}>{tType(c.type)}</td>
+                <td className="muted" style={{ fontSize: 12 }}>{c.isAiGenerated ? t('sourceAi') : t('sourceHuman')}</td>
                 <td><StatusPill status={c.status as never} /></td>
                 <td className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                   {new Date(c.createdAt).toLocaleDateString('en-US')}
@@ -91,7 +95,7 @@ export default async function AdminContent({
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={6} className="muted" style={{ padding: 32, textAlign: 'center' }}>
-                  No content with this filter.
+                  {t('empty')}
                 </td>
               </tr>
             )}

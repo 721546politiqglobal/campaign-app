@@ -59,7 +59,16 @@ describe('deleteBillingPlanAction', () => {
     const { deleteBillingPlanAction } = await import('./actions');
     const r = await deleteBillingPlanAction(fd('plan-test'));
     expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/2 campaign/);
+    expect(r.error).toMatch(/2 campaigns are still on this plan/);
+    expect(planDelete).not.toHaveBeenCalled();
+  });
+
+  it('uses the singular ICU plural branch when exactly one campaign is on the plan', async () => {
+    campaignsCountResult.mockResolvedValue({ count: 1, error: null });
+    const { deleteBillingPlanAction } = await import('./actions');
+    const r = await deleteBillingPlanAction(fd('plan-test'));
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/1 campaign is still on this plan/);
     expect(planDelete).not.toHaveBeenCalled();
   });
 

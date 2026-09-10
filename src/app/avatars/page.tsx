@@ -1,3 +1,4 @@
+import { getTranslations } from 'next-intl/server';
 import { AppFrame } from '@/components/AppFrame';
 import { requireSession } from '@/lib/session';
 import { getCandidateProfile } from '@/lib/candidate';
@@ -9,6 +10,7 @@ import { can } from '@/lib/permissions';
 
 export default async function AvatarsPage() {
   const s = await requireSession();
+  const t = await getTranslations('avatars');
   const [profile, avatars] = await Promise.all([
     getCandidateProfile(s.campaignId),
     listAvatars(s.campaignId),
@@ -18,13 +20,13 @@ export default async function AvatarsPage() {
   return (
     <AppFrame>
       <div className="pagehead">
-        <div><span className="eyebrow">Configuration</span><h1>Avatars</h1></div>
+        <div><span className="eyebrow">{t('eyebrow')}</span><h1>{t('title')}</h1></div>
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>
-        <h2 style={{ marginBottom: 6 }}>Candidate avatars</h2>
+        <h2 style={{ marginBottom: 6 }}>{t('avatarsHeading')}</h2>
         <p className="muted" style={{ fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>
-          Create an AI avatar of your candidate from photos, then pick a look and video format for campaign videos.
+          {t('avatarsDescription')}
         </p>
         <AvatarManager
           avatars={avatars}
@@ -43,9 +45,9 @@ export default async function AvatarsPage() {
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>
-        <h2 style={{ marginBottom: 6 }}>Candidate voice</h2>
+        <h2 style={{ marginBottom: 6 }}>{t('voiceHeading')}</h2>
         <p className="muted" style={{ fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>
-          Clone your candidate&rsquo;s voice from an audio sample to use for campaign videos, instead of waiting on an admin to assign one.
+          {t('voiceDescription')}
         </p>
         <VoiceCloneManager
           status={profile?.selfVoiceCloneStatus ?? null}

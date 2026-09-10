@@ -2,12 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import type { MonitoringResult } from '@/lib/data';
 import { dismissMonitoringAction } from '@/app/actions';
-
-const CATEGORY_LABEL: Record<string, string> = {
-  news: 'News', social: 'Social', blog: 'Blog', press_release: 'Press Release',
-};
 
 // Sources are free text (the manual-add form lets a user type anything), so
 // only the exact strings our own integrations write get their own tab —
@@ -43,6 +40,7 @@ function detectTrending(results: MonitoringResult[]): Set<string> {
 }
 
 export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
+  const t = useTranslations('monitoring');
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>('all');
   const [dismissing, setDismissing] = useState<string | null>(null);
@@ -59,9 +57,13 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
 
   const filtered = results.filter(r => filter === 'all' || platformOf(r.source) === filter);
 
+  const CATEGORY_LABEL: Record<string, string> = {
+    news: t('category.news'), social: t('category.social'), blog: t('category.blog'), press_release: t('category.pressRelease'),
+  };
+
   function goToRebuttal(result: MonitoringResult) {
     const brief = encodeURIComponent(
-      `Respond to this story from ${result.source}: "${result.excerpt.slice(0, 200)}"`
+      t('respondToStory', { source: result.source, excerpt: result.excerpt.slice(0, 200) })
     );
     router.push(`/content/new?brief=${brief}&type=social_post`);
   }
@@ -74,12 +76,12 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
   }
 
   const FILTERS: { key: Filter; label: string }[] = [
-    { key: 'all',       label: 'All' },
-    { key: 'twitter',   label: 'Twitter/X' },
-    { key: 'instagram', label: 'Instagram' },
-    { key: 'youtube',   label: 'YouTube' },
-    { key: 'facebook',  label: 'Facebook' },
-    { key: 'news',      label: 'News' },
+    { key: 'all',       label: t('filters.all') },
+    { key: 'twitter',   label: t('filters.twitter') },
+    { key: 'instagram', label: t('filters.instagram') },
+    { key: 'youtube',   label: t('filters.youtube') },
+    { key: 'facebook',  label: t('filters.facebook') },
+    { key: 'news',      label: t('filters.news') },
   ];
 
   return (
@@ -97,7 +99,7 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
       {/* Empty state */}
       {filtered.length === 0 && (
         <div className="card" style={{ textAlign: 'center', padding: 40 }}>
-          <p className="muted">No results for this filter.</p>
+          <p className="muted">{t('emptyState')}</p>
         </div>
       )}
 
@@ -111,7 +113,7 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{result.source}</span>
                   <span className="tag">{CATEGORY_LABEL[result.category] ?? result.category}</span>
-                  {trending && <span className="tag trending">Trending</span>}
+                  {trending && <span className="tag trending">{t('trending')}</span>}
                 </div>
                 <span className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap', color: 'var(--text-3)' }}>
                   {new Date(result.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
@@ -126,25 +128,25 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
                 <button type="button" onClick={() => toggleExpanded(result.id)}
                   style={{ background: 'none', border: 'none', padding: 0, marginBottom: 14,
                            color: 'var(--accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                  {expanded.has(result.id) ? 'Show less' : 'Show more'}
+                  {expanded.has(result.id) ? t('showLess') : t('showMore')}
                 </button>
               )}
 
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button className="btn primary" style={{ fontSize: 12, padding: '6px 14px' }}
                   onClick={() => goToRebuttal(result)}>
-                  Draft rebuttal
+                  {t('draftRebuttal')}
                 </button>
                 {result.url && (
                   <a href={result.url} target="_blank" rel="noopener noreferrer"
                     className="btn" style={{ fontSize: 12, padding: '6px 14px' }}>
-                    Read article ↗
+                    {t('readArticle')}
                   </a>
                 )}
                 <button className="btn" style={{ fontSize: 12, padding: '6px 14px', marginLeft: 'auto', color: 'var(--text-3)' }}
                   disabled={dismissing === result.id}
                   onClick={() => handleDismiss(result.id)}>
-                  {dismissing === result.id ? 'Dismissing…' : 'Dismiss'}
+                  {dismissing === result.id ? t('dismissing') : t('dismiss')}
                 </button>
               </div>
             </div>

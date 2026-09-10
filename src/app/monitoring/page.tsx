@@ -1,3 +1,4 @@
+import { getTranslations } from 'next-intl/server';
 import { AppFrame } from '@/components/AppFrame';
 import { MonitoringTable } from '@/components/MonitoringTable';
 import { requireSession } from '@/lib/session';
@@ -29,39 +30,40 @@ async function addManualEntryAction(formData: FormData) {
 }
 
 export default async function Monitoring() {
+  const t = await getTranslations('monitoring');
   const s = await requireSession();
   const results = await getMonitoringResults(s.campaignId);
 
   return (
     <AppFrame>
       <div className="pagehead">
-        <div><span className="eyebrow">Intelligence</span><h1>Opponent monitoring</h1></div>
+        <div><span className="eyebrow">{t('eyebrow')}</span><h1>{t('title')}</h1></div>
       </div>
 
       <MonitoringTable results={results} />
 
       {/* Manual entry */}
       <div className="card" style={{ marginTop: 32 }}>
-        <h2 style={{ marginBottom: 12 }}>Add story manually</h2>
+        <h2 style={{ marginBottom: 12 }}>{t('addManually.heading')}</h2>
         <p className="muted" style={{ fontSize: 13, marginBottom: 16 }}>
-          Saw something offline? Add it here — a TV segment, a flyer, anything worth tracking.
+          {t('addManually.description')}
         </p>
         <form action={addManualEntryAction} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
-              <label className="field-label">Headline / description *</label>
-              <input name="headline" className="input" required placeholder="Smith claimed Rivera raised taxes" />
+              <label className="field-label">{t('addManually.headlineLabel')}</label>
+              <input name="headline" className="input" required placeholder={t('addManually.headlinePlaceholder')} />
             </div>
             <div>
-              <label className="field-label">Source name *</label>
-              <input name="source" className="input" required placeholder="Local TV / Flyer / Twitter" />
+              <label className="field-label">{t('addManually.sourceLabel')}</label>
+              <input name="source" className="input" required placeholder={t('addManually.sourcePlaceholder')} />
             </div>
           </div>
           <div>
-            <label className="field-label">URL (optional)</label>
+            <label className="field-label">{t('addManually.urlLabel')}</label>
             <input name="url" className="input" placeholder="https://..." />
           </div>
-          <button className="btn primary" style={{ alignSelf: 'flex-start' }}>Add to monitoring</button>
+          <button className="btn primary" style={{ alignSelf: 'flex-start' }}>{t('addManually.submitButton')}</button>
         </form>
       </div>
     </AppFrame>

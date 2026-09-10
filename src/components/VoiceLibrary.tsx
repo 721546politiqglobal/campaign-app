@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useTranslations } from 'next-intl';
 import { saveVideoSettingsAction } from '@/app/actions';
 import { useToast } from '@/components/Toast';
 
@@ -18,6 +19,7 @@ interface ElevenLabsVoice {
 }
 
 export function VoiceLibrary({ currentVoiceId }: { currentVoiceId?: string | null }) {
+  const t = useTranslations('voice');
   const { toast } = useToast();
   const [voices, setVoices] = useState<ElevenLabsVoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,8 +58,8 @@ export function VoiceLibrary({ currentVoiceId }: { currentVoiceId?: string | nul
     setSaving(true);
     const result = await saveVideoSettingsAction({ elevenLabsVoiceId: selectedId });
     setSaving(false);
-    if (result.ok) toast('Voice saved!');
-    else toast(result.error ?? 'Failed to save', 'error');
+    if (result.ok) toast(t('toast.voiceSaved'));
+    else toast(result.error ?? t('toast.failedToSave'), 'error');
   }
 
   const filtered = voices.filter(v => {
@@ -84,7 +86,7 @@ export function VoiceLibrary({ currentVoiceId }: { currentVoiceId?: string | nul
             </div>
           </div>
           <button className="btn primary" style={{ marginLeft: 'auto' }} disabled={saving} onClick={handleSave}>
-            {saving ? 'Saving…' : 'Use this voice'}
+            {saving ? t('library.saving') : t('library.useThisVoice')}
           </button>
         </div>
       )}
@@ -93,7 +95,7 @@ export function VoiceLibrary({ currentVoiceId }: { currentVoiceId?: string | nul
         {(['all', 'male', 'female'] as const).map(f => (
           <button key={f} className="btn" onClick={() => setFilter(f)}
             style={filter === f ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
-            {f.charAt(0).toUpperCase() + f.slice(1)}
+            {t(`library.filters.${f}`)}
           </button>
         ))}
       </div>
@@ -108,7 +110,7 @@ export function VoiceLibrary({ currentVoiceId }: { currentVoiceId?: string | nul
 
       {!loading && filtered.length === 0 && (
         <p className="muted" style={{ fontSize: 13 }}>
-          {voices.length === 0 ? 'No voices found — check that ELEVENLABS_API_KEY is configured.' : 'No voices match this filter.'}
+          {voices.length === 0 ? t('library.noVoicesConfigured') : t('library.noVoicesFilterMatch')}
         </p>
       )}
 
@@ -134,7 +136,7 @@ export function VoiceLibrary({ currentVoiceId }: { currentVoiceId?: string | nul
                   border: '1px solid var(--line)', cursor: 'pointer', fontSize: 13,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
-                aria-label={isPlaying ? 'Pause preview' : 'Play preview'}>
+                aria-label={isPlaying ? t('library.pausePreview') : t('library.playPreview')}>
                 {isPlaying ? '⏸' : '▶'}
               </button>
               <div style={{ flex: 1, minWidth: 0 }}>

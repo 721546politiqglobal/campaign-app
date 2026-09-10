@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { getTranslations } from 'next-intl/server';
 import { requireAdmin } from '@/lib/session';
 import { adminDb, throwOnError } from '@/lib/supabase';
 import { stripe } from '@/lib/stripe';
@@ -10,8 +11,9 @@ import { prefixedId } from '@/lib/store';
 const CORE_PLAN_IDS = new Set(PLAN_DEFINITIONS.map(d => d.id));
 
 export async function syncBillingPlansAction(): Promise<{ ok: boolean; error?: string }> {
-  await requireAdmin();
-  if (!stripe) return { ok: false, error: 'STRIPE_SECRET_KEY is not configured on this server.' };
+  const s = await requireAdmin();
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.adminBilling' });
+  if (!stripe) return { ok: false, error: t('stripeNotConfigured') };
 
   const { data: existingPlans } = await adminDb.from('billing_plans').select('id');
   const existingIds = new Set((existingPlans ?? []).map(p => p.id));
@@ -61,15 +63,16 @@ function parseLimit(value: FormDataEntryValue | null): ParsedLimit {
 }
 
 const LIMIT_FIELDS = [
-  { field: 'seatLimit', column: 'seat_limit', label: 'Seat limit' },
-  { field: 'avatarLimit', column: 'avatar_limit', label: 'Avatar limit' },
-  { field: 'contentLimitMonthly', column: 'content_limit_monthly', label: 'Content limit' },
-  { field: 'videoLimitDaily', column: 'video_limit_daily', label: 'Daily video limit' },
+  { field: 'seatLimit', column: 'seat_limit', labelKey: 'limitLabels.seatLimit' },
+  { field: 'avatarLimit', column: 'avatar_limit', labelKey: 'limitLabels.avatarLimit' },
+  { field: 'contentLimitMonthly', column: 'content_limit_monthly', labelKey: 'limitLabels.contentLimit' },
+  { field: 'videoLimitDaily', column: 'video_limit_daily', labelKey: 'limitLabels.videoLimitDaily' },
 ] as const;
 
 export async function upsertBillingPlanAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
-  await requireAdmin();
-  if (!stripe) return { ok: false, error: 'STRIPE_SECRET_KEY is not configured on this server.' };
+  const s = await requireAdmin();
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.adminBilling' });
+  if (!stripe) return { ok: false, error: t('stripeNotConfigured') };
 
   const existingId = String(formData.get('id') ?? '').trim();
   const name = String(formData.get('name') ?? '').trim();
@@ -77,19 +80,19 @@ export async function upsertBillingPlanAction(formData: FormData): Promise<{ ok:
   const priceCents = Math.round(Number(priceDollarsRaw) * 100);
   const billingInterval = String(formData.get('billingInterval') ?? 'month');
 
-  if (!name) return { ok: false, error: 'Plan name is required.' };
+  if (!name) return { ok: false, error: t('planNameRequired') };
   if (!priceDollarsRaw || !Number.isFinite(priceCents) || priceCents < 0) {
-    return { ok: false, error: 'Price must be a non-negative number.' };
+    return { ok: false, error: t('priceNonNegative') };
   }
   if (billingInterval !== 'week' && billingInterval !== 'month') {
-    return { ok: false, error: 'Billing interval must be week or month.' };
+    return { ok: false, error: t('billingIntervalInvalid') };
   }
 
   const limits: Record<string, number | null> = {};
-  for (const { field, column, label } of LIMIT_FIELDS) {
+  for (const { field, column, labelKey } of LIMIT_FIELDS) {
     const parsed = parseLimit(formData.get(field));
     if (!parsed.ok) {
-      return { ok: false, error: `${label} must be blank (unlimited) or a non-negative number.` };
+      return { ok: false, error: t('limitInvalid', { label: t(labelKey) }) };
     }
     limits[column] = parsed.value;
   }
@@ -176,7 +179,7 @@ export async function upsertBillingPlanAction(formData: FormData): Promise<{ ok:
     // A wrong-mode Stripe key, an archived/invalid price id, or a DB failure would
     // otherwise surface as an unhandled 500 instead of the error banner
     // /admin/billing already renders for `{ ok: false, error }`.
-    return { ok: false, error: e instanceof Error ? e.message : 'Could not save plan.' };
+    return { ok: false, error: e instanceof Error ? e.message : t('couldNotSavePlan') };
   }
 
   revalidatePath('/admin/billing');
@@ -184,30 +187,31 @@ export async function upsertBillingPlanAction(formData: FormData): Promise<{ ok:
 }
 
 export async function deleteBillingPlanAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
-  await requireAdmin();
-  if (!stripe) return { ok: false, error: 'STRIPE_SECRET_KEY is not configured on this server.' };
+  const s = await requireAdmin();
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.adminBilling' });
+  if (!stripe) return { ok: false, error: t('stripeNotConfigured') };
 
   const id = String(formData.get('id') ?? '').trim();
-  if (!id) return { ok: false, error: 'Plan id is required.' };
+  if (!id) return { ok: false, error: t('planIdRequired') };
   // Starter, Pro, and Enterprise are the baseline catalog (re-created by
   // syncBillingPlansAction) — deleting one would just have it reappear
   // confusingly on the next sync, so only plans added beyond those are
   // eligible for deletion.
   if (CORE_PLAN_IDS.has(id)) {
-    return { ok: false, error: 'Starter, Pro, and Enterprise are core plans and can’t be deleted.' };
+    return { ok: false, error: t('corePlansCannotBeDeleted') };
   }
 
   try {
     const { count } = await adminDb.from('campaigns').select('id', { count: 'exact', head: true }).eq('plan_id', id);
     if ((count ?? 0) > 0) {
-      return { ok: false, error: `Cannot delete: ${count} campaign${count === 1 ? ' is' : 's are'} still on this plan.` };
+      return { ok: false, error: t('cannotDeleteInUse', { count }) };
     }
 
     const plan = await throwOnError(
       adminDb.from('billing_plans').select('*').eq('id', id).maybeSingle(),
       'billing_plans.select',
     );
-    if (!plan) return { ok: false, error: 'Plan not found.' };
+    if (!plan) return { ok: false, error: t('planNotFound') };
 
     await throwOnError(
       adminDb.from('billing_plans').delete().eq('id', id),
@@ -224,7 +228,7 @@ export async function deleteBillingPlanAction(formData: FormData): Promise<{ ok:
       // ignored — see comment above
     }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'Could not delete plan.' };
+    return { ok: false, error: e instanceof Error ? e.message : t('couldNotDeletePlan') };
   }
 
   revalidatePath('/admin/billing');

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { getTranslations } from 'next-intl/server';
 import { requireSession, signInAs, signOut } from '@/lib/session';
 import { adminDb, throwOnError } from '@/lib/supabase';
 import { uid, prefixedId } from '@/lib/store';
@@ -16,6 +17,7 @@ import { zonedNaiveToUtc } from '@/lib/timezone';
 import { QuotaExceeded, contentPeriodStart, videoPeriodStart } from '@/domain/quota';
 import { BillingBlocked } from '@/domain/billing';
 import { can } from '@/lib/permissions';
+import { getLocale } from '@/lib/locale';
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -59,8 +61,6 @@ async function requireOwnedItem(id: string, campaignId: string): Promise<Content
   return item;
 }
 
-const NOT_FOUND = { ok: false as const, error: 'Content not found.' };
-
 // super_admin sessions carry no campaign (campaignId === null). Tenant-scoped
 // actions must refuse rather than silently query `campaign_id = null`
 // (audit finding DATA-18).
@@ -94,7 +94,7 @@ export async function loginAction(formData: FormData) {
 
   const { data: user } = await adminDb
     .from('users')
-    .select('id, name, role, campaign_id, password_hash')
+    .select('id, name, role, campaign_id, password_hash, locale')
     .eq('email', email)
     .single();
 
@@ -113,6 +113,7 @@ export async function loginAction(formData: FormData) {
     name: user.name,
     role: user.role,
     campaignId: user.campaign_id,
+    locale: user.locale,
     exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
   });
 
@@ -155,6 +156,10 @@ export async function joinAction(formData: FormData) {
 
   const password_hash = await bcrypt.default.hash(password, 10);
   const userId = existing?.id ?? prefixedId('u-');
+  // /join has a pre-auth language toggle and is fully translated, so honour the
+  // language the joiner actually picked instead of dropping everyone into
+  // English. getLocale() already falls back to the pre-auth `locale` cookie.
+  const locale = getLocale();
 
   // Atomically claim the invite: only one concurrent redemption can flip
   // used_at from null. If no row comes back, someone else already claimed it
@@ -170,14 +175,14 @@ export async function joinAction(formData: FormData) {
   if (existing) {
     await throwOnError(
       adminDb.from('users').update({
-        name, password_hash, campaign_id: invite.campaign_id, role: invite.role,
+        name, password_hash, campaign_id: invite.campaign_id, role: invite.role, locale,
       }).eq('id', existing.id),
       'users.join.update',
     );
   } else {
     await throwOnError(
       adminDb.from('users').insert({
-        id: userId, campaign_id: invite.campaign_id, name, email, password_hash, role: invite.role,
+        id: userId, campaign_id: invite.campaign_id, name, email, password_hash, role: invite.role, locale,
       }),
       'users.join.insert',
     );
@@ -197,6 +202,7 @@ export async function joinAction(formData: FormData) {
     name,
     role: invite.role,
     campaignId: invite.campaign_id,
+    locale,
     exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
   });
 
@@ -268,7 +274,8 @@ export async function generateDraftAction(instruction: string, type: string): Pr
 
 export async function submitAction(id: string): Promise<Result> {
   const s = await requireSession();
-  if (!(await requireOwnedItem(id, s.campaignId))) return NOT_FOUND;
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!(await requireOwnedItem(id, s.campaignId))) return { ok: false as const, error: t('contentNotFound') };
   const r = await guard(() => lifecycle.submitForReview(id, s.userId));
   revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
   return r;
@@ -276,8 +283,9 @@ export async function submitAction(id: string): Promise<Result> {
 
 export async function decideAction(id: string, decision: 'approve' | 'reject', note: string): Promise<Result> {
   const s = await requireSession();
-  if (decision === 'approve' && !can(s.role, 'approve')) return { ok: false, error: 'Permission denied.' };
-  if (!(await requireOwnedItem(id, s.campaignId))) return NOT_FOUND;
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (decision === 'approve' && !can(s.role, 'approve')) return { ok: false, error: t('permissionDenied') };
+  if (!(await requireOwnedItem(id, s.campaignId))) return { ok: false as const, error: t('contentNotFound') };
   const r = await guard(() =>
     decision === 'approve'
       ? lifecycle.approve(id, s.userId, note)
@@ -288,8 +296,9 @@ export async function decideAction(id: string, decision: 'approve' | 'reject', n
 
 export async function scheduleAction(id: string): Promise<Result> {
   const s = await requireSession();
-  if (!can(s.role, 'schedule')) return { ok: false, error: 'Permission denied.' };
-  if (!(await requireOwnedItem(id, s.campaignId))) return NOT_FOUND;
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'schedule')) return { ok: false, error: t('permissionDenied') };
+  if (!(await requireOwnedItem(id, s.campaignId))) return { ok: false as const, error: t('contentNotFound') };
   const r = await guard(() => lifecycle.schedule(id, s.userId));
   revalidatePath(`/content/${id}`); revalidatePath('/');
   return r;
@@ -297,15 +306,16 @@ export async function scheduleAction(id: string): Promise<Result> {
 
 export async function publishAction(id: string, platforms: Platform[]): Promise<Result> {
   const s = await requireSession();
-  if (!can(s.role, 'publish')) return { ok: false, error: 'Permission denied.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'publish')) return { ok: false, error: t('permissionDenied') };
   const item = await requireOwnedItem(id, s.campaignId);
-  if (!item) return NOT_FOUND;
+  if (!item) return { ok: false as const, error: t('contentNotFound') };
   // Instagram/TikTok reject a post with no image/video attached — catch this
   // before ever calling the publisher, with an error that actually explains
   // why (Ayrshare's own HTTP 400 for this gives no usable message).
   const blocked = platformsMissingRequiredMedia(platforms, !!item.mediaUrl);
   if (blocked.length > 0) {
-    return { ok: false, error: `${blocked.join(', ')} require an image or video, and this content has none attached.` };
+    return { ok: false, error: t('mediaRequiredForPlatforms', { platforms: blocked.join(', ') }) };
   }
   const disc = await disclosureRepo.listFor(id);
   // Publish first, inspect the per-platform results, and only mark the item
@@ -317,7 +327,8 @@ export async function publishAction(id: string, platforms: Platform[]): Promise<
   });
   const failed = results.filter(r => r.status === 'failed');
   if (failed.length === results.length) {
-    return { ok: false, error: `Publishing failed: ${failed.map(f => `${f.platform} (${f.error ?? 'unknown'})`).join(', ')}` };
+    const details = failed.map(f => `${f.platform} (${f.error ?? t('unknownReason')})`).join(', ');
+    return { ok: false, error: t('publishingFailed', { details }) };
   }
   const r = await guard(() => lifecycle.markPublished(id, s.userId));
   // Capture per-platform post ids the same way the cron publish path does —
@@ -332,7 +343,7 @@ export async function publishAction(id: string, platforms: Platform[]): Promise<
     await adminDb.from('content_items').update({ ayrshare_post_ids: postIds }).eq('id', id);
   }
   revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
-  if (r.ok && failed.length) return { ok: false, error: `Published, but failed on: ${failed.map(f => f.platform).join(', ')}` };
+  if (r.ok && failed.length) return { ok: false, error: t('publishedButFailedOn', { platforms: failed.map(f => f.platform).join(', ') }) };
   return r;
 }
 
@@ -358,17 +369,18 @@ export async function generateVideoAction(
   overrides?: { avatarId?: string; voiceId?: string; background?: string; aspectRatio?: '16:9' | '9:16' | '1:1' },
 ): Promise<Result & { videoId?: string }> {
   const s = await requireSession();
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
   const { getCandidateProfile } = await import('@/lib/candidate');
   const [campaign, profile] = await Promise.all([
     getCampaign(s.campaignId),
     getCandidateProfile(s.campaignId),
   ]);
-  if (!campaign) return { ok: false, error: 'Campaign not found.' };
+  if (!campaign) return { ok: false, error: t('campaignNotFound') };
   const avatarId = overrides?.avatarId ?? profile?.heygenAvatarId ?? undefined;
   // Never fall through to the provider's own HEYGEN_AVATAR_ID env default here —
   // that's a single global avatar shared across every tenant, so silently using
   // it would generate video of the wrong (possibly non-consented) candidate.
-  if (!avatarId) return { ok: false, error: 'No avatar is set up for this campaign yet. Add one on the Avatars page first.' };
+  if (!avatarId) return { ok: false, error: t('noAvatarConfigured') };
   const heygenVoiceId = overrides?.voiceId
     // A ready self-clone takes precedence over the admin-assigned heygen_voice_id
     // — self-service is the primary path once it exists, admin assignment is
@@ -379,7 +391,7 @@ export async function generateVideoAction(
   // Do not fall back to the global HEYGEN_VOICE_ID — that narrates every
   // tenant's video with one shared voice. And never pass the ElevenLabs id
   // here: HeyGen uses a different voice-id namespace and 400s on it (INT-7).
-  if (!heygenVoiceId) return { ok: false, error: 'No video voice is set up for this campaign yet. Contact your platform admin to assign one.' };
+  if (!heygenVoiceId) return { ok: false, error: t('noVideoVoiceConfigured') };
   try {
     await billingGate.check(s.campaignId);
     const plan = campaign.planId ? await getBillingPlan(campaign.planId) : null;
@@ -443,18 +455,19 @@ export async function getVideoStatusAction(videoId: string): Promise<{ status: s
 
 export async function synthesizeVoiceAction(text: string): Promise<Result & { audioUrl?: string }> {
   const s = await requireSession();
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
   const { getCandidateProfile } = await import('@/lib/candidate');
   const [campaign, profile] = await Promise.all([
     getCampaign(s.campaignId),
     getCandidateProfile(s.campaignId),
   ]);
-  if (!campaign) return { ok: false, error: 'Campaign not found.' };
+  if (!campaign) return { ok: false, error: t('campaignNotFound') };
   // Use the campaign's configured voice; never fall back to a global/stock
   // voice that could be another tenant's cloned voice (INT-6). Refuse (and
   // don't bill) when none is set.
   const voiceId = profile?.elevenLabsVoiceId ?? undefined;
   if (!voiceId) {
-    return { ok: false, error: 'No voice is configured for this campaign yet. Set one in Settings → Avatar.' };
+    return { ok: false, error: t('noVoiceConfigured') };
   }
   try {
     await billingGate.check(s.campaignId);
@@ -476,25 +489,27 @@ export async function synthesizeVoiceAction(text: string): Promise<Result & { au
 
 export async function saveBodyAction(id: string, body: string): Promise<Result> {
   const s = await requireSession();
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
   const item = await requireOwnedItem(id, s.campaignId);
-  if (!item) return NOT_FOUND;
+  if (!item) return { ok: false as const, error: t('contentNotFound') };
   // Editing after approval would let unapproved text reach publish — only allow pre-approval states.
   if (!['draft', 'in_review', 'rejected'].includes(item.status)) {
-    return { ok: false, error: 'This content can no longer be edited. Move it back to draft first.' };
+    return { ok: false, error: t('contentNoLongerEditable') };
   }
   const { error } = await adminDb.from('content_items')
     .update({ body, updated_at: new Date().toISOString() })
     .eq('id', id);
-  if (error) return { ok: false, error: 'Save failed.' };
+  if (error) return { ok: false, error: t('saveFailed') };
   revalidatePath(`/content/${id}`);
   return { ok: true };
 }
 
 export async function approveTextAction(id: string): Promise<Result> {
   const s = await requireSession();
-  if (!can(s.role, 'approve')) return { ok: false, error: 'Permission denied.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'approve')) return { ok: false, error: t('permissionDenied') };
   const item = await requireOwnedItem(id, s.campaignId);
-  if (!item) return NOT_FOUND;
+  if (!item) return { ok: false as const, error: t('contentNotFound') };
 
   // The wizard presents "review + approve" as one click, but the lifecycle FSM
   // requires in_review before approved — so a freshly generated draft needs the
@@ -515,7 +530,7 @@ export async function approveTextAction(id: string): Promise<Result> {
     const { error } = await adminDb.from('content_items')
       .update({ status: 'in_review', updated_at: new Date().toISOString() })
       .eq('id', id);
-    if (error) return { ok: false, error: 'Update failed.' };
+    if (error) return { ok: false, error: t('updateFailed') };
   }
   revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
   return { ok: true };
@@ -523,15 +538,16 @@ export async function approveTextAction(id: string): Promise<Result> {
 
 export async function confirmVideoAction(id: string, videoUrl: string): Promise<Result> {
   const s = await requireSession();
-  if (!can(s.role, 'approve')) return { ok: false, error: 'Permission denied.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'approve')) return { ok: false, error: t('permissionDenied') };
   const item = await requireOwnedItem(id, s.campaignId);
-  if (!item) return NOT_FOUND;
+  if (!item) return { ok: false as const, error: t('contentNotFound') };
   // Persist the rendered video, then approve through the lifecycle. Scheduling
   // is never done here — it always flows through the gated schedule actions.
   const { error } = await adminDb.from('content_items')
     .update({ media_url: videoUrl, updated_at: new Date().toISOString() })
     .eq('id', id);
-  if (error) return { ok: false, error: 'Update failed.' };
+  if (error) return { ok: false, error: t('updateFailed') };
   await auditRepo.append({
     campaignId: item.campaignId, actorUserId: s.userId,
     action: 'confirm_video', entityType: 'content_item', entityId: id,
@@ -547,14 +563,15 @@ export async function generateFromMonitoringAction(
   contentType: string,
 ): Promise<Result & { contentId?: string }> {
   const s = await requireSession();
-  if (!isContentType(contentType)) return { ok: false, error: 'Unknown content type.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!isContentType(contentType)) return { ok: false, error: t('unknownContentType') };
   const { getCandidateProfile } = await import('@/lib/candidate');
 
   const [campaign, profile] = await Promise.all([
     getCampaign(s.campaignId),
     getCandidateProfile(s.campaignId),
   ]);
-  if (!campaign) return { ok: false, error: 'Campaign not found.' };
+  if (!campaign) return { ok: false, error: t('campaignNotFound') };
 
   const { data: result } = await adminDb
     .from('monitoring_results')
@@ -562,7 +579,7 @@ export async function generateFromMonitoringAction(
     .eq('id', monitoringResultId)
     .eq('campaign_id', s.campaignId)
     .single();
-  if (!result) return { ok: false, error: 'Monitoring result not found.' };
+  if (!result) return { ok: false, error: t('monitoringResultNotFound') };
 
   try {
     await billingGate.check(s.campaignId);
@@ -616,16 +633,17 @@ export async function generateFromMonitoringAction(
 
 export async function confirmDisclosureAction(id: string, disclosureText?: string): Promise<Result> {
   const s = await requireSession();
-  if (!can(s.role, 'schedule')) return { ok: false, error: 'Permission denied.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'schedule')) return { ok: false, error: t('permissionDenied') };
   const item = await requireOwnedItem(id, s.campaignId);
-  if (!item) return NOT_FOUND;
+  if (!item) return { ok: false as const, error: t('contentNotFound') };
   const campaign = await getCampaign(s.campaignId);
   const required = disclosureEngine.requiredFor(item.isAiGenerated, campaign?.defaultDisclosureText ?? null);
   if (required) {
     // Campaigns edit the default wording per item, so the wizard's edited
     // text (not the campaign default) is what actually gets attached.
     const text = (disclosureText ?? required.disclosureText).trim();
-    if (!text) return { ok: false, error: 'Disclosure text cannot be empty.' };
+    if (!text) return { ok: false, error: t('disclosureTextEmpty') };
     await disclosureRepo.add({
       contentItemId: id,
       campaignId: s.campaignId,
@@ -641,8 +659,9 @@ export async function confirmDisclosureAction(id: string, disclosureText?: strin
 
 export async function dismissMonitoringAction(id: string): Promise<Result> {
   const s = await requireSession();
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
   const campaignId = tenantId(s);
-  if (!campaignId) return { ok: false, error: 'No campaign in session.' };
+  if (!campaignId) return { ok: false, error: t('noCampaignInSession') };
   return guard(async () => {
     await adminDb.from('monitoring_results')
       .update({ dismissed_at: new Date().toISOString() })
@@ -662,7 +681,8 @@ export async function saveVideoSettingsAction(data: {
 }): Promise<Result> {
   return guard(async () => {
     const s = await requireSession();
-    if (!can(s.role, 'edit_settings')) throw new GateError('Permission denied.');
+    const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+    if (!can(s.role, 'edit_settings')) throw new GateError(t('permissionDenied'));
     const { upsertCandidateProfile } = await import('@/lib/candidate');
     await upsertCandidateProfile(s.campaignId, data);
     revalidatePath('/settings');
@@ -672,11 +692,12 @@ export async function saveVideoSettingsAction(data: {
 export async function uploadBackgroundAction(formData: FormData): Promise<Result & { url?: string }> {
   return guard(async () => {
     const s = await requireSession();
-    if (!can(s.role, 'edit_settings')) throw new GateError('Permission denied.');
+    const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+    if (!can(s.role, 'edit_settings')) throw new GateError(t('permissionDenied'));
     const file = formData.get('file') as File | null;
-    if (!file || !file.size) throw new GateError('No file provided');
-    if (file.size > 10 * 1024 * 1024) throw new GateError('File must be under 10 MB');
-    if (!file.type.startsWith('image/')) throw new GateError('Only image files are allowed');
+    if (!file || !file.size) throw new GateError(t('noFileProvided'));
+    if (file.size > 10 * 1024 * 1024) throw new GateError(t('backgroundFileTooLarge'));
+    if (!file.type.startsWith('image/')) throw new GateError(t('backgroundOnlyImageFiles'));
 
     const bytes = await file.arrayBuffer();
     const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
@@ -701,22 +722,23 @@ export async function scheduleWithTimeAction(
 ): Promise<Result> {
   return guard(async () => {
     const s = await requireSession();
-    if (!can(s.role, 'schedule')) throw new GateError('Permission denied.');
-    if (!scheduledAt) throw new GateError('Scheduled time is required');
+    const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+    if (!can(s.role, 'schedule')) throw new GateError(t('permissionDenied'));
+    if (!scheduledAt) throw new GateError(t('scheduledTimeRequired'));
     // The wizard sends a naive datetime-local string plus the IANA timezone.
     // Interpret it in that zone (not the server's) so the stored UTC instant is
     // correct — otherwise posts fire hours early (audit finding DATA-8).
     const scheduledUtc = zonedNaiveToUtc(scheduledAt, timezone);
-    if (scheduledUtc <= new Date()) throw new GateError('Scheduled time must be in the future');
+    if (scheduledUtc <= new Date()) throw new GateError(t('scheduledTimeMustBeFuture'));
 
     const item = await contentRepo.get(id);
-    if (!item || item.campaignId !== s.campaignId) throw new GateError('Content not found.');
+    if (!item || item.campaignId !== s.campaignId) throw new GateError(t('contentNotFound'));
 
     // Instagram/TikTok reject a post with no image/video attached — catch
     // this before the schedule gate, with an error that explains why.
     const blocked = platformsMissingRequiredMedia(platforms, !!item.mediaUrl);
     if (blocked.length > 0) {
-      throw new GateError(`${blocked.join(', ')} require an image or video, and this content has none attached.`);
+      throw new GateError(t('mediaRequiredForPlatforms', { platforms: blocked.join(', ') }));
     }
 
     // Hard gate: enforces human approval, and disclosure-on-file for AI content,
@@ -767,17 +789,18 @@ export async function beginAvatarUploadAction(
   files: { name: string; type: string; size: number }[],
 ): Promise<Result & { avatarId?: string; uploads?: { path: string; token: string }[] }> {
   const s = await requireSession();
-  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
-  if (!consent) return { ok: false, error: 'Consent confirmation is required.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: t('permissionDenied') };
+  if (!consent) return { ok: false, error: t('consentRequired') };
 
-  if (files.length < 4 || files.length > 10) return { ok: false, error: 'Upload between 4 and 10 photos.' };
+  if (files.length < 4 || files.length > 10) return { ok: false, error: t('photoCountRange') };
   for (const file of files) {
-    if (file.size > 10 * 1024 * 1024) return { ok: false, error: 'Each photo must be under 10 MB.' };
-    if (!file.type.startsWith('image/')) return { ok: false, error: 'Only image files are allowed.' };
+    if (file.size > 10 * 1024 * 1024) return { ok: false, error: t('eachPhotoTooLarge') };
+    if (!file.type.startsWith('image/')) return { ok: false, error: t('avatarOnlyImageFiles') };
   }
 
   const campaign = await getCampaign(s.campaignId);
-  if (!campaign) return { ok: false, error: 'Campaign not found.' };
+  if (!campaign) return { ok: false, error: t('campaignNotFound') };
 
   try {
     await billingGate.check(s.campaignId);
@@ -807,11 +830,12 @@ export async function finalizeAvatarAction(
   paths: string[],
 ): Promise<Result & { avatarId?: string }> {
   const s = await requireSession();
-  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: t('permissionDenied') };
 
   const prefix = `avatars/${s.campaignId}/${avatarId}/`;
   if (paths.length < 4 || paths.length > 10 || paths.some(p => !p.startsWith(prefix))) {
-    return { ok: false, error: 'Invalid upload.' };
+    return { ok: false, error: t('invalidUpload') };
   }
 
   const { insertAvatar, updateAvatarStatus } = await import('@/lib/avatars');
@@ -822,7 +846,7 @@ export async function finalizeAvatarAction(
   const sourcePhotoUrls: string[] = [];
   for (const path of paths) {
     const { data, error } = await adminDb.storage.from('media').download(path);
-    if (error || !data) return { ok: false, error: error?.message ?? 'Uploaded photo not found.' };
+    if (error || !data) return { ok: false, error: error?.message ?? t('uploadedPhotoNotFound') };
     buffers.push(Buffer.from(await data.arrayBuffer()));
     contentTypes.push(data.type);
     sourcePhotoUrls.push(adminDb.storage.from('media').getPublicUrl(path).data.publicUrl);
@@ -860,15 +884,16 @@ export async function finalizeAvatarAction(
 
   revalidatePath('/avatars');
   // Report the failure instead of returning ok:true for a failed creation (INT-14).
-  if (createError) return { ok: false, error: `Avatar creation failed: ${createError}` };
+  if (createError) return { ok: false, error: t('avatarCreationFailed', { details: createError }) };
   return { ok: true, avatarId };
 }
 
 export async function checkAvatarStatusAction(avatarId: string): Promise<Result> {
   const s = await requireSession();
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
   const { getAvatar, updateAvatarStatus } = await import('@/lib/avatars');
   const avatar = await getAvatar(avatarId);
-  if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: 'Avatar not found.' };
+  if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: t('avatarNotFound') };
   if ((avatar.status !== 'training' && avatar.status !== 'pending_consent') || !avatar.heygenGroupId) return { ok: true };
 
   const { status, error, consentStatus } = await photoAvatarProvider.getAvatarGroupStatus(avatar.heygenGroupId);
@@ -895,15 +920,16 @@ export async function beginVideoAvatarUploadAction(
   file: { name: string; type: string; size: number },
 ): Promise<Result & { avatarId?: string; path?: string; token?: string }> {
   const s = await requireSession();
-  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
-  if (!consent) return { ok: false, error: 'Consent confirmation is required.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: t('permissionDenied') };
+  if (!consent) return { ok: false, error: t('consentRequired') };
 
-  if (!file || file.size === 0) return { ok: false, error: 'Upload a training video.' };
-  if (file.size > MAX_TRAINING_VIDEO_BYTES) return { ok: false, error: 'Video must be under 500 MB.' };
-  if (file.type !== 'video/mp4' && file.type !== 'video/quicktime') return { ok: false, error: 'Only MP4 or QuickTime video files are allowed.' };
+  if (!file || file.size === 0) return { ok: false, error: t('uploadTrainingVideo') };
+  if (file.size > MAX_TRAINING_VIDEO_BYTES) return { ok: false, error: t('videoTooLarge500mb') };
+  if (file.type !== 'video/mp4' && file.type !== 'video/quicktime') return { ok: false, error: t('onlyMp4OrQuicktime') };
 
   const campaign = await getCampaign(s.campaignId);
-  if (!campaign) return { ok: false, error: 'Campaign not found.' };
+  if (!campaign) return { ok: false, error: t('campaignNotFound') };
 
   try {
     await billingGate.check(s.campaignId);
@@ -929,16 +955,17 @@ export async function finalizeVideoAvatarAction(
   path: string,
 ): Promise<Result & { avatarId?: string }> {
   const s = await requireSession();
-  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: t('permissionDenied') };
 
   const prefix = `avatars/${s.campaignId}/${avatarId}/`;
-  if (!path.startsWith(prefix)) return { ok: false, error: 'Invalid upload.' };
+  if (!path.startsWith(prefix)) return { ok: false, error: t('invalidUpload') };
 
   const { insertAvatar, updateAvatarStatus } = await import('@/lib/avatars');
   const trimmedName = name.trim() || 'Avatar';
 
   const { data, error: downloadError } = await adminDb.storage.from('media').download(path);
-  if (downloadError || !data) return { ok: false, error: downloadError?.message ?? 'Uploaded video not found.' };
+  if (downloadError || !data) return { ok: false, error: downloadError?.message ?? t('uploadedVideoNotFound') };
   const buffer = Buffer.from(await data.arrayBuffer());
   const contentType = data.type;
 
@@ -966,7 +993,7 @@ export async function finalizeVideoAvatarAction(
   } catch (e) {
     const accessDenied = e instanceof HeyGenAccessDeniedError;
     createError = accessDenied
-      ? "Video avatars aren't enabled for this HeyGen account. Contact HeyGen support to enable Digital Twin access."
+      ? t('digitalTwinNotEnabled')
       : e instanceof Error ? e.message : String(e);
     await updateAvatarStatus(avatarId, 'failed', { errorMessage: createError });
     // The access-denied message is already complete and user-facing — don't
@@ -975,18 +1002,19 @@ export async function finalizeVideoAvatarAction(
   }
 
   revalidatePath('/avatars');
-  if (createError) return { ok: false, error: `Video avatar creation failed: ${createError}` };
+  if (createError) return { ok: false, error: t('videoAvatarCreationFailed', { details: createError }) };
   return { ok: true, avatarId };
 }
 
 export async function setActiveAvatarAction(avatarId: string): Promise<Result> {
   const s = await requireSession();
-  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: t('permissionDenied') };
   const { getAvatar } = await import('@/lib/avatars');
   const { upsertCandidateProfile } = await import('@/lib/candidate');
   const avatar = await getAvatar(avatarId);
-  if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: 'Avatar not found.' };
-  if (avatar.status !== 'ready') return { ok: false, error: 'Avatar is not ready yet.' };
+  if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: t('avatarNotFound') };
+  if (avatar.status !== 'ready') return { ok: false, error: t('avatarNotReady') };
 
   await upsertCandidateProfile(s.campaignId, {
     activeAvatarId: avatarId,
@@ -1004,11 +1032,12 @@ export async function setActiveAvatarAction(avatarId: string): Promise<Result> {
 
 export async function deleteAvatarAction(avatarId: string): Promise<Result> {
   const s = await requireSession();
-  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: t('permissionDenied') };
   const { getAvatar, deleteAvatarRow } = await import('@/lib/avatars');
   const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
   const avatar = await getAvatar(avatarId);
-  if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: 'Avatar not found.' };
+  if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: t('avatarNotFound') };
   const profile = await getCandidateProfile(s.campaignId);
   if (profile?.activeAvatarId === avatarId) {
     // Previously this just blocked deletion outright, which meant a campaign
@@ -1044,13 +1073,14 @@ export async function beginVoiceCloneUploadAction(
   file: { name: string; type: string; size: number },
 ): Promise<Result & { path?: string; token?: string }> {
   const s = await requireSession();
-  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
-  if (!consent) return { ok: false, error: 'Consent confirmation is required.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: t('permissionDenied') };
+  if (!consent) return { ok: false, error: t('consentRequired') };
 
-  if (!file || file.size === 0) return { ok: false, error: 'Upload an audio sample.' };
-  if (file.size > MAX_VOICE_SAMPLE_BYTES) return { ok: false, error: 'Audio sample must be under 50 MB.' };
+  if (!file || file.size === 0) return { ok: false, error: t('uploadAudioSample') };
+  if (file.size > MAX_VOICE_SAMPLE_BYTES) return { ok: false, error: t('audioSampleTooLarge') };
   if (!ALLOWED_VOICE_SAMPLE_TYPES.includes(file.type.split(';')[0])) {
-    return { ok: false, error: 'Only MP3, WAV, M4A, WebM, or OGG audio files are allowed.' };
+    return { ok: false, error: t('onlyAudioFormatsAllowed') };
   }
 
   try {
@@ -1071,16 +1101,17 @@ export async function beginVoiceCloneUploadAction(
 
 export async function finalizeVoiceCloneAction(name: string, path: string): Promise<Result> {
   const s = await requireSession();
-  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: t('permissionDenied') };
 
   const prefix = `voices/${s.campaignId}/`;
-  if (!path.startsWith(prefix)) return { ok: false, error: 'Invalid upload.' };
+  if (!path.startsWith(prefix)) return { ok: false, error: t('invalidUpload') };
 
   const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
   const trimmedName = name.trim() || 'My voice';
 
   const { data, error: downloadError } = await adminDb.storage.from('media').download(path);
-  if (downloadError || !data) return { ok: false, error: downloadError?.message ?? 'Uploaded audio not found.' };
+  if (downloadError || !data) return { ok: false, error: downloadError?.message ?? t('uploadedAudioNotFound') };
   const buffer = Buffer.from(await data.arrayBuffer());
   // Strip any codec parameter (e.g. a browser-recorded file's
   // "audio/webm;codecs=opus") before handing it to HeyGen's asset-upload
@@ -1110,7 +1141,7 @@ export async function finalizeVoiceCloneAction(name: string, path: string): Prom
   } catch (e) {
     cloneLimitHit = e instanceof HeyGenVoiceCloneLimitError;
     cloneError = cloneLimitHit
-      ? 'Voice cloning is temporarily at capacity across the platform — contact support.'
+      ? t('voiceCloneCapacity')
       : e instanceof Error ? e.message : String(e);
   }
 
@@ -1143,7 +1174,7 @@ export async function finalizeVoiceCloneAction(name: string, path: string): Prom
   // it with the generic "Voice cloning failed:" prefix below (mirrors the
   // accessDenied handling in finalizeVideoAvatarAction).
   if (cloneLimitHit) return { ok: false, error: cloneError as string };
-  if (cloneError) return { ok: false, error: `Voice cloning failed: ${cloneError}` };
+  if (cloneError) return { ok: false, error: t('voiceCloningFailed', { details: cloneError }) };
 
   // upsertCandidateProfile silently swallows Supabase write errors platform-wide
   // (shared helper used by many unrelated flows — out of scope to change here).
@@ -1151,7 +1182,7 @@ export async function finalizeVoiceCloneAction(name: string, path: string): Prom
   // clone that got created but never recorded doesn't look like it worked.
   const verifyProfile = await getCandidateProfile(s.campaignId);
   if (verifyProfile?.selfVoiceCloneId !== voiceCloneId) {
-    return { ok: false, error: 'Failed to save the new voice — please try again.' };
+    return { ok: false, error: t('voiceSaveVerificationFailed') };
   }
 
   return { ok: true };
@@ -1177,11 +1208,12 @@ const VOICE_PREVIEW_TEXT = 'Hello, this is a preview of your cloned voice.';
 
 export async function previewVoiceCloneAction(): Promise<Result & { audioUrl?: string }> {
   const s = await requireSession();
-  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: t('permissionDenied') };
   const { getCandidateProfile } = await import('@/lib/candidate');
   const profile = await getCandidateProfile(s.campaignId);
   if (profile?.selfVoiceCloneStatus !== 'ready' || !profile.selfVoiceCloneId) {
-    return { ok: false, error: 'No cloned voice is ready yet.' };
+    return { ok: false, error: t('noVoiceCloneReady') };
   }
 
   try {
@@ -1204,16 +1236,17 @@ export async function previewVoiceCloneAction(): Promise<Result & { audioUrl?: s
 
 export async function generatePromptLookAction(avatarId: string, name: string, prompt: string): Promise<Result> {
   const s = await requireSession();
-  if (!can(s.role, 'manage_avatars')) return { ok: false, error: 'Permission denied.' };
-  if (!prompt.trim()) return { ok: false, error: 'Describe how the new look should appear.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'manage_avatars')) return { ok: false, error: t('permissionDenied') };
+  if (!prompt.trim()) return { ok: false, error: t('describeLookPrompt') };
 
   const { getAvatar, updateAvatarStatus } = await import('@/lib/avatars');
   const avatar = await getAvatar(avatarId);
-  if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: 'Avatar not found.' };
-  if (avatar.status !== 'ready' || !avatar.heygenLookId) return { ok: false, error: 'Avatar is not ready yet.' };
+  if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: t('avatarNotFound') };
+  if (avatar.status !== 'ready' || !avatar.heygenLookId) return { ok: false, error: t('avatarNotReady') };
 
   const campaign = await getCampaign(s.campaignId);
-  if (!campaign) return { ok: false, error: 'Campaign not found.' };
+  if (!campaign) return { ok: false, error: t('campaignNotFound') };
 
   try {
     await billingGate.check(s.campaignId);
@@ -1239,7 +1272,7 @@ export async function generatePromptLookAction(avatarId: string, name: string, p
     }
   } catch (e) {
     if (e instanceof BillingBlocked) return { ok: false, error: e.message };
-    return { ok: false, error: e instanceof Error ? e.message : 'Failed to generate look.' };
+    return { ok: false, error: e instanceof Error ? e.message : t('generateLookFailed') };
   }
   revalidatePath('/avatars');
   return { ok: true };

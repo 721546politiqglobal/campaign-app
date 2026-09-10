@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import {
   inviteTeammateAction, removeTeammateAction, changeTeammateRoleAction,
 } from '@/app/settings/team-actions';
@@ -30,6 +31,8 @@ export function TeamManager({
   seatUsage: { used: number; limit: number | null };
   canManage: boolean;
 }) {
+  const t = useTranslations('team');
+  const tCommon = useTranslations('common');
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
@@ -43,12 +46,12 @@ export function TeamManager({
     try {
       const result = await inviteTeammateAction(formData);
       if (!result.ok) {
-        setError(result.error ?? 'Failed to create invite.');
+        setError(result.error ?? t('errors.createInviteFailed'));
         return;
       }
       router.refresh();
     } catch {
-      setError('Something went wrong. Please try again.');
+      setError(t('errors.genericError'));
     } finally {
       setInviting(false);
     }
@@ -60,14 +63,14 @@ export function TeamManager({
     try {
       const result = await changeTeammateRoleAction(userId, newRole);
       if (!result.ok) {
-        setError(result.error ?? 'Failed to change role.');
+        setError(result.error ?? t('errors.changeRoleFailed'));
         const actualRole = members.find(m => m.id === userId)?.role ?? newRole;
         setRoleValues(prev => ({ ...prev, [userId]: actualRole }));
         return;
       }
       router.refresh();
     } catch {
-      setError('Something went wrong. Please try again.');
+      setError(t('errors.genericError'));
       const actualRole = members.find(m => m.id === userId)?.role ?? newRole;
       setRoleValues(prev => ({ ...prev, [userId]: actualRole }));
     }
@@ -78,12 +81,12 @@ export function TeamManager({
     try {
       const result = await removeTeammateAction(userId);
       if (!result.ok) {
-        setError(result.error ?? 'Failed to remove teammate.');
+        setError(result.error ?? t('errors.removeTeammateFailed'));
         return;
       }
       router.refresh();
     } catch {
-      setError('Something went wrong. Please try again.');
+      setError(t('errors.genericError'));
     }
   }
 
@@ -91,7 +94,7 @@ export function TeamManager({
 
   return (
     <div className="card">
-      <h2>Team</h2>
+      <h2>{t('membersHeading')}</h2>
 
       {error && (
         <div className="banner warn" style={{ marginBottom: 12 }}>
@@ -102,7 +105,7 @@ export function TeamManager({
       <table>
         <thead>
           <tr>
-            <th>Name</th><th>Email</th><th>Role</th>{canManage && <th>Actions</th>}
+            <th>{t('table.name')}</th><th>{t('table.email')}</th><th>{t('table.role')}</th>{canManage && <th>{t('table.actions')}</th>}
           </tr>
         </thead>
         <tbody>
@@ -110,7 +113,7 @@ export function TeamManager({
             <tr key={u.id}>
               <td>{u.name}</td>
               <td className="muted">{u.email ?? '—'}</td>
-              <td className="muted">{u.role}</td>
+              <td className="muted">{tCommon(`roles.${u.role}`)}</td>
               {canManage && (
                 <td>
                   {u.role === 'owner' ? (
@@ -123,10 +126,10 @@ export function TeamManager({
                         value={roleValues[u.id] ?? u.role}
                         onChange={e => handleRoleChange(u.id, e.target.value)}
                       >
-                        {INVITABLE_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                        {INVITABLE_ROLES.map(r => <option key={r} value={r}>{tCommon(`roles.${r}`)}</option>)}
                       </select>
                       <button className="admin-delete-btn" type="button" onClick={() => handleRemove(u.id)}>
-                        Remove
+                        {t('removeButton')}
                       </button>
                     </div>
                   )}
@@ -140,15 +143,15 @@ export function TeamManager({
       {canManage && (
         <>
           <div className="spacer-y" />
-          <h2>Pending invites</h2>
+          <h2>{t('pendingInvitesHeading')}</h2>
           <table>
-            <thead><tr><th>Role</th><th>Expires</th><th>Status</th><th>Link</th></tr></thead>
+            <thead><tr><th>{t('invitesTable.role')}</th><th>{t('invitesTable.expires')}</th><th>{t('invitesTable.status')}</th><th>{t('invitesTable.link')}</th></tr></thead>
             <tbody>
               {invites.map(inv => {
                 const expired = new Date(inv.expiresAt) < new Date();
                 return (
                   <tr key={inv.code}>
-                    <td className="muted">{inv.role}</td>
+                    <td className="muted">{tCommon(`roles.${inv.role}`)}</td>
                     {/* Fixed locale: the default toLocaleDateString() uses the
                         runtime's locale, which differs between the server
                         (render) and the browser (hydrate) — e.g. en-US vs a
@@ -158,10 +161,10 @@ export function TeamManager({
                     <td className="muted" style={{ fontSize: 12 }}>{new Date(inv.expiresAt).toLocaleDateString('en-US')}</td>
                     <td>
                       {inv.usedAt
-                        ? <span className="tag cred-high">Used</span>
+                        ? <span className="tag cred-high">{t('inviteStatus.used')}</span>
                         : expired
-                          ? <span className="tag">Expired</span>
-                          : <span className="tag trending">Active</span>}
+                          ? <span className="tag">{t('inviteStatus.expired')}</span>
+                          : <span className="tag trending">{t('inviteStatus.active')}</span>}
                     </td>
                     <td>
                       {!inv.usedAt && !expired && (
@@ -172,7 +175,7 @@ export function TeamManager({
                 );
               })}
               {invites.length === 0 && (
-                <tr><td colSpan={4} className="muted" style={{ padding: 20 }}>No pending invites.</td></tr>
+                <tr><td colSpan={4} className="muted" style={{ padding: 20 }}>{t('noPendingInvites')}</td></tr>
               )}
             </tbody>
           </table>
@@ -180,21 +183,23 @@ export function TeamManager({
           <div className="spacer-y" />
           {seatLimitReached ? (
             <div className="banner warn">
-              <div className="t">Member limit reached</div>
+              <div className="t">{t('memberLimitReachedTitle')}</div>
               <div className="b">
-                Your plan doesn&rsquo;t have room for more teammates. <a href="/pricing">Upgrade your plan</a> to invite more.
+                {t.rich('memberLimitReachedBody', {
+                  link: chunks => <a href="/pricing">{chunks}</a>,
+                })}
               </div>
             </div>
           ) : (
             <form onSubmit={handleInvite} style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
               <div>
-                <label className="field-label">Role</label>
+                <label className="field-label">{t('inviteRoleLabel')}</label>
                 <select name="role" className="input" style={{ width: 140 }} defaultValue="staff">
-                  {INVITABLE_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                  {INVITABLE_ROLES.map(r => <option key={r} value={r}>{tCommon(`roles.${r}`)}</option>)}
                 </select>
               </div>
               <button className="btn primary" type="submit" disabled={inviting}>
-                {inviting ? 'Generating…' : 'Generate invite link'}
+                {inviting ? t('generatingButton') : t('generateInviteButton')}
               </button>
             </form>
           )}

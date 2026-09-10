@@ -1,15 +1,13 @@
 import { redirect } from 'next/navigation';
+import { getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/session';
 import { getCampaign } from '@/lib/data';
 import { getCandidateProfile } from '@/lib/candidate';
 import { Sidebar } from './Sidebar';
 
-const ROLE_LABEL: Record<string, string> = {
-  owner: 'Owner', manager: 'Manager', approver: 'Approver', staff: 'Staff',
-};
-
 export async function AppFrame({ children }: { children: React.ReactNode }) {
   const s = await requireSession();
+  const t = await getTranslations('common');
 
   const campaign = await getCampaign(s.campaignId);
 
@@ -27,7 +25,7 @@ export async function AppFrame({ children }: { children: React.ReactNode }) {
         <div className="topbar">
           <span className="ws">{campaign?.name}</span>
           <div className="right">
-            <span className="rolebadge">{ROLE_LABEL[s.role] ?? s.role}</span>
+            <span className="rolebadge">{t(`roles.${s.role}`)}</span>
           </div>
         </div>
         <div className="content">{children}</div>

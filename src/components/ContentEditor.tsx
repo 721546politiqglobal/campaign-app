@@ -2,22 +2,21 @@
 
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { createContentAction, generateDraftAction } from '@/app/actions';
+import type { ContentType } from '@/domain/types';
 
-const TYPES = [
-  ['social_post', 'Social post'], ['reel', 'Reel script'], ['press_release', 'Press release'],
-  ['ad_copy', 'Ad copy'], ['talking_points', 'Talking points'],
-] as const;
-
-const BRIEF_SUGGESTIONS = [
-  'Announce our upcoming town hall event',
-  'Respond to an opponent attack ad',
-  'Share our healthcare plan highlights',
-  'Thank volunteers after a successful event',
-  'Push back on a false claim in the news',
+// Order the picker offers, not the enum's declaration order.
+const TYPE_OPTIONS: readonly ContentType[] = [
+  'social_post', 'reel', 'press_release', 'ad_copy', 'talking_points',
 ];
 
+const BRIEF_SUGGESTION_KEYS = [
+  'townHall', 'opponentAttack', 'healthcarePlan', 'thankVolunteers', 'pushBackClaim',
+] as const;
+
 export function ContentEditor() {
+  const t = useTranslations('content');
   const searchParams = useSearchParams();
   const [type, setType]               = useState((searchParams.get('type') as string) || 'reel');
   const [instruction, setInstruction] = useState(searchParams.get('brief') || '');
@@ -28,8 +27,11 @@ export function ContentEditor() {
   const [error, setError]             = useState('');
   const [generated, setGenerated]     = useState(false);
 
+  const TYPES = TYPE_OPTIONS.map(v => [v, t(`types.${v}`)] as const);
+  const BRIEF_SUGGESTIONS = BRIEF_SUGGESTION_KEYS.map(key => t(`editor.briefSuggestions.${key}`));
+
   async function generate() {
-    if (!instruction.trim()) { setError('Describe what you want first.'); return; }
+    if (!instruction.trim()) { setError(t('editor.describeFirst')); return; }
     setBusy(true); setError('');
     try {
       const out = await generateDraftAction(instruction, type);
@@ -41,7 +43,7 @@ export function ContentEditor() {
     } catch {
       // Only unexpected exceptions land here (Next.js redacts their messages in
       // production), so a generic fallback is all that's available.
-      setError('Could not generate a draft. Please try again — if this keeps happening, your AI provider key may not be configured.');
+      setError(t('editor.generateError'));
     } finally { setBusy(false); }
   }
 
@@ -50,7 +52,7 @@ export function ContentEditor() {
       <input type="hidden" name="isAiGenerated" value={isAi ? 'on' : 'off'} />
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <h2>Brief</h2>
+        <h2>{t('editor.brief')}</h2>
         <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
           {TYPES.map(([v, l]) => (
             <label key={v} style={{
@@ -66,11 +68,11 @@ export function ContentEditor() {
             </label>
           ))}
         </div>
-        <label className="field-label">What should this say?</label>
+        <label className="field-label">{t('editor.whatShouldThisSay')}</label>
         <textarea
           value={instruction}
           onChange={e => setInstruction(e.target.value)}
-          placeholder="e.g. Announce our healthcare town hall on Saturday"
+          placeholder={t('editor.instructionPlaceholder')}
           className="input"
           style={{ minHeight: 80, marginBottom: 10 }}
         />
@@ -87,12 +89,12 @@ export function ContentEditor() {
         )}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <button type="button" className="btn primary" onClick={generate} disabled={busy} style={{ minWidth: 170 }}>
-            {busy ? 'Writing your draft…' : generated ? 'Regenerate' : 'Generate with AI'}
+            {busy ? t('editor.writingDraft') : generated ? t('editor.regenerate') : t('editor.generateWithAi')}
           </button>
           {!generated && (
             <button type="button" className="btn" style={{ fontSize: 13 }}
               onClick={() => { setIsAi(false); setGenerated(true); }}>
-              Write it myself
+              {t('editor.writeItMyself')}
             </button>
           )}
         </div>
@@ -101,23 +103,23 @@ export function ContentEditor() {
 
       {generated && (
         <div className="card">
-          <h2>Draft</h2>
-          <label className="field-label">Title</label>
+          <h2>{t('editor.draft')}</h2>
+          <label className="field-label">{t('titleLabel')}</label>
           <input type="text" name="title" className="input" value={title}
             onChange={e => setTitle(e.target.value)} required style={{ marginBottom: 12 }} />
-          <label className="field-label">Body</label>
+          <label className="field-label">{t('editor.bodyLabel')}</label>
           <textarea name="body" className="input" value={body}
             onChange={e => setBody(e.target.value)} required style={{ minHeight: 180 }} />
           <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center' }}>
-            <button type="submit" className="btn primary">Save draft →</button>
+            <button type="submit" className="btn primary">{t('editor.saveDraft')}</button>
             {type === 'reel' ? (
               <span className="muted" style={{ fontSize: 13 }}>
-                Reels always require AI disclosure — an avatar video is generated regardless of script authorship.
+                {t('editor.reelsDisclosureNote')}
               </span>
             ) : (
               <label className="checkrow" style={{ fontSize: 13 }}>
                 <input type="checkbox" checked={isAi} onChange={e => setIsAi(e.target.checked)} />
-                AI-generated (adds required disclosure)
+                {t('editor.aiGeneratedDisclosure')}
               </label>
             )}
           </div>

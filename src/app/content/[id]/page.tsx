@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import { getTranslations } from 'next-intl/server';
 import { AppFrame } from '@/components/AppFrame';
 import { StatusPill } from '@/components/StatusPill';
 import { ContentWizard } from '@/components/ContentWizard';
@@ -9,6 +10,7 @@ import { getContentItem, getDisclosuresForItem, getAuditEntries, getCampaign } f
 import { getCandidateProfile } from '@/lib/candidate';
 
 export default async function ContentDetail({ params }: { params: { id: string } }) {
+  const t = await getTranslations('content');
   const s = await requireSession();
   const [item, discs, log, profile, campaign] = await Promise.all([
     getContentItem(params.id),
@@ -32,14 +34,14 @@ export default async function ContentDetail({ params }: { params: { id: string }
 
   return (
     <AppFrame>
-      <nav className="breadcrumb" aria-label="Breadcrumb">
-        <Link href="/content">Content</Link>
+      <nav className="breadcrumb" aria-label={t('breadcrumbLabel')}>
+        <Link href="/content">{t('pageTitle')}</Link>
         <span className="breadcrumb-sep" aria-hidden>›</span>
         <span>{item.title}</span>
       </nav>
       <div className="pagehead">
         <div>
-          <span className="eyebrow">{item.type.replace('_', ' ')}</span>
+          <span className="eyebrow">{t(`types.${item.type}`)}</span>
           <h1>{item.title}</h1>
         </div>
         <StatusPill status={item.status} />
@@ -60,7 +62,7 @@ export default async function ContentDetail({ params }: { params: { id: string }
 
       {log.length > 0 && (
         <div className="card" style={{ marginTop: 24 }}>
-          <h2>Activity</h2>
+          <h2>{t('activity')}</h2>
           {log.map(a => (
             <div key={a.id} style={{ display: 'flex', gap: 12, padding: '5px 0', fontSize: 13, borderBottom: '1px solid var(--line)' }}>
               <span className="mono" style={{ color: 'var(--text-3)', minWidth: 70 }}>

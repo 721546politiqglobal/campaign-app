@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import {
   beginAvatarUploadAction, finalizeAvatarAction, checkAvatarStatusAction, setActiveAvatarAction, deleteAvatarAction,
   generatePromptLookAction, beginVideoAvatarUploadAction, finalizeVideoAvatarAction,
@@ -25,6 +26,7 @@ export function AvatarManager({
 }) {
   const router = useRouter();
   const { toast } = useToast();
+  const t = useTranslations('avatarManager');
 
   const [modalOpen, setModalOpen] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -108,8 +110,8 @@ export function AvatarManager({
     probe.preload = 'metadata';
     probe.onloadedmetadata = () => {
       URL.revokeObjectURL(url);
-      if (probe.duration < 30) setVideoDurationWarning('This clip looks shorter than 30 seconds — HeyGen recommends at least 30s of footage.');
-      else if (probe.duration > 300) setVideoDurationWarning('This clip looks longer than 5 minutes — HeyGen recommends under 5 minutes of footage.');
+      if (probe.duration < 30) setVideoDurationWarning(t('steps.durationWarningShort'));
+      else if (probe.duration > 300) setVideoDurationWarning(t('steps.durationWarningLong'));
       else setVideoDurationWarning(null);
     };
     probe.src = url;
@@ -129,7 +131,7 @@ export function AvatarManager({
     }
     if (!begin.path || !begin.token || !begin.avatarId) {
       setVideoSubmitting(false);
-      toast('Failed to create video avatar', 'error');
+      toast(t('errors.createVideoAvatarFailed'), 'error');
       return;
     }
 
@@ -137,24 +139,24 @@ export function AvatarManager({
       .uploadToSignedUrl(begin.path, begin.token, videoFile);
     if (uploadError) {
       setVideoSubmitting(false);
-      toast(`Upload failed: ${uploadError.message}`, 'error');
+      toast(t('toast.uploadFailed', { message: uploadError.message }), 'error');
       return;
     }
 
     const result = await finalizeVideoAvatarAction(begin.avatarId, videoName, begin.path);
     setVideoSubmitting(false);
     if (result.ok) {
-      toast('Video avatar creation started — send the candidate the consent link shown on this avatar.');
+      toast(t('toast.videoAvatarCreationStarted'));
       resetVideoModal();
       router.refresh();
     } else {
-      toast(result.error ?? 'Failed to create video avatar', 'error');
+      toast(result.error ?? t('errors.createVideoAvatarFailed'), 'error');
     }
   }
 
   async function handleCopyConsentLink(url: string) {
     await navigator.clipboard.writeText(url);
-    toast('Consent link copied.');
+    toast(t('toast.consentLinkCopied'));
   }
 
   function handleFilesChosen(chosen: FileList | null) {
@@ -173,7 +175,7 @@ export function AvatarManager({
     }
     if (!begin.uploads || !begin.avatarId) {
       setSubmitting(false);
-      toast('Failed to create avatar', 'error');
+      toast(t('errors.createAvatarFailed'), 'error');
       return;
     }
 
@@ -183,7 +185,7 @@ export function AvatarManager({
         .uploadToSignedUrl(uploads[i].path, uploads[i].token, files[i]);
       if (uploadError) {
         setSubmitting(false);
-        toast(`Upload failed: ${uploadError.message}`, 'error');
+        toast(t('toast.uploadFailed', { message: uploadError.message }), 'error');
         return;
       }
     }
@@ -191,24 +193,24 @@ export function AvatarManager({
     const result = await finalizeAvatarAction(begin.avatarId, name, uploads.map(u => u.path));
     setSubmitting(false);
     if (result.ok) {
-      toast('Avatar creation started — this can take a few minutes.');
+      toast(t('toast.avatarCreationStarted'));
       resetModal();
       router.refresh();
     } else {
-      toast(result.error ?? 'Failed to create avatar', 'error');
+      toast(result.error ?? t('errors.createAvatarFailed'), 'error');
     }
   }
 
   async function handleSetActive(id: string) {
     const result = await setActiveAvatarAction(id);
-    if (result.ok) { toast('Active avatar updated.'); router.refresh(); }
-    else toast(result.error ?? 'Failed to set active avatar', 'error');
+    if (result.ok) { toast(t('toast.activeAvatarUpdated')); router.refresh(); }
+    else toast(result.error ?? t('errors.setActiveFailed'), 'error');
   }
 
   async function handleDelete(id: string) {
     const result = await deleteAvatarAction(id);
-    if (result.ok) { toast('Avatar deleted.'); router.refresh(); }
-    else toast(result.error ?? 'Failed to delete avatar', 'error');
+    if (result.ok) { toast(t('toast.avatarDeleted')); router.refresh(); }
+    else toast(result.error ?? t('errors.deleteFailed'), 'error');
   }
 
   function resetLookModal() {
@@ -223,25 +225,25 @@ export function AvatarManager({
     const result = await generatePromptLookAction(lookModalAvatarId, lookName, lookPrompt);
     setGeneratingLook(false);
     if (result.ok) {
-      toast('New look generated — it replaces this avatar’s current look and will be used for future videos.');
+      toast(t('toast.lookGenerated'));
       resetLookModal();
       router.refresh();
     } else {
-      toast(result.error ?? 'Failed to generate look', 'error');
+      toast(result.error ?? t('errors.generateLookFailed'), 'error');
     }
   }
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div className="eyebrow">{avatars.length} {avatars.length === 1 ? 'avatar' : 'avatars'}</div>
+        <div className="eyebrow">{t('avatarCount', { count: avatars.length })}</div>
         {canManage && (
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setModalOpen(true)}>
-              + From photos
+              {t('fromPhotosButton')}
             </button>
             <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setVideoModalOpen(true)}>
-              + From video
+              {t('fromVideoButton')}
             </button>
           </div>
         )}
@@ -250,8 +252,8 @@ export function AvatarManager({
       {avatars.length === 0 && (
         <p className="muted" style={{ fontSize: 13, marginBottom: 20 }}>
           {canManage
-            ? 'No avatars yet — create one from a set of candidate photos.'
-            : 'No avatars have been created for this campaign yet.'}
+            ? t('emptyState.canManage')
+            : t('emptyState.readOnly')}
         </p>
       )}
 
@@ -273,7 +275,7 @@ export function AvatarManager({
                 <div style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
                   {a.id === activeAvatarId && (
-                    <span className="pill published">Active</span>
+                    <span className="pill published">{t('activeBadge')}</span>
                   )}
                 </div>
                 <div className="muted" style={{ fontSize: 12, marginTop: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -283,11 +285,11 @@ export function AvatarManager({
                     boxShadow: `0 0 6px ${a.status === 'ready' ? 'var(--ok)' : a.status === 'failed' ? 'var(--bad)' : 'var(--warn)'}`,
                   }} />
                   <span>
-                    {a.status === 'pending_consent' && 'Waiting on candidate consent'}
-                    {a.status === 'training' && 'Training — usually a few minutes'}
-                    {a.status === 'ready' && 'Ready'}
-                    {a.status === 'failed' && `Failed: ${a.errorMessage ?? 'Unknown error'}`}
-                    <span className="mono" style={{ color: 'var(--text-3)' }}> · created {new Date(a.createdAt).toLocaleDateString('en-US')}</span>
+                    {a.status === 'pending_consent' && t('status.pendingConsent')}
+                    {a.status === 'training' && t('status.training')}
+                    {a.status === 'ready' && t('status.ready')}
+                    {a.status === 'failed' && t('status.failed', { message: a.errorMessage ?? t('status.unknownError') })}
+                    <span className="mono" style={{ color: 'var(--text-3)' }}>{t('createdOn', { date: new Date(a.createdAt).toLocaleDateString('en-US') })}</span>
                   </span>
                 </div>
               </div>
@@ -296,20 +298,20 @@ export function AvatarManager({
               <div style={{ display: 'flex', gap: 8 }}>
                 {a.status === 'pending_consent' && a.consentUrl && (
                   <button className="btn" style={{ fontSize: 12 }} onClick={() => handleCopyConsentLink(a.consentUrl!)}>
-                    Copy consent link
+                    {t('actions.copyConsentLink')}
                   </button>
                 )}
                 {a.status === 'ready' && a.id !== activeAvatarId && (
                   <button className="btn" style={{ fontSize: 12 }} onClick={() => handleSetActive(a.id)}>
-                    Set active
+                    {t('actions.setActive')}
                   </button>
                 )}
                 {a.status === 'ready' && a.heygenLookId && (
                   <button className="btn" style={{ fontSize: 12 }} onClick={() => setLookModalAvatarId(a.id)}>
-                    Generate look
+                    {t('actions.generateLook')}
                   </button>
                 )}
-                <button className="admin-delete-btn" onClick={() => handleDelete(a.id)}>Delete</button>
+                <button className="admin-delete-btn" onClick={() => handleDelete(a.id)}>{t('actions.delete')}</button>
               </div>
             )}
           </div>
@@ -321,24 +323,24 @@ export function AvatarManager({
           <div className="modal">
             {step === 1 && (
               <>
-                <div className="modal-step">Step 1 of 3 · Consent</div>
-                <h3 style={{ marginBottom: 14, fontSize: 16 }}>Confirm permission</h3>
+                <div className="modal-step">{t('steps.consentLabel')}</div>
+                <h3 style={{ marginBottom: 14, fontSize: 16 }}>{t('steps.confirmPermissionTitle')}</h3>
                 <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, lineHeight: 1.5 }}>
                   <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
-                  I confirm I have the candidate&rsquo;s permission to use these photos to create an AI avatar of them.
+                  {t('steps.photoConsentText')}
                 </label>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={resetModal}>Cancel</button>
-                  <button className="btn primary" disabled={!consent} onClick={() => setStep(2)}>Next →</button>
+                  <button className="btn" onClick={resetModal}>{t('actions.cancel')}</button>
+                  <button className="btn primary" disabled={!consent} onClick={() => setStep(2)}>{t('actions.next')}</button>
                 </div>
               </>
             )}
             {step === 2 && (
               <>
-                <div className="modal-step">Step 2 of 3 · Photos</div>
-                <h3 style={{ marginBottom: 12, fontSize: 16 }}>Upload photos</h3>
+                <div className="modal-step">{t('steps.photosLabel')}</div>
+                <h3 style={{ marginBottom: 12, fontSize: 16 }}>{t('steps.uploadPhotosTitle')}</h3>
                 <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-                  Upload {MIN_PHOTOS}–{MAX_PHOTOS} recent, high-resolution photos. Mix of angles and expressions gives the best result.
+                  {t('steps.uploadPhotosInstructions', { min: MIN_PHOTOS, max: MAX_PHOTOS })}
                 </p>
                 <input type="file" accept="image/*" multiple onChange={e => handleFilesChosen(e.target.files)} />
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
@@ -352,26 +354,26 @@ export function AvatarManager({
                     </div>
                   ))}
                 </div>
-                <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>{files.length} of {MAX_PHOTOS} photos added</p>
+                <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>{t('steps.photosAddedCount', { count: files.length, max: MAX_PHOTOS })}</p>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={() => setStep(1)}>← Back</button>
-                  <button className="btn primary" disabled={files.length < MIN_PHOTOS} onClick={() => setStep(3)}>Next →</button>
+                  <button className="btn" onClick={() => setStep(1)}>{t('actions.back')}</button>
+                  <button className="btn primary" disabled={files.length < MIN_PHOTOS} onClick={() => setStep(3)}>{t('actions.next')}</button>
                 </div>
               </>
             )}
             {step === 3 && (
               <>
-                <div className="modal-step">Step 3 of 3 · Name</div>
-                <h3 style={{ marginBottom: 12, fontSize: 16 }}>Name this avatar</h3>
-                <input className="input" placeholder="e.g. Alex — studio look" value={name}
+                <div className="modal-step">{t('steps.nameLabel')}</div>
+                <h3 style={{ marginBottom: 12, fontSize: 16 }}>{t('steps.nameAvatarTitle')}</h3>
+                <input className="input" placeholder={t('steps.photoNamePlaceholder')} value={name}
                   onChange={e => setName(e.target.value)} maxLength={60} />
                 <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
-                  Give it a name you&apos;ll recognize later — e.g. the look or setting.
+                  {t('steps.photoNameHint')}
                 </p>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={() => setStep(2)}>← Back</button>
+                  <button className="btn" onClick={() => setStep(2)}>{t('actions.back')}</button>
                   <button className="btn primary" disabled={submitting || !name.trim()} onClick={handleSubmit}>
-                    {submitting ? 'Creating…' : 'Create Avatar'}
+                    {submitting ? t('steps.creating') : t('steps.createAvatar')}
                   </button>
                 </div>
               </>
@@ -385,25 +387,24 @@ export function AvatarManager({
           <div className="modal">
             {videoStep === 1 && (
               <>
-                <div className="modal-step">Step 1 of 3 · Consent</div>
-                <h3 style={{ marginBottom: 14, fontSize: 16 }}>Confirm permission</h3>
+                <div className="modal-step">{t('steps.consentLabel')}</div>
+                <h3 style={{ marginBottom: 14, fontSize: 16 }}>{t('steps.confirmPermissionTitle')}</h3>
                 <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, lineHeight: 1.5 }}>
                   <input type="checkbox" checked={videoConsent} onChange={e => setVideoConsent(e.target.checked)} />
-                  I confirm I have the candidate&rsquo;s permission to record and use this video to create an AI avatar of them.
+                  {t('steps.videoConsentText')}
                 </label>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={resetVideoModal}>Cancel</button>
-                  <button className="btn primary" disabled={!videoConsent} onClick={() => setVideoStep(2)}>Next →</button>
+                  <button className="btn" onClick={resetVideoModal}>{t('actions.cancel')}</button>
+                  <button className="btn primary" disabled={!videoConsent} onClick={() => setVideoStep(2)}>{t('actions.next')}</button>
                 </div>
               </>
             )}
             {videoStep === 2 && (
               <>
-                <div className="modal-step">Step 2 of 3 · Video</div>
-                <h3 style={{ marginBottom: 12, fontSize: 16 }}>Upload training video</h3>
+                <div className="modal-step">{t('steps.videoLabel')}</div>
+                <h3 style={{ marginBottom: 12, fontSize: 16 }}>{t('steps.uploadVideoTitle')}</h3>
                 <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-                  Upload one continuous, well-lit, front-facing clip of the candidate speaking (30 seconds to 5 minutes).
-                  The candidate will separately complete a short consent recording on HeyGen&rsquo;s own page after you submit this.
+                  {t('steps.uploadVideoInstructions')}
                 </p>
                 <input type="file" accept="video/mp4,video/quicktime" onChange={e => handleVideoFileChosen(e.target.files)} />
                 {videoFile && (
@@ -413,21 +414,21 @@ export function AvatarManager({
                   <p className="muted" style={{ fontSize: 12, marginTop: 8, color: 'var(--warn)' }}>{videoDurationWarning}</p>
                 )}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={() => setVideoStep(1)}>← Back</button>
-                  <button className="btn primary" disabled={!videoFile} onClick={() => setVideoStep(3)}>Next →</button>
+                  <button className="btn" onClick={() => setVideoStep(1)}>{t('actions.back')}</button>
+                  <button className="btn primary" disabled={!videoFile} onClick={() => setVideoStep(3)}>{t('actions.next')}</button>
                 </div>
               </>
             )}
             {videoStep === 3 && (
               <>
-                <div className="modal-step">Step 3 of 3 · Name</div>
-                <h3 style={{ marginBottom: 12, fontSize: 16 }}>Name this avatar</h3>
-                <input className="input" placeholder="e.g. Alex — video twin" value={videoName}
+                <div className="modal-step">{t('steps.nameLabel')}</div>
+                <h3 style={{ marginBottom: 12, fontSize: 16 }}>{t('steps.nameAvatarTitle')}</h3>
+                <input className="input" placeholder={t('steps.videoNamePlaceholder')} value={videoName}
                   onChange={e => setVideoName(e.target.value)} maxLength={60} />
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={() => setVideoStep(2)}>← Back</button>
+                  <button className="btn" onClick={() => setVideoStep(2)}>{t('actions.back')}</button>
                   <button className="btn primary" disabled={videoSubmitting || !videoName.trim()} onClick={handleVideoSubmit}>
-                    {videoSubmitting ? 'Creating…' : 'Create Video Avatar'}
+                    {videoSubmitting ? t('steps.creating') : t('steps.createVideoAvatar')}
                   </button>
                 </div>
               </>
@@ -439,22 +440,22 @@ export function AvatarManager({
       {lookModalAvatarId && (
         <div className="modal-backdrop">
           <div className="modal">
-            <div className="modal-step">New look</div>
-            <h3 style={{ marginBottom: 12, fontSize: 16 }}>Generate a new look</h3>
+            <div className="modal-step">{t('lookModal.heading')}</div>
+            <h3 style={{ marginBottom: 12, fontSize: 16 }}>{t('lookModal.title')}</h3>
             <p className="muted" style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>
-              Describe the style or setting — HeyGen generates a new look of the same person, not a different one.
+              {t('lookModal.description')}
             </p>
-            <label className="field-label">Name</label>
-            <input className="input" placeholder="e.g. Studio look" value={lookName}
+            <label className="field-label">{t('lookModal.nameLabel')}</label>
+            <input className="input" placeholder={t('lookModal.namePlaceholder')} value={lookName}
               onChange={e => setLookName(e.target.value)} style={{ marginBottom: 12 }} />
-            <label className="field-label">Prompt</label>
+            <label className="field-label">{t('lookModal.promptLabel')}</label>
             <textarea className="input" style={{ minHeight: 80 }}
-              placeholder="e.g. studio lighting, navy suit, American flag backdrop"
+              placeholder={t('lookModal.promptPlaceholder')}
               value={lookPrompt} onChange={e => setLookPrompt(e.target.value)} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-              <button className="btn" onClick={resetLookModal}>Cancel</button>
+              <button className="btn" onClick={resetLookModal}>{t('actions.cancel')}</button>
               <button className="btn primary" disabled={generatingLook || !lookPrompt.trim()} onClick={handleGenerateLook}>
-                {generatingLook ? 'Generating…' : 'Generate look'}
+                {generatingLook ? t('lookModal.generating') : t('actions.generateLook')}
               </button>
             </div>
           </div>

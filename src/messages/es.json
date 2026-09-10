@@ -1,0 +1,1058 @@
+{
+  "common": {
+    "language": "Idioma",
+    "languageEnglish": "Inglés",
+    "languageSpanish": "Español",
+    "languageUpdateFailed": "No se pudo cambiar el idioma.",
+    "statusAriaLabel": "Estado: {status}",
+    "mainNavigation": "Navegación principal",
+    "signOut": "Cerrar sesión",
+    "dismiss": "Cerrar",
+    "nav": {
+      "dashboard": "Panel",
+      "content": "Contenido",
+      "monitoring": "Monitoreo",
+      "analytics": "Analítica",
+      "avatars": "Avatares",
+      "team": "Equipo",
+      "settings": "Configuración",
+      "billing": "Facturación"
+    },
+    "roles": {
+      "owner": "Propietario",
+      "manager": "Gerente",
+      "approver": "Aprobador",
+      "staff": "Personal",
+      "super_admin": "Superadministrador"
+    },
+    "status": {
+      "draft": "Borrador",
+      "in_review": "En revisión",
+      "approved": "Aprobado",
+      "scheduled": "Programado",
+      "publishing": "Publicando",
+      "published": "Publicado",
+      "rejected": "Rechazado",
+      "archived": "Archivado"
+    },
+    "gate": {
+      "publishGates": "Requisitos de publicación",
+      "humanApproval": "Aprobación humana",
+      "aiDisclosure": "Divulgación de IA",
+      "noDisclosureNeeded": "No se requiere divulgación",
+      "publishStatus": "Estado de publicación",
+      "cleared": "Aprobado para publicar",
+      "held": "Retenido"
+    }
+  },
+  "dashboard": {
+    "overview": "Resumen",
+    "today": "Hoy",
+    "opponentFeed": "Feed del oponente",
+    "newContent": "+ Nuevo contenido",
+    "tiles": {
+      "needsReview": "Por revisar",
+      "scheduled": "Programado",
+      "published": "Publicado",
+      "oppSignals": "Señales del oponente",
+      "itemsWaiting": "{count, plural, one {# elemento pendiente} other {# elementos pendientes}}",
+      "queuedToPublish": "en cola para publicar",
+      "liveOnSocials": "en vivo en redes",
+      "inTheFeed": "en el feed"
+    },
+    "goingOutToday": "Se publica hoy",
+    "needsAttention": "Requiere atención",
+    "emptyCaughtUp": "Estás al día — no hay nada pendiente.",
+    "createNewContent": "Crear contenido nuevo",
+    "updatedOn": "actualizado {date}",
+    "opponentPulse": "Actividad del oponente",
+    "live": "EN VIVO",
+    "noOpponentActivity": "Aún no se detectó actividad del oponente.",
+    "seeFullFeed": "Ver feed completo",
+    "spendThisBillingPeriod": "Gasto de este período de facturación"
+  },
+  "content": {
+    "pageTitle": "Contenido",
+    "library": "Biblioteca",
+    "newContent": "Nuevo contenido",
+    "createContent": "Crear contenido",
+    "create": "Crear",
+    "titleLabel": "Título",
+    "typeLabel": "Tipo",
+    "sourceLabel": "Origen",
+    "statusLabel": "Estado",
+    "aiGenerated": "Generado por IA",
+    "human": "Humano",
+    "breadcrumbLabel": "Ruta de navegación",
+    "activity": "Actividad",
+    "filters": {
+      "all": "Todos",
+      "draft": "borrador",
+      "inReview": "en revisión",
+      "approved": "aprobado",
+      "scheduled": "programado",
+      "published": "publicado"
+    },
+    "emptyState": {
+      "default": "Aún no hay contenido — crea tu primera pieza.",
+      "draft": "Aún no hay contenido en borrador.",
+      "inReview": "Aún no hay contenido en revisión.",
+      "approved": "Aún no hay contenido aprobado.",
+      "scheduled": "Aún no hay contenido programado.",
+      "published": "Aún no hay contenido publicado."
+    },
+    "types": {
+      "reel": "Reel",
+      "social_post": "Publicación social",
+      "press_release": "Comunicado de prensa",
+      "ad_copy": "Texto publicitario",
+      "talking_points": "Puntos de conversación"
+    },
+    "editor": {
+      "brief": "Resumen",
+      "whatShouldThisSay": "¿Qué debería decir esto?",
+      "instructionPlaceholder": "p. ej. Anuncia nuestra asamblea comunitaria sobre salud el sábado",
+      "describeFirst": "Describe primero lo que quieres.",
+      "generateError": "No se pudo generar un borrador. Inténtalo de nuevo — si esto sigue ocurriendo, es posible que la clave de tu proveedor de IA no esté configurada.",
+      "writingDraft": "Escribiendo tu borrador…",
+      "regenerate": "Regenerar",
+      "generateWithAi": "Generar con IA",
+      "writeItMyself": "Escribirlo yo mismo",
+      "draft": "Borrador",
+      "bodyLabel": "Cuerpo",
+      "saveDraft": "Guardar borrador →",
+      "reelsDisclosureNote": "Los reels siempre requieren divulgación de IA: se genera un video con avatar sin importar quién haya escrito el guion.",
+      "aiGeneratedDisclosure": "Generado por IA (agrega la divulgación requerida)",
+      "briefSuggestions": {
+        "townHall": "Anuncia nuestra próxima asamblea comunitaria",
+        "opponentAttack": "Responde a un anuncio de ataque del oponente",
+        "healthcarePlan": "Comparte los puntos destacados de nuestro plan de salud",
+        "thankVolunteers": "Agradece a los voluntarios tras un evento exitoso",
+        "pushBackClaim": "Refuta una afirmación falsa en las noticias"
+      }
+    }
+  },
+  "contentWizard": {
+    "steps": {
+      "review": "Revisar borrador",
+      "video": "Generar video",
+      "disclosure": "Divulgación",
+      "publish": "Publicar"
+    },
+    "saving": "Guardando…",
+    "approvalRequired": "La aprobación requiere acceso de gerente o aprobador.",
+    "errors": {
+      "somethingWentWrong": "Algo salió mal.",
+      "videoGenerationFailed": "Error al generar el video."
+    },
+    "published": {
+      "title": "Publicado",
+      "description": "Este contenido está en vivo en todas las plataformas seleccionadas."
+    },
+    "inactive": {
+      "rejectedTitle": "Rechazado",
+      "archivedTitle": "Archivado",
+      "description": "Este contenido ya no está activo."
+    },
+    "review": {
+      "yourDraft": "Tu borrador",
+      "aiGenerated": "Generado por IA",
+      "humanWritten": "Escrito por humano",
+      "contentLabel": "Contenido",
+      "saveEdits": "Guardar cambios",
+      "readyToContinue": "¿Listo para continuar?",
+      "readyDescription": "Revisa tu borrador. Haz los cambios que necesites a la izquierda y luego aprueba para continuar.",
+      "nextVideo": "Siguiente: genera un video con avatar en el que presentas este guion.",
+      "nextDisclosure": "Siguiente: revisa y confirma la divulgación de IA requerida.",
+      "nextPublish": "Siguiente: elige las plataformas y publica.",
+      "continueButton": "Se ve bien — Continuar →"
+    },
+    "video": {
+      "scriptTitle": "Guion",
+      "spokenByAvatar": "Esto lo dirá tu avatar",
+      "avatarVideoTitle": "Video con avatar",
+      "description": "Tu avatar de candidato presentará este guion. La generación toma de 2 a 4 minutos.",
+      "formatLabel": "Formato de video",
+      "format": {
+        "youtube": "YouTube · Horizontal",
+        "tiktok": "TikTok/Reels/Stories · Vertical",
+        "instagram": "Instagram · Cuadrado"
+      },
+      "defaultFormatNote": "El formato predeterminado se puede cambiar en",
+      "avatarsLink": "Avatares",
+      "startingButton": "Iniciando…",
+      "generateButton": "Generar video con avatar",
+      "generatingText": "Generando tu video — esto toma un par de minutos.",
+      "generatingNote": "Puedes salir de esta página y volver — no se perderá nada.",
+      "continueButton": "El video se ve bien — Continuar →",
+      "generationFailedMessage": "Error al generar el video. Inténtalo de nuevo.",
+      "retry": "Reintentar",
+      "timedOutMessage": "Esto está tardando más de lo esperado. Tu video podría seguir procesándose — sal de esta página y vuelve a revisar en unos minutos.",
+      "refresh": "Actualizar"
+    },
+    "disclosure": {
+      "title": "Divulgación de IA requerida",
+      "description": "Debido a que este contenido fue generado por IA, esta divulgación debe adjuntarse antes de publicar. Edita el texto si es necesario — se agregará a la publicación automáticamente.",
+      "defaultPlacement": "superposición",
+      "textPlaceholder": "Ingresa el texto de divulgación requerido…",
+      "textRequired": "Se requiere el texto de divulgación.",
+      "confirming": "Confirmando…",
+      "confirmButton": "Confirmar divulgación — Continuar →"
+    },
+    "publish": {
+      "title": "Publicar",
+      "platformsLabel": "Plataformas",
+      "mediaRequiredNote": "Instagram y TikTok requieren una imagen o video, y este contenido no lo tiene.",
+      "timingLabel": "Momento de publicación",
+      "publishNow": "Publicar ahora",
+      "scheduleForLater": "Programar para más tarde",
+      "dateTimeLabel": "Fecha (MM/DD/YYYY) y hora",
+      "pickTimeError": "Elige una hora al menos 5 minutos a partir de ahora.",
+      "videoLabel": "Video",
+      "publishButton": "{count, plural, one {Publicar en # plataforma} other {Publicar en # plataformas}}",
+      "publishing": "Publicando…",
+      "publishedToast": "¡Publicado correctamente!",
+      "publishingRequiresManager": "Publicar requiere acceso de gerente.",
+      "scheduling": "Programando…",
+      "scheduledToast": "¡Contenido programado!",
+      "scheduleFor": "Programar para {date}",
+      "pickTimeAbove": "Elige una hora arriba",
+      "schedulingRequiresManager": "Programar requiere acceso de gerente."
+    }
+  },
+  "settings": {
+    "eyebrow": "Configuración",
+    "title": "Configuración",
+    "profile": {
+      "heading": "Perfil del candidato",
+      "error": {
+        "title": "El perfil no se guardó",
+        "body": "Revisa el partido, el tono de voz y los campos de URL — uno de ellos no es válido."
+      },
+      "fields": {
+        "fullName": "Nombre completo",
+        "preferredName": "Nombre preferido",
+        "office": "Cargo al que se postula",
+        "district": "Distrito",
+        "party": "Partido",
+        "primaryOpponent": "Oponente principal",
+        "bio": "Biografía (2–3 oraciones)",
+        "tagline": "Eslogan",
+        "targetAudience": "Público objetivo",
+        "keyPositions": "Posturas clave (una por línea)",
+        "voiceTone": "Tono de voz"
+      },
+      "voiceToneOptions": {
+        "conversational": "Conversacional",
+        "formal": "Formal",
+        "urgent": "Urgente",
+        "inspirational": "Inspirador"
+      },
+      "monitoring": {
+        "eyebrow": "Monitoreo de la oposición",
+        "description": "A quién y qué vigila el war room por ti.",
+        "opponentAliases": "Alias del oponente (separados por comas)",
+        "monitoringKeywords": "Palabras clave adicionales a rastrear (separadas por comas)",
+        "opponentTwitter": "Usuario de Twitter/X del oponente",
+        "opponentInstagram": "Usuario de Instagram del oponente",
+        "opponentFacebook": "Slug de la página de Facebook del oponente",
+        "googleAlertsRssUrl": "URL del feed RSS de Google Alerts"
+      },
+      "saveButton": "Guardar perfil"
+    },
+    "campaign": {
+      "heading": "Campaña",
+      "jurisdictions": "Jurisdicciones"
+    },
+    "disclosure": {
+      "heading": "Divulgación de IA predeterminada",
+      "description": "Se muestra para confirmación en cada contenido generado por IA antes de poder programarlo. Déjalo en blanco para usar el texto genérico predeterminado.",
+      "placeholder": "Este contenido fue generado o alterado sustancialmente con IA.",
+      "saveButton": "Guardar divulgación"
+    }
+  },
+  "monitoring": {
+    "eyebrow": "Inteligencia",
+    "title": "Monitoreo del oponente",
+    "addManually": {
+      "heading": "Agregar historia manualmente",
+      "description": "¿Viste algo fuera de línea? Agrégalo aquí — un segmento de TV, un volante, cualquier cosa que valga la pena rastrear.",
+      "headlineLabel": "Titular / descripción *",
+      "headlinePlaceholder": "Smith afirmó que Rivera subió los impuestos",
+      "sourceLabel": "Nombre de la fuente *",
+      "sourcePlaceholder": "TV local / Volante / Twitter",
+      "urlLabel": "URL (opcional)",
+      "submitButton": "Agregar a monitoreo"
+    },
+    "filters": {
+      "all": "Todos",
+      "twitter": "Twitter/X",
+      "instagram": "Instagram",
+      "youtube": "YouTube",
+      "facebook": "Facebook",
+      "news": "Noticias"
+    },
+    "category": {
+      "news": "Noticias",
+      "social": "Social",
+      "blog": "Blog",
+      "pressRelease": "Comunicado de prensa"
+    },
+    "emptyState": "No hay resultados para este filtro.",
+    "trending": "Tendencia",
+    "showLess": "Mostrar menos",
+    "showMore": "Mostrar más",
+    "draftRebuttal": "Redactar respuesta",
+    "readArticle": "Leer artículo ↗",
+    "dismiss": "Descartar",
+    "dismissing": "Descartando…",
+    "respondToStory": "Responde a esta noticia de {source}: \"{excerpt}\""
+  },
+  "analytics": {
+    "pageTitle": "Analítica",
+    "last30Days": "Últimos 30 días",
+    "noDataMessage": "Los datos de rendimiento aparecerán aquí una vez que se sincronice tu contenido publicado.",
+    "tiles": {
+      "reach": "Alcance",
+      "engagement": "Interacción",
+      "engagementRate": "Tasa de interacción",
+      "videoWatchTime": "Tiempo de visualización de video"
+    },
+    "topPerformingContent": "Contenido con mejor rendimiento",
+    "noContentThisPeriod": "Nada publicado todavía en este período.",
+    "byPlatform": "Por plataforma",
+    "byContentType": "Por tipo de contenido",
+    "opponentActivityTitle": "Actividad del oponente (contexto)",
+    "opponentActivityText": "Tu campaña publicó <strong>{postsCount}</strong> piezas de contenido en este período, frente a <strong>{mentionsCount}</strong> menciones rastreadas de tu oponente.",
+    "aiInsightTitle": "Información de IA",
+    "generatedOn": "Generado {date}",
+    "noInsightYet": "Vuelve a consultar después de tu próxima sincronización programada para ver información generada por IA.",
+    "barListEmpty": "Aún no hay datos."
+  },
+  "avatars": {
+    "eyebrow": "Configuración",
+    "title": "Avatares",
+    "avatarsHeading": "Avatares del candidato",
+    "avatarsDescription": "Crea un avatar de IA de tu candidato a partir de fotos y luego elige un aspecto y un formato de video para los videos de campaña.",
+    "voiceHeading": "Voz del candidato",
+    "voiceDescription": "Clona la voz de tu candidato a partir de una muestra de audio para usarla en los videos de campaña, en lugar de esperar a que un administrador te asigne una.",
+    "yourAvatar": "Tu avatar",
+    "looksDescription": "Estos son los aspectos disponibles para tu avatar. Elige el que se usará en los videos de campaña.",
+    "noLooksYet": "Este avatar aún no tiene aspectos completados — vuelve a consultar cuando termine el entrenamiento.",
+    "lookFallbackName": "Aspecto {number}",
+    "previewLink": "Vista previa ↗",
+    "videoFormat": "Formato de video",
+    "aspectRatioSub169": "YouTube · LinkedIn",
+    "aspectRatioSub916": "Reels · TikTok",
+    "aspectRatioSub11": "Facebook · X",
+    "saving": "Guardando…",
+    "saveVideoSettings": "Guardar configuración de video",
+    "videoSettingsSaved": "¡Configuración de video guardada!",
+    "saveFailed": "Error al guardar"
+  },
+  "avatarManager": {
+    "avatarCount": "{count, plural, one {# avatar} other {# avatares}}",
+    "fromPhotosButton": "+ Desde fotos",
+    "fromVideoButton": "+ Desde video",
+    "emptyState": {
+      "canManage": "Aún no hay avatares — crea uno a partir de un conjunto de fotos del candidato.",
+      "readOnly": "Aún no se han creado avatares para esta campaña."
+    },
+    "activeBadge": "Activo",
+    "status": {
+      "pendingConsent": "Esperando el consentimiento del candidato",
+      "training": "Entrenando — normalmente unos minutos",
+      "ready": "Listo",
+      "failed": "Error: {message}",
+      "unknownError": "Error desconocido"
+    },
+    "createdOn": " · creado el {date}",
+    "actions": {
+      "copyConsentLink": "Copiar enlace de consentimiento",
+      "setActive": "Activar",
+      "generateLook": "Generar aspecto",
+      "delete": "Eliminar",
+      "cancel": "Cancelar",
+      "next": "Siguiente →",
+      "back": "← Atrás"
+    },
+    "toast": {
+      "consentLinkCopied": "Enlace de consentimiento copiado.",
+      "activeAvatarUpdated": "Avatar activo actualizado.",
+      "avatarDeleted": "Avatar eliminado.",
+      "avatarCreationStarted": "Se inició la creación del avatar — esto puede tardar unos minutos.",
+      "videoAvatarCreationStarted": "Se inició la creación del avatar de video — envía al candidato el enlace de consentimiento que aparece en este avatar.",
+      "lookGenerated": "Se generó un nuevo aspecto — reemplaza el aspecto actual de este avatar y se usará en futuros videos.",
+      "uploadFailed": "Error al subir: {message}"
+    },
+    "errors": {
+      "createAvatarFailed": "Error al crear el avatar",
+      "createVideoAvatarFailed": "Error al crear el avatar de video",
+      "setActiveFailed": "Error al activar el avatar",
+      "deleteFailed": "Error al eliminar el avatar",
+      "generateLookFailed": "Error al generar el aspecto"
+    },
+    "steps": {
+      "consentLabel": "Paso 1 de 3 · Consentimiento",
+      "confirmPermissionTitle": "Confirmar permiso",
+      "photoConsentText": "Confirmo que tengo el permiso del candidato para usar estas fotos y crear un avatar de IA de él o ella.",
+      "videoConsentText": "Confirmo que tengo el permiso del candidato para grabar y usar este video y crear un avatar de IA de él o ella.",
+      "photosLabel": "Paso 2 de 3 · Fotos",
+      "uploadPhotosTitle": "Subir fotos",
+      "uploadPhotosInstructions": "Sube entre {min} y {max} fotos recientes y de alta resolución. Una mezcla de ángulos y expresiones da el mejor resultado.",
+      "photosAddedCount": "{count} de {max} fotos agregadas",
+      "videoLabel": "Paso 2 de 3 · Video",
+      "uploadVideoTitle": "Subir video de entrenamiento",
+      "uploadVideoInstructions": "Sube un clip continuo, bien iluminado y de frente del candidato hablando (de 30 segundos a 5 minutos). El candidato completará por separado una breve grabación de consentimiento en la propia página de HeyGen después de que envíes esto.",
+      "durationWarningShort": "Este clip parece durar menos de 30 segundos — HeyGen recomienda al menos 30s de metraje.",
+      "durationWarningLong": "Este clip parece durar más de 5 minutos — HeyGen recomienda menos de 5 minutos de metraje.",
+      "nameLabel": "Paso 3 de 3 · Nombre",
+      "nameAvatarTitle": "Nombra este avatar",
+      "photoNamePlaceholder": "p. ej. Alex — estilo estudio",
+      "photoNameHint": "Dale un nombre que reconozcas más adelante — por ejemplo, el aspecto o el entorno.",
+      "videoNamePlaceholder": "p. ej. Alex — gemelo en video",
+      "creating": "Creando…",
+      "createAvatar": "Crear avatar",
+      "createVideoAvatar": "Crear avatar de video"
+    },
+    "lookModal": {
+      "heading": "Nuevo aspecto",
+      "title": "Generar un nuevo aspecto",
+      "description": "Describe el estilo o el entorno — HeyGen genera un nuevo aspecto de la misma persona, no de una diferente.",
+      "nameLabel": "Nombre",
+      "namePlaceholder": "p. ej. Estilo estudio",
+      "promptLabel": "Instrucción",
+      "promptPlaceholder": "p. ej. iluminación de estudio, traje azul marino, fondo con bandera estadounidense",
+      "generating": "Generando…"
+    }
+  },
+  "billing": {
+    "eyebrow": "Configuración",
+    "title": "Facturación",
+    "status": {
+      "active": "Activo",
+      "trialing": "Prueba",
+      "incomplete": "Incompleto",
+      "pastDue": "Vencido",
+      "canceled": "Cancelado",
+      "unpaid": "Impago",
+      "incompleteExpired": "Expirado",
+      "paused": "Pausado"
+    },
+    "pastDueTitle": "Pago vencido",
+    "pastDueWithDate": "Actualiza tu método de pago antes del {date} para evitar perder el acceso a la redacción con IA, el video y la generación de voz.",
+    "pastDueGeneric": "Actualiza tu método de pago para evitar perder el acceso.",
+    "inactiveTitle": "Facturación inactiva",
+    "inactiveBody": "La redacción con IA, el video y la generación de voz están bloqueados hasta que esto se resuelva. Contacta a tu administrador de plataforma.",
+    "noPlan": "Sin plan",
+    "campaignSubscription": "Suscripción de la campaña",
+    "perWeek": "sem",
+    "perMonth": "mes",
+    "noPlanAssigned": "Aún no se ha asignado un plan.",
+    "changePlan": "Cambiar plan",
+    "manageBilling": "Administrar facturación",
+    "contentPiecesThisPeriod": "Piezas de contenido este período",
+    "videosToday": "Videos hoy",
+    "avatarsLabel": "Avatares",
+    "unlimited": "Ilimitado",
+    "usedOfLimit": "{used} de {limit}"
+  },
+  "voice": {
+    "library": {
+      "filters": {
+        "all": "Todas",
+        "male": "Masculino",
+        "female": "Femenino"
+      },
+      "useThisVoice": "Usar esta voz",
+      "saving": "Guardando…",
+      "noVoicesConfigured": "No se encontraron voces — verifica que ELEVENLABS_API_KEY esté configurada.",
+      "noVoicesFilterMatch": "Ninguna voz coincide con este filtro.",
+      "playPreview": "Reproducir vista previa",
+      "pausePreview": "Pausar vista previa"
+    },
+    "toast": {
+      "voiceSaved": "¡Voz guardada!",
+      "failedToSave": "Error al guardar",
+      "recordingTooShort": "La grabación fue demasiado corta — inténtalo de nuevo.",
+      "failedToStartCloning": "Error al iniciar la clonación de voz",
+      "uploadFailed": "Error al subir: {message}",
+      "cloningStarted": "Se inició la clonación de voz — esto puede tardar unos minutos.",
+      "failedToCloneVoice": "Error al clonar la voz",
+      "couldntPlaySample": "No se pudo reproducir la muestra — inténtalo de nuevo.",
+      "failedToGeneratePreview": "Error al generar la vista previa de voz"
+    },
+    "clone": {
+      "yourVoice": "Tu voz",
+      "replaceVoice": "Reemplazar voz",
+      "cloneYourVoice": "Clonar tu voz",
+      "noVoiceCanManage": "Aún no hay una voz clonada — clona una a partir de una breve muestra de audio para usarla en los videos de campaña.",
+      "noVoiceReadOnly": "Aún no se ha clonado ninguna voz para esta campaña.",
+      "status": {
+        "training": "Clonando tu voz — normalmente unos minutos",
+        "ready": "Lista — \"{name}\"",
+        "failed": "Error: {message}",
+        "unknownError": "Error desconocido"
+      },
+      "playSample": "▶ Reproducir muestra",
+      "generatingSample": "Generando…",
+      "micError": {
+        "permissionDenied": "Se necesita acceso al micrófono para grabar — puedes subir un archivo en su lugar.",
+        "stoppedUnexpectedly": "La grabación se detuvo inesperadamente — inténtalo de nuevo."
+      },
+      "recordDurationWarning": {
+        "tooShort": "Esta grabación parece durar menos de 30 segundos — una muestra más larga suele clonar con más precisión.",
+        "tooLong": "Esta grabación parece durar más de 5 minutos — HeyGen recomienda menos de 5 minutos."
+      },
+      "modal": {
+        "cancel": "Cancelar",
+        "back": "← Atrás",
+        "next": "Siguiente →",
+        "consent": {
+          "stepLabel": "Paso 1 de 3 · Consentimiento",
+          "title": "Confirmar permiso",
+          "text": "Confirmo que tengo permiso para crear un clon de IA de esta voz."
+        },
+        "audio": {
+          "stepLabel": "Paso 2 de 3 · Muestra de audio",
+          "title": "Proporciona una muestra de audio",
+          "recordTab": "Grabar",
+          "uploadTab": "Subir un archivo",
+          "uploadInstructions": "Sube una grabación clara, de un solo interlocutor, en MP3, WAV, M4A, WebM u OGG.",
+          "recordInstructions": "Graba una muestra clara, de un solo interlocutor, directamente desde tu micrófono.",
+          "recordingNotSupported": "Grabar no es compatible con este navegador — sube un archivo en su lugar.",
+          "startRecording": "● Iniciar grabación",
+          "stopRecording": "Detener grabación",
+          "reRecord": "Volver a grabar"
+        },
+        "name": {
+          "stepLabel": "Paso 3 de 3 · Nombre",
+          "title": "Nombra esta voz",
+          "placeholder": "p. ej. Mi voz",
+          "cloning": "Clonando…",
+          "submit": "Clonar voz"
+        }
+      }
+    }
+  },
+  "team": {
+    "eyebrow": "Configuración",
+    "title": "Equipo",
+    "membersHeading": "Equipo",
+    "errors": {
+      "createInviteFailed": "No se pudo crear la invitación.",
+      "changeRoleFailed": "No se pudo cambiar el rol.",
+      "removeTeammateFailed": "No se pudo eliminar al miembro del equipo.",
+      "genericError": "Algo salió mal. Inténtalo de nuevo."
+    },
+    "table": {
+      "name": "Nombre",
+      "email": "Correo electrónico",
+      "role": "Rol",
+      "actions": "Acciones"
+    },
+    "removeButton": "Eliminar",
+    "pendingInvitesHeading": "Invitaciones pendientes",
+    "invitesTable": {
+      "role": "Rol",
+      "expires": "Expira",
+      "status": "Estado",
+      "link": "Enlace"
+    },
+    "inviteStatus": {
+      "used": "Usada",
+      "expired": "Expirada",
+      "active": "Activa"
+    },
+    "noPendingInvites": "No hay invitaciones pendientes.",
+    "memberLimitReachedTitle": "Se alcanzó el límite de miembros",
+    "memberLimitReachedBody": "Tu plan no tiene espacio para más miembros del equipo. <link>Mejora tu plan</link> para invitar a más.",
+    "inviteRoleLabel": "Rol",
+    "generateInviteButton": "Generar enlace de invitación",
+    "generatingButton": "Generando…"
+  },
+  "admin": {
+    "sidebar": {
+      "badge": "SÚPER ADMIN",
+      "navOverview": "Resumen",
+      "navCampaigns": "Campañas",
+      "navUsers": "Usuarios",
+      "navContent": "Contenido",
+      "navAuditLog": "Registro de auditoría",
+      "navBilling": "Facturación"
+    },
+    "dashboard": {
+      "eyebrow": "Sistema",
+      "title": "Resumen",
+      "statCampaigns": "Campañas",
+      "statUsers": "Usuarios",
+      "statContentItems": "Elementos de contenido",
+      "statAwaitingReview": "Pendientes de revisión",
+      "allCampaigns": "Todas las campañas",
+      "newCampaignEyebrow": "Nueva campaña",
+      "createCampaign": "Crear campaña",
+      "campaignNameLabel": "Nombre de la campaña",
+      "campaignNamePlaceholder": "p. ej. Smith para gobernador",
+      "jurisdictionsLabel": "Jurisdicciones",
+      "jurisdictionsPlaceholder": "US-FEDERAL, US-CA"
+    },
+    "audit": {
+      "eyebrow": "Cumplimiento",
+      "title": "Registro de auditoría",
+      "entriesSummary": "{count, plural, one {# entrada} other {# entradas}} · inmutable",
+      "colTimestamp": "Fecha y hora",
+      "colAction": "Acción",
+      "colCampaign": "Campaña",
+      "colActor": "Actor",
+      "colEntity": "Entidad",
+      "empty": "Aún no hay entradas de auditoría."
+    },
+    "users": {
+      "eyebrow": "Personas",
+      "title": "Todos los usuarios",
+      "countSummary": "{count, plural, one {# usuario en todas las campañas} other {# usuarios en todas las campañas}}",
+      "colName": "Nombre",
+      "colEmail": "Correo electrónico",
+      "colRole": "Rol",
+      "colCampaign": "Campaña",
+      "colActions": "Acciones",
+      "noEmail": "Sin correo electrónico — no puede iniciar sesión",
+      "signInAs": "Iniciar sesión como",
+      "remove": "Eliminar"
+    },
+    "content": {
+      "eyebrow": "Biblioteca",
+      "title": "Todo el contenido",
+      "itemsCount": "{count, plural, one {# elemento} other {# elementos}}",
+      "filterAll": "Todos",
+      "filteredByCampaign": "Filtrado por campaña",
+      "clearFilter": "Quitar filtro →",
+      "colTitle": "Título",
+      "colCampaign": "Campaña",
+      "colType": "Tipo",
+      "colSource": "Origen",
+      "colStatus": "Estado",
+      "colCreated": "Creado",
+      "sourceAi": "IA",
+      "sourceHuman": "Humano",
+      "empty": "No hay contenido con este filtro."
+    },
+    "campaignsTable": {
+      "filterAll": "Todas",
+      "active": "Activa",
+      "inactive": "Inactiva",
+      "colCampaign": "Campaña",
+      "colJurisdictions": "Jurisdicciones",
+      "colTags": "Etiquetas",
+      "colStatus": "Estado",
+      "colUsers": "Usuarios",
+      "colContent": "Contenido",
+      "colSpend": "Gasto de este período",
+      "inReviewCount": "{count, plural, one {# en revisión} other {# en revisión}}",
+      "totalCount": "{count, plural, one {# en total} other {# en total}}",
+      "manage": "Gestionar →",
+      "emptyNone": "Aún no hay campañas.",
+      "emptyFiltered": "Ninguna campaña coincide con este filtro."
+    },
+    "billing": {
+      "title": "Planes de facturación",
+      "saveFailedError": "Error al guardar.",
+      "syncFailedError": "Error al sincronizar.",
+      "deleteFailedError": "Error al eliminar.",
+      "actionFailedTitle": "La acción falló",
+      "createdTitle": "Plan creado",
+      "createdBody": "El nuevo plan ya está activo en Stripe y listo para asignar a una campaña.",
+      "updatedTitle": "Plan guardado",
+      "updatedBody": "Tus cambios se guardaron — los cambios de precio o intervalo ya se reflejan en Stripe.",
+      "syncedTitle": "Planes iniciales sincronizados",
+      "syncedBody": "Starter, Pro y Enterprise están listos para editar o asignar a continuación.",
+      "deletedTitle": "Plan eliminado",
+      "deletedBody": "El plan se eliminó y su producto/precio de Stripe fue archivado.",
+      "syncIntro": "Crea los tres planes iniciales (Starter, Pro, Enterprise) en Stripe la primera vez que configures esto. Es seguro ejecutarlo más de una vez — los planes que ya existen se omiten. Usa los formularios de abajo para editar precios, límites o el intervalo de facturación en cualquier momento; los cambios se guardan directamente en Stripe, así que no hace falta un paso de sincronización aparte después.",
+      "syncingButton": "Sincronizando…",
+      "syncButton": "Sincronizar planes iniciales con Stripe",
+      "deletingButton": "Eliminando…",
+      "deletePlanButton": "Eliminar plan",
+      "noPlans": "Aún no hay planes — sincroniza los planes iniciales arriba, o crea uno abajo.",
+      "newPlanEyebrow": "Nuevo plan",
+      "planNameLabel": "Nombre del plan",
+      "priceLabel": "Precio (USD)",
+      "billingIntervalLabel": "Intervalo de facturación",
+      "weekly": "Semanal",
+      "monthly": "Mensual",
+      "memberLimitLabel": "Límite de miembros",
+      "avatarLimitLabel": "Límite de avatares",
+      "contentPerPeriodLabel": "Contenido/período",
+      "videosPerDayLabel": "Videos/día",
+      "unlimitedPlaceholder": "Ilimitado",
+      "savingButton": "Guardando…",
+      "creatingButton": "Creando…",
+      "saveChangesButton": "Guardar cambios",
+      "createPlanButton": "Crear plan",
+      "perWeekSuffix": "/sem",
+      "perMonthSuffix": "/mes"
+    },
+    "campaigns": {
+      "title": "Campañas",
+      "detail": {
+        "eyebrow": "Campaña",
+        "backToCampaigns": "← Todas las campañas",
+        "settingsSavedTitle": "Configuración de la campaña guardada",
+        "settingsSavedBody": "El nombre, las jurisdicciones y las etiquetas están actualizados.",
+        "settingsEyebrow": "Configuración",
+        "editCampaignHeading": "Editar campaña",
+        "nameLabel": "Nombre",
+        "jurisdictionsLabel": "Jurisdicciones",
+        "tagsLabel": "Etiquetas",
+        "tagsPlaceholder": "2026-midterm, statewide",
+        "savingButton": "Guardando…",
+        "saveChangesButton": "Guardar cambios",
+        "spendEyebrow": "Gasto",
+        "billingPeriodHeading": "Este período de facturación",
+        "billingEyebrow": "Facturación",
+        "subscriptionHeading": "Suscripción",
+        "noPlanAssigned": "Ningún plan asignado",
+        "assignPlanFailedError": "Error al asignar el plan.",
+        "planStatusLine": "{planName} — {status}",
+        "unknownStatus": "desconocido",
+        "currentPeriodEnds": "El período actual termina el {date}",
+        "planLabel": "Plan",
+        "selectPlanOption": "Selecciona un plan",
+        "changePlanButton": "Cambiar plan",
+        "assignPlanButton": "Asignar plan",
+        "openBillingPortalButton": "Abrir el portal de facturación de este cliente →",
+        "viewInStripeDashboard": "Ver en el panel de Stripe →",
+        "videoEyebrow": "Video",
+        "candidateAvatarHeading": "Avatar del candidato",
+        "avatarIntro": "Pega un <strong>ID de grupo de avatar</strong> de HeyGen para darle a esta campaña un avatar inicial — útil justo después de crear una campaña, antes de que el propietario haya creado el suyo. Esto crea una entrada de avatar que aparece en la página de Avatares propia de la campaña, donde pueden elegir un aspecto, crear avatares adicionales o reemplazar este en cualquier momento. Encuentra el ID en HeyGen → Photo Avatars → abre el avatar → copia el ID de grupo que aparece en la URL o en el panel de identidad.",
+        "heygenAvatarGroupIdLabel": "ID de grupo de avatar de HeyGen",
+        "avatarIdPlaceholder": "p. ej. ee7b9943a5ac4d6e9e986075299dbb02",
+        "assignAvatarButton": "Asignar avatar",
+        "consentAvatarLabel": "Confirmo que el candidato ha dado su consentimiento para que este avatar de HeyGen se use para generar video en su nombre.",
+        "activeAvatarAssigned": "Avatar activo asignado",
+        "avatarCreatedNotActive": "Avatar creado, aún no activo — la campaña no ha completado la configuración",
+        "noAvatarAssigned": "Aún no hay avatar asignado",
+        "candidateVoiceHeading": "Voz del candidato",
+        "voiceIntro": "Pega un <strong>ID de voz</strong> de HeyGen para la voz clonada de este candidato — la clonación ocurre directamente en HeyGen (clonación nativa o una importación de terceros), esto solo vincula el resultado a esta campaña para que la generación de video con avatar tenga una voz que usar.",
+        "heygenVoiceIdLabel": "ID de voz de HeyGen",
+        "voiceIdPlaceholder": "p. ej. 32e35b6753d94b61963bf8d0d2f15980",
+        "assignVoiceButton": "Asignar voz",
+        "consentVoiceLabel": "Confirmo que el candidato ha dado su consentimiento para que esta voz de HeyGen se use para generar video en su nombre.",
+        "voiceAssigned": "Voz asignada",
+        "noVoiceAssigned": "Aún no hay voz asignada",
+        "noUsersYet": "Aún no hay usuarios.",
+        "addUserNamePlaceholder": "Nombre completo",
+        "addUserEmailPlaceholder": "usuario@ejemplo.com",
+        "addAndInviteButton": "Añadir e invitar",
+        "addUserHelperText": "Crea la cuenta de usuario y genera un enlace de invitación abajo — compártelo para que puedan establecer su contraseña.",
+        "viewAllLink": "Ver todo →",
+        "noContentYet": "Aún no hay contenido.",
+        "inviteLinksHeading": "Enlaces de invitación",
+        "codeColumn": "Código",
+        "expiresColumn": "Vence",
+        "linkColumn": "Enlace",
+        "inviteUsed": "Usado",
+        "inviteExpired": "Expirado",
+        "inviteActive": "Activo",
+        "generateInviteButton": "Generar enlace de invitación",
+        "emptyInvites": "Aún no hay enlaces de invitación.",
+        "recentActivityHeading": "Actividad reciente",
+        "fullLogLink": "Registro completo →",
+        "timeColumn": "Hora",
+        "noActivityYet": "Aún no hay actividad."
+      }
+    }
+  },
+  "landing": {
+    "nav": {
+      "features": "Funciones",
+      "howItWorks": "Cómo funciona",
+      "signIn": "Iniciar sesión",
+      "getStarted": "Comenzar"
+    },
+    "hero": {
+      "title": "El PolitIQ<br></br>para campañas<br></br><accent>modernas.</accent>",
+      "subtitle": "Contenido redactado por IA. Revisado por humanos. Totalmente conforme. Gestiona toda tu operación de comunicación desde un único centro de mando.",
+      "ctaPrimary": "Comenzar",
+      "ctaSecondary": "Ver la plataforma",
+      "trustFec": "Registros conformes con la FEC",
+      "trustDisclosures": "Divulgaciones según cada estado",
+      "trustAudit": "Registro de auditoría completo"
+    },
+    "features": {
+      "eyebrow": "Plataforma",
+      "title": "Todo lo que tu campaña<br></br>necesita para comunicar.",
+      "subtitle": "Diseñada específicamente para campañas políticas, cada función responde a las exigencias particulares de la legislación electoral, el cumplimiento normativo y la operación de campaña.",
+      "items": {
+        "aiContent": {
+          "label": "Generación de contenido con IA",
+          "desc": "Redacta publicaciones sociales, comunicados de prensa, correos y mensajes clave en segundos. Cada pieza se adapta a la voz de marca de tu campaña."
+        },
+        "approvalWorkflow": {
+          "label": "Flujo de aprobación humana",
+          "desc": "Enruta cada contenido a través de una revisión basada en roles antes de que se publique. Cadena de custodia completa."
+        },
+        "disclosures": {
+          "label": "Divulgaciones automáticas",
+          "desc": "Reglas de divulgación según jurisdicción aplicadas al instante. Los requisitos de divulgación de IA específicos de cada estado se gestionan automáticamente."
+        },
+        "opponentMonitoring": {
+          "label": "Monitoreo de la oposición",
+          "desc": "Rastrea en tiempo real lo que dice el otro lado. Identifica oportunidades de respuesta antes de que se conviertan en narrativas dominantes."
+        },
+        "spendControls": {
+          "label": "Controles de gasto",
+          "desc": "Establece topes de costo mensuales por campaña. Da seguimiento a la redacción con IA, la generación de video y la síntesis de voz frente a tu presupuesto de campaña."
+        },
+        "auditTrail": {
+          "label": "Registro de auditoría completo",
+          "desc": "Cada acción queda registrada con responsable, fecha y hora, y contexto. Registros listos para la FEC al alcance de la mano cuando llegue la temporada de divulgación."
+        }
+      }
+    },
+    "workflow": {
+      "eyebrow": "Cómo funciona",
+      "title": "Del brief a la publicación<br></br>en minutos, no en días.",
+      "steps": {
+        "draft": {
+          "title": "Redacta en segundos",
+          "desc": "Describe lo que necesitas. La IA de PolitIQ redacta comunicados de prensa, publicaciones sociales, campañas de correo y mensajes clave al instante."
+        },
+        "review": {
+          "title": "Revisa y aprueba",
+          "desc": "El contenido se enruta a tu equipo de aprobación. Gerentes, aprobadores y legal obtienen la vista correcta en el momento correcto."
+        },
+        "publish": {
+          "title": "Publica con confianza",
+          "desc": "Las divulgaciones se aplican automáticamente según la jurisdicción antes de que algo salga en vivo. Un clic para publicar en todas las plataformas."
+        }
+      }
+    },
+    "cta": {
+      "title": "¿Listo para llevar tu campaña al siguiente nivel?",
+      "subtitle": "Comunicación impulsada por IA, creada para las exigencias de las campañas políticas modernas.",
+      "primary": "Comenzar",
+      "secondary": "Habla con el equipo"
+    },
+    "footer": {
+      "tagline": "Comunicación de campaña con IA<br></br>con cumplimiento incorporado.",
+      "columns": {
+        "product": "Producto",
+        "legal": "Legal",
+        "company": "Empresa"
+      },
+      "links": {
+        "features": "Funciones",
+        "howItWorks": "Cómo funciona",
+        "privacyPolicy": "Política de privacidad",
+        "termsOfService": "Términos de servicio",
+        "fecCompliance": "Cumplimiento con la FEC",
+        "about": "Acerca de",
+        "contact": "Contacto"
+      },
+      "copyright": "© 2026 PolitIQ. Todos los derechos reservados.",
+      "bottomNote": "Hecha para campañas que juegan para ganar."
+    }
+  },
+  "login": {
+    "welcomeBack": "Bienvenido de nuevo",
+    "subtitle": "Inicia sesión en el espacio de trabajo de tu campaña.",
+    "emailLabel": "Correo electrónico",
+    "emailPlaceholder": "you@campaign.com",
+    "passwordLabel": "Contraseña",
+    "signInButton": "Iniciar sesión",
+    "haveInviteCode": "¿Tienes un código de invitación?",
+    "joinCampaignLink": "Únete a tu campaña →",
+    "secure": "Seguro",
+    "aiDisclosed": "Divulgación de IA",
+    "audited": "Auditado",
+    "errors": {
+      "incorrectCredentials": "Correo electrónico o contraseña incorrectos.",
+      "tooManyAttempts": "Demasiados intentos. Vuelve a intentarlo en unos 15 minutos.",
+      "somethingWentWrong": "Algo salió mal."
+    }
+  },
+  "join": {
+    "heading": "Únete a tu campaña",
+    "invitedTo": "Has sido invitado a <name>{campaignName}</name> como <roleTag>{role}</roleTag>.",
+    "createAccountIntro": "Crea tu cuenta usando un enlace de invitación.",
+    "invalidOrUsedNotice": "Este enlace de invitación no es válido o ya se ha usado.",
+    "inviteCodeLabel": "Código de invitación",
+    "inviteCodePlaceholder": "inv_xxxxxxxxxxxx",
+    "fullNameLabel": "Nombre completo",
+    "fullNamePlaceholder": "Alex Rivera",
+    "emailLabel": "Correo electrónico",
+    "emailPlaceholder": "you@campaign.com",
+    "passwordLabel": "Contraseña",
+    "passwordPlaceholder": "Al menos 8 caracteres",
+    "createAccountButton": "Crear cuenta",
+    "alreadyHaveAccount": "¿Ya tienes una cuenta?",
+    "signInLink": "Iniciar sesión →",
+    "errors": {
+      "allFieldsRequired": "Todos los campos son obligatorios.",
+      "passwordTooShort": "La contraseña debe tener al menos 8 caracteres.",
+      "inviteInvalid": "Este enlace de invitación no es válido.",
+      "inviteUsed": "Este enlace de invitación ya se ha usado.",
+      "inviteExpired": "Este enlace de invitación ha expirado. Solicita uno nuevo.",
+      "emailExists": "Ya existe una cuenta con ese correo electrónico.",
+      "somethingWentWrong": "Algo salió mal."
+    }
+  },
+  "pricing": {
+    "choosePlanEyebrow": "Elige un plan",
+    "changePlanEyebrow": "Cambiar plan",
+    "subscribeTitle": "Suscríbete para empezar",
+    "changePlanTitle": "Cambia tu plan",
+    "description": "Todos los planes incluyen redacción con IA, avatares y generación de video — los límites a continuación son lo que cambia entre niveles.",
+    "goToDashboard": "Ir al panel →",
+    "paymentReceivedTitle": "Pago recibido",
+    "paymentReceivedBody": "Activando tu plan — esto puede tardar unos segundos. Actualiza la página si la app no se actualiza.",
+    "couldntChangePlanTitle": "No se pudo cambiar el plan",
+    "failedToChangePlanError": "Error al cambiar el plan.",
+    "teamMembersLabel": "miembros del equipo",
+    "avatarsLabel": "avatares",
+    "contentPiecesLabel": "piezas de contenido/período",
+    "videosPerDayLabel": "videos/día",
+    "currentPlanButton": "Plan actual",
+    "switchPlanButton": "Cambiar a este plan",
+    "subscribeButton": "Suscribirse"
+  },
+  "setup": {
+    "eyebrow": "Bienvenido · Paso 1 de 1",
+    "title": "Configura tu campaña",
+    "description": "Esto toma unos 3 minutos. A partir de ahora, cada borrador de IA se escribirá específicamente para tu candidato.",
+    "requiredFieldsTitle": "Faltan campos obligatorios",
+    "requiredFieldsBody": "El nombre completo, el nombre preferido, el cargo y el distrito son obligatorios.",
+    "partyErrorTitle": "Elige un partido de la lista",
+    "partyErrorBody": "Selecciona una de las opciones de partido proporcionadas, o déjalo en blanco.",
+    "candidateHeading": "Candidato",
+    "fields": {
+      "fullName": "Nombre completo *",
+      "fullNamePlaceholder": "Maria Rivera",
+      "preferredName": "Nombre preferido *",
+      "preferredNamePlaceholder": "Maria",
+      "office": "Se postula para *",
+      "officePlaceholder": "Asamblea Estatal de California",
+      "district": "Distrito / jurisdicción *",
+      "districtPlaceholder": "Distrito 12",
+      "party": "Partido",
+      "primaryOpponent": "Nombre del oponente principal",
+      "opponentNamePlaceholder": "John Smith",
+      "photoUrl": "URL de la foto del candidato (opcional)",
+      "photoUrlPlaceholder": "https://..."
+    },
+    "voiceHeading": "Voz de campaña",
+    "bioLabel": "Biografía breve (2–3 oraciones usadas en cada borrador de IA)",
+    "bioPlaceholder": "Defensora comunitaria de toda la vida y dueña de un pequeño negocio, Maria ha pasado 20 años luchando por las familias trabajadoras del Valle de San Fernando.",
+    "taglineLabel": "Eslogan de la campaña",
+    "taglinePlaceholder": "Una voz para el Distrito 12",
+    "targetAudienceLabel": "Público objetivo",
+    "targetAudiencePlaceholder": "Familias trabajadoras del Valle de San Fernando",
+    "keyPositionsLabel": "Posturas clave (una por línea, 3–7)",
+    "keyPositionsPlaceholder": "Ampliar el acceso a la atención médica asequible\nReducir los costos de vivienda para los inquilinos\nInvertir en las escuelas públicas y los maestros",
+    "toneHeading": "Tono",
+    "tones": {
+      "conversational": "Conversacional — cálido, directo, cercano",
+      "formal": "Formal — con autoridad, mesurado, profesional",
+      "urgent": "Urgente — enérgico, orientado a la acción, apasionado",
+      "inspirational": "Inspirador — esperanzador, visionario, motivador"
+    },
+    "submitButton": "Completar configuración →"
+  },
+  "errors": {
+    "actions": {
+      "contentNotFound": "Contenido no encontrado.",
+      "permissionDenied": "Permiso denegado.",
+      "mediaRequiredForPlatforms": "{platforms} requieren una imagen o video, y este contenido no tiene ninguno adjunto.",
+      "publishingFailed": "Error al publicar: {details}",
+      "unknownReason": "desconocido",
+      "publishedButFailedOn": "Publicado, pero falló en: {platforms}",
+      "campaignNotFound": "Campaña no encontrada.",
+      "noAvatarConfigured": "Aún no hay un avatar configurado para esta campaña. Agrega uno en la página de Avatares primero.",
+      "noVideoVoiceConfigured": "Aún no hay una voz de video configurada para esta campaña. Contacta a tu administrador de la plataforma para asignar una.",
+      "noVoiceConfigured": "Aún no hay una voz configurada para esta campaña. Configura una en Configuración → Avatar.",
+      "contentNoLongerEditable": "Este contenido ya no se puede editar. Vuelve a ponerlo en borrador primero.",
+      "saveFailed": "Error al guardar.",
+      "updateFailed": "Error al actualizar.",
+      "unknownContentType": "Tipo de contenido desconocido.",
+      "monitoringResultNotFound": "Resultado de monitoreo no encontrado.",
+      "disclosureTextEmpty": "El texto de divulgación no puede estar vacío.",
+      "noCampaignInSession": "No hay campaña en la sesión.",
+      "noFileProvided": "No se proporcionó ningún archivo",
+      "backgroundFileTooLarge": "El archivo debe pesar menos de 10 MB",
+      "backgroundOnlyImageFiles": "Solo se permiten archivos de imagen",
+      "scheduledTimeRequired": "Se requiere la hora programada",
+      "scheduledTimeMustBeFuture": "La hora programada debe ser en el futuro",
+      "consentRequired": "Se requiere confirmación de consentimiento.",
+      "photoCountRange": "Sube entre 4 y 10 fotos.",
+      "eachPhotoTooLarge": "Cada foto debe pesar menos de 10 MB.",
+      "avatarOnlyImageFiles": "Solo se permiten archivos de imagen.",
+      "invalidUpload": "Carga no válida.",
+      "uploadedPhotoNotFound": "No se encontró la foto subida.",
+      "avatarCreationFailed": "Error al crear el avatar: {details}",
+      "avatarNotFound": "Avatar no encontrado.",
+      "uploadTrainingVideo": "Sube un video de entrenamiento.",
+      "videoTooLarge500mb": "El video debe pesar menos de 500 MB.",
+      "onlyMp4OrQuicktime": "Solo se permiten archivos de video MP4 o QuickTime.",
+      "uploadedVideoNotFound": "No se encontró el video subido.",
+      "digitalTwinNotEnabled": "Los avatares de video no están habilitados para esta cuenta de HeyGen. Contacta al soporte de HeyGen para habilitar el acceso a Digital Twin.",
+      "videoAvatarCreationFailed": "Error al crear el avatar de video: {details}",
+      "avatarNotReady": "El avatar aún no está listo.",
+      "uploadAudioSample": "Sube una muestra de audio.",
+      "audioSampleTooLarge": "La muestra de audio debe pesar menos de 50 MB.",
+      "onlyAudioFormatsAllowed": "Solo se permiten archivos de audio MP3, WAV, M4A, WebM u OGG.",
+      "uploadedAudioNotFound": "No se encontró el audio subido.",
+      "voiceCloneCapacity": "La clonación de voz está temporalmente al máximo de su capacidad en toda la plataforma — contacta a soporte.",
+      "voiceCloningFailed": "Error al clonar la voz: {details}",
+      "voiceSaveVerificationFailed": "No se pudo guardar la nueva voz — inténtalo de nuevo.",
+      "noVoiceCloneReady": "Aún no hay una voz clonada lista.",
+      "describeLookPrompt": "Describe cómo debe verse el nuevo look.",
+      "generateLookFailed": "Error al generar el look."
+    },
+    "admin": {
+      "stripeNotConfigured": "STRIPE_SECRET_KEY no está configurada en este servidor.",
+      "campaignAndPlanRequired": "Se requieren la campaña y el plan.",
+      "campaignNotFound": "Campaña no encontrada.",
+      "planNotFound": "Plan no encontrado."
+    },
+    "adminBilling": {
+      "stripeNotConfigured": "STRIPE_SECRET_KEY no está configurada en este servidor.",
+      "planNameRequired": "Se requiere el nombre del plan.",
+      "priceNonNegative": "El precio debe ser un número no negativo.",
+      "billingIntervalInvalid": "El intervalo de facturación debe ser semanal o mensual.",
+      "limitLabels": {
+        "seatLimit": "Límite de miembros",
+        "avatarLimit": "Límite de avatares",
+        "contentLimit": "Límite de contenido",
+        "videoLimitDaily": "Límite diario de videos"
+      },
+      "limitInvalid": "{label} debe estar en blanco (ilimitado) o ser un número no negativo.",
+      "couldNotSavePlan": "No se pudo guardar el plan.",
+      "planIdRequired": "Se requiere el ID del plan.",
+      "corePlansCannotBeDeleted": "Starter, Pro y Enterprise son planes base y no se pueden eliminar.",
+      "cannotDeleteInUse": "{count, plural, one {No se puede eliminar: # campaña todavía está en este plan.} other {No se puede eliminar: # campañas todavía están en este plan.}}",
+      "planNotFound": "Plan no encontrado.",
+      "couldNotDeletePlan": "No se pudo eliminar el plan."
+    },
+    "pricing": {
+      "couldNotStartCheckout": "No se pudo iniciar el pago.",
+      "permissionDenied": "Permiso denegado.",
+      "stripeNotConfigured": "STRIPE_SECRET_KEY no está configurada en este servidor.",
+      "campaignNotFound": "Campaña no encontrada.",
+      "planNotFound": "Plan no encontrado.",
+      "noActiveSubscription": "No hay una suscripción activa para cambiar. Suscríbete a un plan primero.",
+      "subscriptionItemNotFound": "No se pudo encontrar el elemento de la suscripción actual para actualizar.",
+      "couldNotChangePlan": "No se pudo cambiar el plan."
+    },
+    "team": {
+      "permissionDenied": "Permiso denegado.",
+      "invalidRole": "Rol no válido.",
+      "memberLimitReached": "Se alcanzó el límite de miembros de tu plan. Mejora tu plan para agregar más miembros del equipo.",
+      "userNotFound": "Usuario no encontrado.",
+      "ownerCannotBeRemoved": "El propietario de la campaña no se puede eliminar.",
+      "teammateHasContentCannotRemove": "Este miembro del equipo ha creado contenido en la campaña y no se puede eliminar en este momento.",
+      "ownerRoleCannotBeChanged": "El rol del propietario de la campaña no se puede cambiar aquí.",
+      "invalidLanguage": "Idioma no válido."
+    }
+  }
+}

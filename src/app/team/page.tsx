@@ -1,3 +1,4 @@
+import { getTranslations } from 'next-intl/server';
 import { AppFrame } from '@/components/AppFrame';
 import { requireSession } from '@/lib/session';
 import { getUsers, getInviteCodes, getCampaignSeatUsage } from '@/lib/data';
@@ -5,6 +6,7 @@ import { can } from '@/lib/permissions';
 import { TeamManager } from '@/components/TeamManager';
 
 export default async function TeamPage() {
+  const t = await getTranslations('team');
   const s = await requireSession();
   const [users, inviteCodes, seatUsage] = await Promise.all([
     getUsers(s.campaignId),
@@ -23,7 +25,7 @@ export default async function TeamPage() {
   return (
     <AppFrame>
       <div className="pagehead">
-        <div><span className="eyebrow">Configuration</span><h1>Team</h1></div>
+        <div><span className="eyebrow">{t('eyebrow')}</span><h1>{t('title')}</h1></div>
       </div>
 
       <TeamManager

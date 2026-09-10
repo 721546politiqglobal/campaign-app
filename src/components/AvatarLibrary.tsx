@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import { saveVideoSettingsAction } from '@/app/actions';
 import { useToast } from '@/components/Toast';
 
@@ -12,9 +13,9 @@ interface HeyGenAvatar {
 }
 
 const ASPECT_RATIOS = [
-  { id: '16:9' as const, label: '16:9', sub: 'YouTube · LinkedIn' },
-  { id: '9:16' as const, label: '9:16', sub: 'Reels · TikTok' },
-  { id: '1:1'  as const, label: '1:1',  sub: 'Facebook · X' },
+  { id: '16:9' as const, label: '16:9', subKey: 'aspectRatioSub169' },
+  { id: '9:16' as const, label: '9:16', subKey: 'aspectRatioSub916' },
+  { id: '1:1'  as const, label: '1:1',  subKey: 'aspectRatioSub11' },
 ];
 
 export function AvatarLibrary({
@@ -26,6 +27,7 @@ export function AvatarLibrary({
   currentAvatarId?: string | null;
   currentAspectRatio?: string;
 }) {
+  const t = useTranslations('avatars');
   const { toast } = useToast();
 
   const [looks, setLooks]     = useState<HeyGenAvatar[]>([]);
@@ -54,17 +56,17 @@ export function AvatarLibrary({
       videoAspectRatio: selectedRatio,
     });
     setSaving(false);
-    if (result.ok) toast('Video settings saved!');
-    else toast(result.error ?? 'Save failed', 'error');
+    if (result.ok) toast(t('videoSettingsSaved'));
+    else toast(result.error ?? t('saveFailed'), 'error');
   }
 
   return (
     <div>
       {/* ── Avatar looks grid ─────────────────────────────────────────────── */}
       <div style={{ marginBottom: 24 }}>
-        <div className="eyebrow" style={{ marginBottom: 10 }}>Your avatar</div>
+        <div className="eyebrow" style={{ marginBottom: 10 }}>{t('yourAvatar')}</div>
         <p className="muted" style={{ fontSize: 12, marginBottom: 14 }}>
-          These are the available looks for your avatar. Pick the one to use in campaign videos.
+          {t('looksDescription')}
         </p>
 
         {loading && (
@@ -77,7 +79,7 @@ export function AvatarLibrary({
 
         {!loading && looks.length === 0 && (
           <p className="muted" style={{ fontSize: 13 }}>
-            This avatar has no completed looks yet — check back once training finishes.
+            {t('noLooksYet')}
           </p>
         )}
 
@@ -112,11 +114,11 @@ export function AvatarLibrary({
                     }}>✓</div>
                   )}
                   <div style={{ padding: '8px 10px 10px', fontSize: 12, fontWeight: 600 }}>
-                    {look.avatar_name || `Look ${i + 1}`}
+                    {look.avatar_name || t('lookFallbackName', { number: i + 1 })}
                     {look.preview_video_url && (
                       <a href={look.preview_video_url} target="_blank" rel="noreferrer"
                         style={{ display: 'block', fontSize: 11, color: 'var(--accent)', marginTop: 2, textDecoration: 'none' }}>
-                        Preview ↗
+                        {t('previewLink')}
                       </a>
                     )}
                   </div>
@@ -129,7 +131,7 @@ export function AvatarLibrary({
 
       {/* ── Video format ──────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 24 }}>
-        <div className="eyebrow" style={{ marginBottom: 8 }}>Video format</div>
+        <div className="eyebrow" style={{ marginBottom: 8 }}>{t('videoFormat')}</div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {ASPECT_RATIOS.map(r => (
             <button key={r.id} type="button" onClick={() => setSelectedRatio(r.id)}
@@ -140,7 +142,7 @@ export function AvatarLibrary({
                 cursor: 'pointer', textAlign: 'center',
               }}>
               <div style={{ fontWeight: 700, fontSize: 13, color: selectedRatio === r.id ? 'var(--accent)' : 'var(--text)' }}>{r.label}</div>
-              <div className="muted" style={{ fontSize: 11 }}>{r.sub}</div>
+              <div className="muted" style={{ fontSize: 11 }}>{t(r.subKey)}</div>
             </button>
           ))}
         </div>
@@ -148,7 +150,7 @@ export function AvatarLibrary({
 
       {/* ── Save ──────────────────────────────────────────────────────────── */}
       <button className="btn primary" disabled={saving} onClick={handleSave}>
-        {saving ? 'Saving…' : 'Save video settings'}
+        {saving ? t('saving') : t('saveVideoSettings')}
       </button>
     </div>
   );

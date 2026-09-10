@@ -1,19 +1,21 @@
 import Link from 'next/link';
+import { getTranslations } from 'next-intl/server';
 import { getAllAuditEntries } from '@/lib/data';
 
 export default async function AdminAudit() {
+  const t = await getTranslations('admin.audit');
   const entries = await getAllAuditEntries(200);
 
   return (
     <div>
       <div className="pagehead">
         <div>
-          <span className="eyebrow">Compliance</span>
-          <h1>Audit log</h1>
+          <span className="eyebrow">{t('eyebrow')}</span>
+          <h1>{t('title')}</h1>
         </div>
         <div className="actions">
           <span className="muted" style={{ fontSize: 13 }}>
-            {entries.length} entries · append-only
+            {t('entriesSummary', { count: entries.length })}
           </span>
         </div>
       </div>
@@ -22,11 +24,11 @@ export default async function AdminAudit() {
         <table>
           <thead>
             <tr>
-              <th>Timestamp</th>
-              <th>Action</th>
-              <th>Campaign</th>
-              <th>Actor</th>
-              <th>Entity</th>
+              <th>{t('colTimestamp')}</th>
+              <th>{t('colAction')}</th>
+              <th>{t('colCampaign')}</th>
+              <th>{t('colActor')}</th>
+              <th>{t('colEntity')}</th>
             </tr>
           </thead>
           <tbody>
@@ -51,7 +53,7 @@ export default async function AdminAudit() {
             {entries.length === 0 && (
               <tr>
                 <td colSpan={5} className="muted" style={{ padding: 32, textAlign: 'center' }}>
-                  No audit entries yet.
+                  {t('empty')}
                 </td>
               </tr>
             )}

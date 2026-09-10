@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { logoutAction } from '@/app/actions';
 
 export const NAV = [
   {
     href: '/dashboard',
-    label: 'Dashboard',
+    key: 'dashboard',
     icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
         <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
@@ -19,7 +20,7 @@ export const NAV = [
   },
   {
     href: '/content',
-    label: 'Content',
+    key: 'content',
     icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
         <rect x="2.5" y="1.5" width="11" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
@@ -31,7 +32,7 @@ export const NAV = [
   },
   {
     href: '/monitoring',
-    label: 'Monitoring',
+    key: 'monitoring',
     icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
         <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4"/>
@@ -45,7 +46,7 @@ export const NAV = [
   },
   {
     href: '/analytics',
-    label: 'Analytics',
+    key: 'analytics',
     icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
         <line x1="2" y1="14" x2="14" y2="14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
@@ -57,7 +58,7 @@ export const NAV = [
   },
   {
     href: '/avatars',
-    label: 'Avatars',
+    key: 'avatars',
     icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
         <circle cx="8" cy="6" r="3" stroke="currentColor" strokeWidth="1.4"/>
@@ -67,7 +68,7 @@ export const NAV = [
   },
   {
     href: '/team',
-    label: 'Team',
+    key: 'team',
     icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
         <circle cx="5.5" cy="5" r="2.25" stroke="currentColor" strokeWidth="1.4"/>
@@ -79,7 +80,7 @@ export const NAV = [
   },
   {
     href: '/settings',
-    label: 'Settings',
+    key: 'settings',
     icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
         <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.4"/>
@@ -90,7 +91,7 @@ export const NAV = [
   },
   {
     href: '/billing',
-    label: 'Billing',
+    key: 'billing',
     icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
         <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
@@ -102,6 +103,7 @@ export const NAV = [
 
 export function Sidebar({ name, campaign }: { name: string; campaign: string }) {
   const path = usePathname();
+  const t = useTranslations('common');
   const isActive = (href: string) => (href === '/dashboard' ? path === '/dashboard' : path.startsWith(href));
 
   return (
@@ -118,7 +120,7 @@ export function Sidebar({ name, campaign }: { name: string; campaign: string }) 
           {NAV.map(n => (
             <Link key={n.href} href={n.href} className={isActive(n.href) ? 'active' : ''}>
               {n.icon}
-              {n.label}
+              {t(`nav.${n.key}`)}
             </Link>
           ))}
         </nav>
@@ -129,20 +131,20 @@ export function Sidebar({ name, campaign }: { name: string; campaign: string }) 
           <div className="sidebar-user">{name}</div>
           <form action={logoutAction}>
             <button className="btn" style={{ width: '100%', fontSize: 13, padding: '7px 12px' }}>
-              Sign out
+              {t('signOut')}
             </button>
           </form>
         </div>
       </aside>
 
       {/* Mobile bottom tab bar */}
-      <nav className="mobile-tabs" aria-label="Main navigation">
+      <nav className="mobile-tabs" aria-label={t('mainNavigation')}>
         {NAV.map(n => (
           <Link key={n.href} href={n.href}
             className={`mobile-tab${isActive(n.href) ? ' active' : ''}`}
             aria-current={isActive(n.href) ? 'page' : undefined}>
             {n.icon}
-            <span>{n.label}</span>
+            <span>{t(`nav.${n.key}`)}</span>
           </Link>
         ))}
       </nav>

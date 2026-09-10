@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, useEffect, useId, useRef } from 'react';
+import { useTranslations } from 'next-intl';
 
 type ToastType = 'success' | 'error' | 'info';
 
@@ -47,9 +48,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 }
 
 function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string) => void }) {
+  const t = useTranslations('common');
   useEffect(() => {
-    const t = setTimeout(() => onDismiss(toast.id), 4000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => onDismiss(toast.id), 4000);
+    return () => clearTimeout(timer);
   }, [toast.id, onDismiss]);
 
   return (
@@ -57,7 +59,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
       <span>{toast.message}</span>
       <button
         onClick={() => onDismiss(toast.id)}
-        aria-label="Dismiss"
+        aria-label={t('dismiss')}
         style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '0 0 0 10px', fontSize: 16, lineHeight: 1, opacity: 0.6 }}
       >
         ×

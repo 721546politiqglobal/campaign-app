@@ -1,23 +1,27 @@
 import Link from 'next/link';
+import { getTranslations } from 'next-intl/server';
 import { joinAction } from '@/app/actions';
 import { adminDb } from '@/lib/supabase';
-
-const ERROR_MSG: Record<string, string> = {
-  fields:   'All fields are required.',
-  password: 'Password must be at least 8 characters.',
-  invalid:  'This invite link is not valid.',
-  used:     'This invite link has already been used.',
-  expired:  'This invite link has expired. Ask for a new one.',
-  email:    'An account with that email already exists.',
-};
+import { getLocale } from '@/lib/locale';
+import { PreAuthLanguageToggle } from '@/components/PreAuthLanguageToggle';
 
 export default async function JoinPage({
   searchParams,
 }: {
   searchParams: { code?: string; error?: string };
 }) {
+  const t = await getTranslations('join');
+  const ERROR_MSG: Record<string, string> = {
+    fields:   t('errors.allFieldsRequired'),
+    password: t('errors.passwordTooShort'),
+    invalid:  t('errors.inviteInvalid'),
+    used:     t('errors.inviteUsed'),
+    expired:  t('errors.inviteExpired'),
+    email:    t('errors.emailExists'),
+  };
+
   const code = searchParams.code ?? '';
-  const errorMsg = searchParams.error ? (ERROR_MSG[searchParams.error] ?? 'Something went wrong.') : null;
+  const errorMsg = searchParams.error ? (ERROR_MSG[searchParams.error] ?? t('errors.somethingWentWrong')) : null;
 
   // Fetch invite to show context (campaign name, role)
   let inviteContext: { campaignName: string; role: string } | null = null;
@@ -40,26 +44,32 @@ export default async function JoinPage({
   return (
     <div className="login-wrap">
       <div className="login-card">
-        <Link href="/" className="login-logo">
-          <img src="/politiq-logo.png" alt="PolitIQ" className="login-logo-img" />
-        </Link>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <Link href="/" className="login-logo">
+            <img src="/politiq-logo.png" alt="PolitIQ" className="login-logo-img" />
+          </Link>
+          <PreAuthLanguageToggle currentLocale={getLocale()} />
+        </div>
 
         <div style={{ marginBottom: 24 }}>
           <h2 style={{
             fontSize: 20, fontWeight: 800, letterSpacing: '-0.025em',
             color: 'var(--text)', margin: '0 0 6px', textTransform: 'none',
           }}>
-            Join your campaign
+            {t('heading')}
           </h2>
           {inviteContext ? (
             <p style={{ fontSize: 13.5, color: 'var(--text-2)', lineHeight: 1.6, margin: 0 }}>
-              You&apos;ve been invited to{' '}
-              <strong style={{ color: 'var(--text)' }}>{inviteContext.campaignName}</strong>
-              {' '}as <strong style={{ color: 'var(--accent)' }}>{inviteContext.role}</strong>.
+              {t.rich('invitedTo', {
+                campaignName: inviteContext.campaignName,
+                role: inviteContext.role,
+                name: (chunks) => <strong style={{ color: 'var(--text)' }}>{chunks}</strong>,
+                roleTag: (chunks) => <strong style={{ color: 'var(--accent)' }}>{chunks}</strong>,
+              })}
             </p>
           ) : (
             <p style={{ fontSize: 13.5, color: 'var(--text-2)', lineHeight: 1.6, margin: 0 }}>
-              Create your account using an invite link.
+              {t('createAccountIntro')}
             </p>
           )}
         </div>
@@ -73,50 +83,50 @@ export default async function JoinPage({
             border: '1px solid var(--bad-border)', borderRadius: 'var(--r)',
             padding: '12px 14px', lineHeight: 1.5,
           }}>
-            This invite link is invalid or has already been used.
+            {t('invalidOrUsedNotice')}
           </div>
         ) : (
           <form action={joinAction} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <label className="field">
-              <span className="cap">Invite code</span>
+              <span className="cap">{t('inviteCodeLabel')}</span>
               <input
                 name="code"
                 required
                 defaultValue={code}
-                placeholder="inv_xxxxxxxxxxxx"
+                placeholder={t('inviteCodePlaceholder')}
                 style={{ fontFamily: 'ui-monospace, monospace', letterSpacing: '0.02em' }}
               />
             </label>
 
             <label className="field">
-              <span className="cap">Full name</span>
+              <span className="cap">{t('fullNameLabel')}</span>
               <input
                 name="name"
                 required
                 autoComplete="name"
-                placeholder="Alex Rivera"
+                placeholder={t('fullNamePlaceholder')}
               />
             </label>
 
             <label className="field">
-              <span className="cap">Email</span>
+              <span className="cap">{t('emailLabel')}</span>
               <input
                 type="email"
                 name="email"
                 required
                 autoComplete="email"
-                placeholder="you@campaign.com"
+                placeholder={t('emailPlaceholder')}
               />
             </label>
 
             <label className="field">
-              <span className="cap">Password</span>
+              <span className="cap">{t('passwordLabel')}</span>
               <input
                 type="password"
                 name="password"
                 required
                 autoComplete="new-password"
-                placeholder="At least 8 characters"
+                placeholder={t('passwordPlaceholder')}
               />
             </label>
 
@@ -131,15 +141,15 @@ export default async function JoinPage({
             )}
 
             <button className="btn primary" style={{ width: '100%', justifyContent: 'center', marginTop: 4 }}>
-              Create account
+              {t('createAccountButton')}
             </button>
           </form>
         )}
 
         <div style={{ textAlign: 'center', marginTop: 20 }}>
           <Link href="/login" style={{ fontSize: 13, color: 'var(--text-3)' }}>
-            Already have an account?{' '}
-            <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Sign in →</span>
+            {t('alreadyHaveAccount')}{' '}
+            <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{t('signInLink')}</span>
           </Link>
         </div>
       </div>

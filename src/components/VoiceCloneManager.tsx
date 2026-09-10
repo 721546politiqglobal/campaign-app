@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { beginVoiceCloneUploadAction, finalizeVoiceCloneAction, checkVoiceCloneStatusAction, previewVoiceCloneAction } from '@/app/actions';
 import { supabaseBrowser } from '@/lib/supabase-browser';
@@ -17,7 +18,7 @@ const PREFERRED_RECORDING_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 
 
 function pickRecordingMimeType(): string | undefined {
   if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return undefined;
-  return PREFERRED_RECORDING_MIME_TYPES.find(t => MediaRecorder.isTypeSupported(t));
+  return PREFERRED_RECORDING_MIME_TYPES.find(mime => MediaRecorder.isTypeSupported(mime));
 }
 
 export function VoiceCloneManager({
@@ -32,6 +33,7 @@ export function VoiceCloneManager({
   canManage: boolean;
 }) {
   const router = useRouter();
+  const t = useTranslations('voice');
   const { toast } = useToast();
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -70,7 +72,7 @@ export function VoiceCloneManager({
   // Stops the microphone (releasing the browser/OS recording indicator) if
   // the component unmounts mid-recording, e.g. the owner navigates away.
   useEffect(() => {
-    return () => { mediaStreamRef.current?.getTracks().forEach(t => t.stop()); };
+    return () => { mediaStreamRef.current?.getTracks().forEach(track => track.stop()); };
   }, []);
 
   useEffect(() => {
@@ -102,7 +104,7 @@ export function VoiceCloneManager({
       abandonRecordingRef.current = true;
       mediaRecorderRef.current.stop();
     }
-    mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+    mediaStreamRef.current?.getTracks().forEach(track => track.stop());
     mediaStreamRef.current = null;
   }
 
@@ -130,7 +132,7 @@ export function VoiceCloneManager({
       recordingChunksRef.current = [];
       recorder.ondataavailable = e => { if (e.data.size > 0) recordingChunksRef.current.push(e.data); };
       recorder.onstop = () => {
-        mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+        mediaStreamRef.current?.getTracks().forEach(track => track.stop());
         mediaStreamRef.current = null;
         // Stop() is async — this fires after any synchronous code that
         // decided to abandon (not finish) the recording, e.g. switching to
@@ -143,7 +145,7 @@ export function VoiceCloneManager({
         // rather than sending a useless sample through the clone pipeline.
         if (blob.size < 1024) {
           setRecordDurationWarning(null);
-          toast('Recording was too short — try again.', 'error');
+          toast(t('toast.recordingTooShort'), 'error');
           return;
         }
         const ext = recorder.mimeType.split(';')[0].split('/')[1] || 'webm';
@@ -156,10 +158,10 @@ export function VoiceCloneManager({
         // were captured instead of silently turning them into `file`.
         abandonRecordingRef.current = true;
         if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
-        mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+        mediaStreamRef.current?.getTracks().forEach(track => track.stop());
         mediaStreamRef.current = null;
         setIsRecording(false);
-        setMicError('Recording stopped unexpectedly — please try again.');
+        setMicError(t('clone.micError.stoppedUnexpectedly'));
       };
       mediaRecorderRef.current = recorder;
       recorder.start();
@@ -168,12 +170,12 @@ export function VoiceCloneManager({
       setRecordDurationWarning(null);
       recordingTimerRef.current = setInterval(() => setRecordedSeconds(s => s + 1), 1000);
     } catch (err) {
-      mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+      mediaStreamRef.current?.getTracks().forEach(track => track.stop());
       mediaStreamRef.current = null;
       const isPermissionIssue = err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'NotFoundError');
       setMicError(isPermissionIssue
-        ? 'Microphone access is needed to record — you can upload a file instead.'
-        : "Recording isn't supported in this browser — please upload a file instead.");
+        ? t('clone.micError.permissionDenied')
+        : t('clone.modal.audio.recordingNotSupported'));
     }
   }
 
@@ -181,8 +183,8 @@ export function VoiceCloneManager({
     if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
     mediaRecorderRef.current?.stop();
     setIsRecording(false);
-    if (recordedSeconds < 30) setRecordDurationWarning('This recording looks shorter than 30 seconds — a longer sample usually clones more accurately.');
-    else if (recordedSeconds > 300) setRecordDurationWarning('This recording looks longer than 5 minutes — HeyGen recommends under 5 minutes.');
+    if (recordedSeconds < 30) setRecordDurationWarning(t('clone.recordDurationWarning.tooShort'));
+    else if (recordedSeconds > 300) setRecordDurationWarning(t('clone.recordDurationWarning.tooLong'));
   }
 
   async function handleSubmit() {
@@ -197,7 +199,7 @@ export function VoiceCloneManager({
     }
     if (!begin.path || !begin.token) {
       setSubmitting(false);
-      toast('Failed to start voice cloning', 'error');
+      toast(t('toast.failedToStartCloning'), 'error');
       return;
     }
 
@@ -205,18 +207,18 @@ export function VoiceCloneManager({
       .uploadToSignedUrl(begin.path, begin.token, file);
     if (uploadError) {
       setSubmitting(false);
-      toast(`Upload failed: ${uploadError.message}`, 'error');
+      toast(t('toast.uploadFailed', { message: uploadError.message }), 'error');
       return;
     }
 
     const result = await finalizeVoiceCloneAction(voiceName, begin.path);
     setSubmitting(false);
     if (result.ok) {
-      toast('Voice cloning started — this can take a few minutes.');
+      toast(t('toast.cloningStarted'));
       resetModal();
       router.refresh();
     } else {
-      toast(result.error ?? 'Failed to clone voice', 'error');
+      toast(result.error ?? t('toast.failedToCloneVoice'), 'error');
     }
   }
 
@@ -224,7 +226,7 @@ export function VoiceCloneManager({
     if (previewAudioUrl) {
       new Audio(previewAudioUrl).play().catch(() => {
         setPreviewAudioUrl(null);
-        toast('Couldn\'t play the sample — try again.', 'error');
+        toast(t('toast.couldntPlaySample'), 'error');
       });
       return;
     }
@@ -232,13 +234,13 @@ export function VoiceCloneManager({
     try {
       const result = await previewVoiceCloneAction();
       if (!result.ok || !result.audioUrl) {
-        toast(result.ok ? 'Failed to generate voice preview' : result.error, 'error');
+        toast(result.ok ? t('toast.failedToGeneratePreview') : result.error, 'error');
         return;
       }
       setPreviewAudioUrl(result.audioUrl);
       new Audio(result.audioUrl).play().catch(() => {
         setPreviewAudioUrl(null);
-        toast('Couldn\'t play the sample — try again.', 'error');
+        toast(t('toast.couldntPlaySample'), 'error');
       });
     } finally {
       setPreviewLoading(false);
@@ -248,10 +250,10 @@ export function VoiceCloneManager({
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div className="eyebrow">Your voice</div>
+        <div className="eyebrow">{t('clone.yourVoice')}</div>
         {canManage && status !== 'training' && (
           <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setModalOpen(true)}>
-            {status === 'ready' ? 'Replace voice' : 'Clone your voice'}
+            {status === 'ready' ? t('clone.replaceVoice') : t('clone.cloneYourVoice')}
           </button>
         )}
       </div>
@@ -259,8 +261,8 @@ export function VoiceCloneManager({
       {!status && (
         <p className="muted" style={{ fontSize: 13 }}>
           {canManage
-            ? 'No cloned voice yet — clone one from a short audio sample to use it for campaign videos.'
-            : 'No voice has been cloned for this campaign yet.'}
+            ? t('clone.noVoiceCanManage')
+            : t('clone.noVoiceReadOnly')}
         </p>
       )}
 
@@ -272,13 +274,13 @@ export function VoiceCloneManager({
             boxShadow: `0 0 6px ${status === 'ready' ? 'var(--ok)' : status === 'failed' ? 'var(--bad)' : 'var(--warn)'}`,
           }} />
           <span>
-            {status === 'training' && 'Cloning your voice — usually a few minutes'}
-            {status === 'ready' && `Ready — "${name}"`}
-            {status === 'failed' && `Failed: ${error ?? 'Unknown error'}`}
+            {status === 'training' && t('clone.status.training')}
+            {status === 'ready' && t('clone.status.ready', { name: name ?? '' })}
+            {status === 'failed' && t('clone.status.failed', { message: error ?? t('clone.status.unknownError') })}
           </span>
           {status === 'ready' && (
             <button type="button" className="btn" style={{ fontSize: 12 }} disabled={previewLoading} onClick={handlePlaySample}>
-              {previewLoading ? 'Generating…' : '▶ Play sample'}
+              {previewLoading ? t('clone.generatingSample') : t('clone.playSample')}
             </button>
           )}
         </div>
@@ -289,38 +291,38 @@ export function VoiceCloneManager({
           <div className="modal">
             {step === 1 && (
               <>
-                <div className="modal-step">Step 1 of 3 · Consent</div>
-                <h3 style={{ marginBottom: 14, fontSize: 16 }}>Confirm permission</h3>
+                <div className="modal-step">{t('clone.modal.consent.stepLabel')}</div>
+                <h3 style={{ marginBottom: 14, fontSize: 16 }}>{t('clone.modal.consent.title')}</h3>
                 <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, lineHeight: 1.5 }}>
                   <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
-                  I confirm I have permission to create an AI clone of this voice.
+                  {t('clone.modal.consent.text')}
                 </label>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={resetModal}>Cancel</button>
-                  <button className="btn primary" disabled={!consent} onClick={() => setStep(2)}>Next →</button>
+                  <button className="btn" onClick={resetModal}>{t('clone.modal.cancel')}</button>
+                  <button className="btn primary" disabled={!consent} onClick={() => setStep(2)}>{t('clone.modal.next')}</button>
                 </div>
               </>
             )}
             {step === 2 && (
               <>
-                <div className="modal-step">Step 2 of 3 · Audio sample</div>
-                <h3 style={{ marginBottom: 12, fontSize: 16 }}>Provide an audio sample</h3>
+                <div className="modal-step">{t('clone.modal.audio.stepLabel')}</div>
+                <h3 style={{ marginBottom: 12, fontSize: 16 }}>{t('clone.modal.audio.title')}</h3>
 
                 <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
                   <button type="button" className={audioSource === 'record' ? 'btn primary' : 'btn'} style={{ fontSize: 12 }}
                     aria-pressed={audioSource === 'record'} onClick={() => selectAudioSource('record')}>
-                    Record
+                    {t('clone.modal.audio.recordTab')}
                   </button>
                   <button type="button" className={audioSource === 'upload' ? 'btn primary' : 'btn'} style={{ fontSize: 12 }}
                     aria-pressed={audioSource === 'upload'} onClick={() => selectAudioSource('upload')}>
-                    Upload a file
+                    {t('clone.modal.audio.uploadTab')}
                   </button>
                 </div>
 
                 {audioSource === 'upload' && (
                   <>
                     <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-                      Upload a clear, single-speaker MP3, WAV, M4A, WebM, or OGG recording.
+                      {t('clone.modal.audio.uploadInstructions')}
                     </p>
                     <input type="file" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/webm,audio/ogg"
                       onChange={e => setFile(e.target.files?.[0] ?? null)} />
@@ -330,14 +332,14 @@ export function VoiceCloneManager({
                 {audioSource === 'record' && mediaRecorderSupported && (
                   <>
                     <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-                      Record a clear, single-speaker sample directly from your microphone.
+                      {t('clone.modal.audio.recordInstructions')}
                     </p>
                     {micError && (
                       <p className="muted" style={{ fontSize: 12, marginBottom: 10, color: 'var(--bad)' }}>{micError}</p>
                     )}
                     {!isRecording && !file && (
                       <button type="button" className="btn primary" style={{ fontSize: 13 }} onClick={startRecording}>
-                        ● Start Recording
+                        {t('clone.modal.audio.startRecording')}
                       </button>
                     )}
                     {isRecording && (
@@ -345,14 +347,14 @@ export function VoiceCloneManager({
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--bad)', boxShadow: '0 0 6px var(--bad)' }} />
                         <span className="mono" aria-live="polite">{Math.floor(recordedSeconds / 60)}:{String(recordedSeconds % 60).padStart(2, '0')}</span>
                         <button type="button" className="btn" style={{ fontSize: 13 }} disabled={recordedSeconds < 1} onClick={stopRecording}>
-                          Stop Recording
+                          {t('clone.modal.audio.stopRecording')}
                         </button>
                       </div>
                     )}
                     {!isRecording && file && (
                       <button type="button" className="btn" style={{ fontSize: 12 }}
                         onClick={() => { setFile(null); setRecordDurationWarning(null); }}>
-                        Re-record
+                        {t('clone.modal.audio.reRecord')}
                       </button>
                     )}
                   </>
@@ -360,7 +362,7 @@ export function VoiceCloneManager({
 
                 {audioSource === 'record' && !mediaRecorderSupported && (
                   <p className="muted" style={{ fontSize: 12 }}>
-                    Recording isn&rsquo;t supported in this browser — please upload a file instead.
+                    {t('clone.modal.audio.recordingNotSupported')}
                   </p>
                 )}
 
@@ -372,21 +374,21 @@ export function VoiceCloneManager({
                 )}
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={() => setStep(1)}>← Back</button>
-                  <button className="btn primary" disabled={!file} onClick={() => setStep(3)}>Next →</button>
+                  <button className="btn" onClick={() => setStep(1)}>{t('clone.modal.back')}</button>
+                  <button className="btn primary" disabled={!file} onClick={() => setStep(3)}>{t('clone.modal.next')}</button>
                 </div>
               </>
             )}
             {step === 3 && (
               <>
-                <div className="modal-step">Step 3 of 3 · Name</div>
-                <h3 style={{ marginBottom: 12, fontSize: 16 }}>Name this voice</h3>
-                <input className="input" placeholder="e.g. My voice" value={voiceName}
+                <div className="modal-step">{t('clone.modal.name.stepLabel')}</div>
+                <h3 style={{ marginBottom: 12, fontSize: 16 }}>{t('clone.modal.name.title')}</h3>
+                <input className="input" placeholder={t('clone.modal.name.placeholder')} value={voiceName}
                   onChange={e => setVoiceName(e.target.value)} maxLength={60} />
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={() => setStep(2)}>← Back</button>
+                  <button className="btn" onClick={() => setStep(2)}>{t('clone.modal.back')}</button>
                   <button className="btn primary" disabled={submitting || !voiceName.trim()} onClick={handleSubmit}>
-                    {submitting ? 'Cloning…' : 'Clone voice'}
+                    {submitting ? t('clone.modal.name.cloning') : t('clone.modal.name.submit')}
                   </button>
                 </div>
               </>

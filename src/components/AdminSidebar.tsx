@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { adminLogoutAction } from '@/app/admin/actions';
 
 const NAV = [
   {
     href: '/admin',
-    label: 'Overview',
+    labelKey: 'navOverview',
     icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
         <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
@@ -19,7 +20,7 @@ const NAV = [
   },
   {
     href: '/admin/campaigns',
-    label: 'Campaigns',
+    labelKey: 'navCampaigns',
     icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
         <path d="M2 12V6L8 2L14 6V12" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
@@ -29,7 +30,7 @@ const NAV = [
   },
   {
     href: '/admin/users',
-    label: 'Users',
+    labelKey: 'navUsers',
     icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
         <circle cx="6" cy="5" r="2.5" stroke="currentColor" strokeWidth="1.4"/>
@@ -41,7 +42,7 @@ const NAV = [
   },
   {
     href: '/admin/content',
-    label: 'Content',
+    labelKey: 'navContent',
     icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
         <rect x="2.5" y="1.5" width="11" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
@@ -53,7 +54,7 @@ const NAV = [
   },
   {
     href: '/admin/audit',
-    label: 'Audit log',
+    labelKey: 'navAuditLog',
     icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
         <rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
@@ -65,7 +66,7 @@ const NAV = [
   },
   {
     href: '/admin/billing',
-    label: 'Billing',
+    labelKey: 'navBilling',
     icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
         <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
@@ -77,6 +78,8 @@ const NAV = [
 
 export function AdminSidebar({ name }: { name: string }) {
   const path = usePathname();
+  const t = useTranslations('admin.sidebar');
+  const tCommon = useTranslations('common');
   const isActive = (href: string) =>
     href === '/admin' ? path === '/admin' : path.startsWith(href);
 
@@ -90,7 +93,7 @@ export function AdminSidebar({ name }: { name: string }) {
           <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden>
             <path d="M4 1L5.2 2.8H7L5.6 4L6.2 6L4 4.8L1.8 6L2.4 4L1 2.8H2.8L4 1Z" fill="currentColor"/>
           </svg>
-          SUPER ADMIN
+          {t('badge')}
         </div>
       </div>
 
@@ -98,7 +101,7 @@ export function AdminSidebar({ name }: { name: string }) {
         {NAV.map(n => (
           <Link key={n.href} href={n.href} className={isActive(n.href) ? 'active' : ''}>
             {n.icon}
-            {n.label}
+            {t(n.labelKey)}
           </Link>
         ))}
       </nav>
@@ -109,7 +112,7 @@ export function AdminSidebar({ name }: { name: string }) {
         <div className="sidebar-user">{name}</div>
         <form action={adminLogoutAction}>
           <button className="btn" style={{ width: '100%', fontSize: 13, padding: '7px 12px' }}>
-            Sign out
+            {tCommon('signOut')}
           </button>
         </form>
       </div>

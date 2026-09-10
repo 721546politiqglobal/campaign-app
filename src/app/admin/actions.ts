@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { getTranslations } from 'next-intl/server';
 import { requireAdmin } from '@/lib/session';
 import { adminDb, throwOnError } from '@/lib/supabase';
 import { stripe } from '@/lib/stripe';
@@ -17,6 +18,7 @@ export async function impersonateAction(userId: string) {
     name: user.name,
     role: user.role,
     campaignId: user.campaign_id,
+    locale: user.locale,
     exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
   });
   redirect('/dashboard');
@@ -88,17 +90,18 @@ export async function createCampaignAction(formData: FormData) {
 }
 
 export async function assignPlanAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
-  await requireAdmin();
-  if (!stripe) return { ok: false, error: 'STRIPE_SECRET_KEY is not configured on this server.' };
+  const s = await requireAdmin();
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.admin' });
+  if (!stripe) return { ok: false, error: t('stripeNotConfigured') };
 
   const campaignId = String(formData.get('campaignId') ?? '');
   const planId = String(formData.get('planId') ?? '');
-  if (!campaignId || !planId) return { ok: false, error: 'Campaign and plan are required.' };
+  if (!campaignId || !planId) return { ok: false, error: t('campaignAndPlanRequired') };
 
   const { getCampaign, getBillingPlan } = await import('@/lib/data');
   const [campaign, plan] = await Promise.all([getCampaign(campaignId), getBillingPlan(planId)]);
-  if (!campaign) return { ok: false, error: 'Campaign not found.' };
-  if (!plan) return { ok: false, error: 'Plan not found.' };
+  if (!campaign) return { ok: false, error: t('campaignNotFound') };
+  if (!plan) return { ok: false, error: t('planNotFound') };
 
   let customerId = campaign.stripeCustomerId;
   if (!customerId) {

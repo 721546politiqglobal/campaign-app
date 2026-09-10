@@ -6,14 +6,20 @@ vi.mock('next/navigation', () => ({
   redirect: vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`); }),
 }));
 vi.mock('bcryptjs', () => ({ default: { hash: vi.fn(async () => 'hashed'), compare: vi.fn() } }));
-vi.mock('@/lib/session', () => ({ setSessionCookie: vi.fn(), requireSession: vi.fn(), signOut: vi.fn() }));
+const setSessionCookie = vi.fn();
+vi.mock('@/lib/session', () => ({ setSessionCookie, requireSession: vi.fn(), signOut: vi.fn() }));
+// getLocale() reads next/headers cookies()/headers(), neither of which exists
+// under plain Vitest — stub it to the language a Spanish joiner would have
+// picked with the pre-auth toggle on /join.
+vi.mock('@/lib/locale', () => ({ getLocale: vi.fn(() => 'es') }));
 vi.mock('@/lib/store', () => ({ prefixedId: vi.fn(() => 'u-new'), uid: vi.fn(), inviteCode: vi.fn() }));
 
 const usersInsert = vi.fn(async () => ({ error: null }));
 const usersUpdateEq = vi.fn(async () => ({ error: null }));
+const usersUpdate = vi.fn(() => ({ eq: usersUpdateEq }));
 const claimMaybeSingle = vi.fn();
 const inviteSelectSingle = vi.fn();
-const existingMaybeSingle = vi.fn(async () => ({ data: null }));
+const existingMaybeSingle = vi.fn(async (): Promise<{ data: { id: string; password_hash: string | null } | null }> => ({ data: null }));
 
 function makeAdminDb() {
   return {
@@ -28,7 +34,7 @@ function makeAdminDb() {
         return {
           select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle: existingMaybeSingle })) })),
           insert: usersInsert,
-          update: vi.fn(() => ({ eq: usersUpdateEq })),
+          update: usersUpdate,
         };
       }
       if (table === 'audit_entries') return { insert: vi.fn(async () => ({ error: null })) };
@@ -65,5 +71,24 @@ describe('joinAction single-use invite claim', () => {
     const { joinAction } = await import('./actions');
     await expect(joinAction(joinForm())).rejects.toThrow(/REDIRECT:\/dashboard/);
     expect(usersInsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists the language the joiner picked on the pre-auth toggle', async () => {
+    claimMaybeSingle.mockResolvedValue({ data: { code: 'inv_abc' } });
+    const { joinAction } = await import('./actions');
+    await expect(joinAction(joinForm())).rejects.toThrow(/REDIRECT:\/dashboard/);
+    expect(usersInsert).toHaveBeenCalledWith(expect.objectContaining({ locale: 'es' }));
+    expect(setSessionCookie).toHaveBeenCalledWith(expect.objectContaining({ locale: 'es' }));
+  });
+
+  it('persists the picked language when claiming an invited placeholder row', async () => {
+    existingMaybeSingle.mockResolvedValue({ data: { id: 'u-placeholder', password_hash: null } });
+    claimMaybeSingle.mockResolvedValue({ data: { code: 'inv_abc' } });
+    const { joinAction } = await import('./actions');
+    await expect(joinAction(joinForm())).rejects.toThrow(/REDIRECT:\/dashboard/);
+    expect(usersInsert).not.toHaveBeenCalled();
+    expect(usersUpdate).toHaveBeenCalledWith(expect.objectContaining({ locale: 'es' }));
+    expect(usersUpdateEq).toHaveBeenCalledWith('id', 'u-placeholder');
+    expect(setSessionCookie).toHaveBeenCalledWith(expect.objectContaining({ locale: 'es' }));
   });
 });

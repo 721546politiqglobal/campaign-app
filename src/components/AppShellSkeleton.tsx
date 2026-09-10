@@ -1,6 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { NAV } from './Sidebar';
 
 /**
@@ -11,6 +12,7 @@ import { NAV } from './Sidebar';
  */
 export function AppShellSkeleton({ children }: { children: React.ReactNode }) {
   const path = usePathname();
+  const t = useTranslations('common');
   const isActive = (href: string) =>
     href === '/dashboard' ? path === '/dashboard' : path.startsWith(href);
 
@@ -29,7 +31,7 @@ export function AppShellSkeleton({ children }: { children: React.ReactNode }) {
             <span key={n.href} className={isActive(n.href) ? 'active' : ''}
               style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', borderRadius: 7, color: 'var(--text-2)', fontSize: 13.5, fontWeight: 500 }}>
               {n.icon}
-              {n.label}
+              {t(`nav.${n.key}`)}
             </span>
           ))}
         </nav>

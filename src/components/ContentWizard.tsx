@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import type { Role } from '@/domain/types';
 import { ContentItem, VIDEO_CONTENT_TYPES, MEDIA_REQUIRED_PLATFORMS } from '@/domain/types';
 import { can } from '@/lib/permissions';
@@ -16,11 +17,11 @@ import {
 
 type WizardStep = 'review' | 'video' | 'disclosure' | 'publish';
 
-const STEP_LABELS: Record<WizardStep, string> = {
-  review: 'Review draft',
-  video: 'Generate video',
-  disclosure: 'Disclosure',
-  publish: 'Publish',
+const STEP_LABEL_KEYS: Record<WizardStep, string> = {
+  review: 'steps.review',
+  video: 'steps.video',
+  disclosure: 'steps.disclosure',
+  publish: 'steps.publish',
 };
 
 const US_TIMEZONES = [
@@ -80,6 +81,8 @@ export function ContentWizard({
 }) {
   const router = useRouter();
   const { toast } = useToast();
+  const t = useTranslations('contentWizard');
+  const tType = useTranslations('content.types');
   const steps = getSteps(item);
   const currentStep = getCurrentStep(item, hasDisclosure);
   const stepIndex = steps.indexOf(currentStep);
@@ -158,12 +161,12 @@ export function ContentWizard({
     const r = await fn();
     setBusy(false);
     if (!r.ok) {
-      setError(r.error ?? 'Something went wrong.');
+      setError(r.error ?? t('errors.somethingWentWrong'));
     } else {
       if (successMsg) toast(successMsg);
       router.refresh();
     }
-  }, [router, toast]);
+  }, [router, toast, t]);
 
   useEffect(() => {
     if (!videoId || videoStatus !== 'generating') return;
@@ -193,7 +196,7 @@ export function ContentWizard({
     const result = await generateVideoAction(item.id, item.body, videoOverride);
     setBusy(false);
     if (!result.ok) {
-      setError(result.error ?? 'Video generation failed.');
+      setError(result.error ?? t('errors.videoGenerationFailed'));
       return;
     }
     if (result.videoId) {
@@ -214,8 +217,8 @@ export function ContentWizard({
           justifyContent: 'center', margin: '0 auto 16px', color: 'var(--accent-ink)', fontSize: 22,
           boxShadow: '0 4px 16px rgba(249,115,22,0.35), inset 0 1px 0 rgba(255,255,255,0.35)',
         }}>✓</div>
-        <h3 style={{ margin: '0 0 8px', fontSize: 18 }}>Published</h3>
-        <p className="muted">This content is live on all selected platforms.</p>
+        <h3 style={{ margin: '0 0 8px', fontSize: 18 }}>{t('published.title')}</h3>
+        <p className="muted">{t('published.description')}</p>
       </div>
     );
   }
@@ -223,8 +226,8 @@ export function ContentWizard({
   if (item.status === 'rejected' || item.status === 'archived') {
     return (
       <div className="card">
-        <h2>{item.status === 'rejected' ? 'Rejected' : 'Archived'}</h2>
-        <p className="muted">This content is no longer active.</p>
+        <h2>{item.status === 'rejected' ? t('inactive.rejectedTitle') : t('inactive.archivedTitle')}</h2>
+        <p className="muted">{t('inactive.description')}</p>
       </div>
     );
   }
@@ -240,7 +243,7 @@ export function ContentWizard({
             <div key={step} style={{ display: 'flex', alignItems: 'center' }}>
               <div className={`step${active ? ' active' : done ? ' done' : ''}`}>
                 <span className="marker">{done ? '✓' : i + 1}</span>
-                {STEP_LABELS[step]}
+                {t(STEP_LABEL_KEYS[step])}
               </div>
               {i < steps.length - 1 && (
                 <div className={`connector${i < stepIndex ? ' done' : ''}`} />
@@ -254,12 +257,12 @@ export function ContentWizard({
       {currentStep === 'review' && (
         <div className="grid cols-2">
           <div className="card">
-            <h2>Your draft</h2>
+            <h2>{t('review.yourDraft')}</h2>
             <div className="eyebrow" style={{ marginBottom: 10 }}>
-              {item.type.replace('_', ' ')} · {item.isAiGenerated ? 'AI-generated' : 'Human-written'}
+              {tType(item.type)} · {item.isAiGenerated ? t('review.aiGenerated') : t('review.humanWritten')}
             </div>
             <label className="field">
-              <span className="cap">Content</span>
+              <span className="cap">{t('review.contentLabel')}</span>
               <textarea
                 value={body}
                 onChange={e => setBody(e.target.value)}
@@ -271,27 +274,27 @@ export function ContentWizard({
               disabled={busy}
               onClick={() => run(() => saveBodyAction(item.id, body))}
             >
-              Save edits
+              {t('review.saveEdits')}
             </button>
           </div>
           <div className="card">
-            <h2>Ready to continue?</h2>
+            <h2>{t('review.readyToContinue')}</h2>
             <p className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>
-              Read through your draft. Make any edits on the left, then approve to continue.
+              {t('review.readyDescription')}
             </p>
             {VIDEO_CONTENT_TYPES.includes(item.type) && (
               <p className="muted" style={{ fontSize: 13, marginTop: 12, padding: '10px 12px', background: 'var(--bg-hover)', borderRadius: 6 }}>
-                Next: generate an avatar video of you delivering this script.
+                {t('review.nextVideo')}
               </p>
             )}
             {item.isAiGenerated && !VIDEO_CONTENT_TYPES.includes(item.type) && (
               <p className="muted" style={{ fontSize: 13, marginTop: 12, padding: '10px 12px', background: 'var(--bg-hover)', borderRadius: 6 }}>
-                Next: review and confirm the required AI disclosure.
+                {t('review.nextDisclosure')}
               </p>
             )}
             {!item.isAiGenerated && !VIDEO_CONTENT_TYPES.includes(item.type) && (
               <p className="muted" style={{ fontSize: 13, marginTop: 12, padding: '10px 12px', background: 'var(--bg-hover)', borderRadius: 6 }}>
-                Next: choose platforms and publish.
+                {t('review.nextPublish')}
               </p>
             )}
             <div className="spacer-y" />
@@ -302,11 +305,11 @@ export function ContentWizard({
                 disabled={busy}
                 onClick={() => run(() => approveTextAction(item.id))}
               >
-                {busy ? 'Saving…' : 'Looks good — Continue →'}
+                {busy ? t('saving') : t('review.continueButton')}
               </button>
             ) : (
               <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
-                Approval requires manager or approver access.
+                {t('approvalRequired')}
               </p>
             )}
             {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
@@ -318,40 +321,40 @@ export function ContentWizard({
       {currentStep === 'video' && (
         <div className="grid cols-2">
           <div className="card">
-            <h2>Script</h2>
-            <div className="eyebrow" style={{ marginBottom: 10 }}>This will be spoken by your avatar</div>
+            <h2>{t('video.scriptTitle')}</h2>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>{t('video.spokenByAvatar')}</div>
             <p style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.7, color: 'var(--text)' }}>
               {item.body}
             </p>
           </div>
           <div className="card">
-            <h2>Avatar video</h2>
+            <h2>{t('video.avatarVideoTitle')}</h2>
             {videoStatus === 'idle' && !videoUrl && (
               <>
                 <p className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>
-                  Your candidate avatar will deliver this script. Generation takes 2–4 minutes.
+                  {t('video.description')}
                 </p>
                 {/* Video customization */}
                 <div style={{ margin: '14px 0', padding: 14, background: 'var(--bg-hover)', borderRadius: 8 }}>
-                  <div className="eyebrow" style={{ marginBottom: 10 }}>Video format</div>
+                  <div className="eyebrow" style={{ marginBottom: 10 }}>{t('video.formatLabel')}</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                     {([
-                      { ratio: '16:9', label: 'YouTube · Landscape' },
-                      { ratio: '9:16', label: 'TikTok/Reels/Stories · Vertical' },
-                      { ratio: '1:1',  label: 'Instagram · Square' },
-                    ] as const).map(({ ratio, label }) => (
+                      { ratio: '16:9', labelKey: 'video.format.youtube' },
+                      { ratio: '9:16', labelKey: 'video.format.tiktok' },
+                      { ratio: '1:1',  labelKey: 'video.format.instagram' },
+                    ] as const).map(({ ratio, labelKey }) => (
                       <button key={ratio} type="button" className={`btn${videoOverride.aspectRatio === ratio ? ' active' : ''}`}
                         onClick={() => setVideoOverride(v => ({ ...v, aspectRatio: ratio }))}
                         style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '8px 12px' }}
                       >
                         <span style={{ fontWeight: 700 }}>{ratio}</span>
-                        <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.8 }}>{label}</span>
+                        <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.8 }}>{t(labelKey)}</span>
                       </button>
                     ))}
                   </div>
                   <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
-                    Default format can be changed in{' '}
-                    <a href="/avatars" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>Avatars</a>
+                    {t('video.defaultFormatNote')}{' '}
+                    <a href="/avatars" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>{t('video.avatarsLink')}</a>
                   </div>
                 </div>
                 <div className="spacer-y" />
@@ -361,13 +364,13 @@ export function ContentWizard({
                   disabled={busy}
                   onClick={handleGenerateVideo}
                 >
-                  {busy ? 'Starting…' : 'Generate avatar video'}
+                  {busy ? t('video.startingButton') : t('video.generateButton')}
                 </button>
               </>
             )}
             {videoStatus === 'generating' && (
               <div>
-                <p className="muted" style={{ fontSize: 14 }}>Generating your video — this takes a couple of minutes.</p>
+                <p className="muted" style={{ fontSize: 14 }}>{t('video.generatingText')}</p>
                 <div style={{ marginTop: 16, height: 4, background: 'var(--bg-hover)', borderRadius: 2, overflow: 'hidden' }}>
                   <div style={{
                     height: '100%', width: '100%', background: 'linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%)',
@@ -377,7 +380,7 @@ export function ContentWizard({
                   }} />
                 </div>
                 <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-                  You can leave this page and come back — nothing will be lost.
+                  {t('video.generatingNote')}
                 </p>
               </div>
             )}
@@ -395,31 +398,30 @@ export function ContentWizard({
                     disabled={busy}
                     onClick={() => run(() => confirmVideoAction(item.id, videoUrl))}
                   >
-                    {busy ? 'Saving…' : 'Video looks good — Continue →'}
+                    {busy ? t('saving') : t('video.continueButton')}
                   </button>
                 ) : (
                   <p className="muted" style={{ fontSize: 13 }}>
-                    Approval requires manager or approver access.
+                    {t('approvalRequired')}
                   </p>
                 )}
               </>
             )}
             {videoStatus === 'failed' && (
               <div>
-                <div className="error">Video generation failed. Try again.</div>
+                <div className="error">{t('video.generationFailedMessage')}</div>
                 <button className="btn" style={{ marginTop: 12 }} onClick={handleGenerateVideo}>
-                  Retry
+                  {t('video.retry')}
                 </button>
               </div>
             )}
             {videoStatus === 'timed_out' && (
               <div>
                 <div className="error">
-                  This is taking longer than expected. Your video may still be processing —
-                  leave this page and check back in a few minutes.
+                  {t('video.timedOutMessage')}
                 </div>
                 <button className="btn" style={{ marginTop: 12 }} onClick={() => router.refresh()}>
-                  Refresh
+                  {t('video.refresh')}
                 </button>
               </div>
             )}
@@ -437,11 +439,11 @@ export function ContentWizard({
                     disabled={busy}
                     onClick={() => run(() => confirmVideoAction(item.id, item.mediaUrl!))}
                   >
-                    {busy ? 'Saving…' : 'Video looks good — Continue →'}
+                    {busy ? t('saving') : t('video.continueButton')}
                   </button>
                 ) : (
                   <p className="muted" style={{ fontSize: 13 }}>
-                    Approval requires manager or approver access.
+                    {t('approvalRequired')}
                   </p>
                 )}
               </>
@@ -455,10 +457,9 @@ export function ContentWizard({
       {currentStep === 'disclosure' && (
         <div style={{ maxWidth: 620, margin: '0 auto', width: '100%' }}>
           <div className="card">
-            <h2>Required AI disclosure</h2>
+            <h2>{t('disclosure.title')}</h2>
             <p className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>
-              Because this content was AI-generated, this disclosure must be attached before
-              publishing. Edit the wording if needed — it will be appended to the post automatically.
+              {t('disclosure.description')}
             </p>
             <div className="spacer-y" />
             <div style={{
@@ -468,17 +469,17 @@ export function ContentWizard({
               marginBottom: 10,
               background: 'var(--bg-hover)',
             }}>
-              <div className="eyebrow" style={{ marginBottom: 6 }}>{requiredDisclosure?.placement ?? 'overlay'}</div>
+              <div className="eyebrow" style={{ marginBottom: 6 }}>{requiredDisclosure?.placement ?? t('disclosure.defaultPlacement')}</div>
               <textarea
                 className="input"
                 value={disclosureText}
                 onChange={e => setDisclosureText(e.target.value)}
                 style={{ minHeight: 70, fontStyle: 'italic', lineHeight: 1.6 }}
-                placeholder="Enter the required disclosure text…"
+                placeholder={t('disclosure.textPlaceholder')}
               />
               {!disclosureText.trim() && (
                 <div className="error" style={{ marginTop: 6, fontSize: 12 }}>
-                  Disclosure text is required.
+                  {t('disclosure.textRequired')}
                 </div>
               )}
             </div>
@@ -489,7 +490,7 @@ export function ContentWizard({
               disabled={busy || !disclosureText.trim()}
               onClick={() => run(() => confirmDisclosureAction(item.id, disclosureText))}
             >
-              {busy ? 'Confirming…' : 'Confirm disclosure — Continue →'}
+              {busy ? t('disclosure.confirming') : t('disclosure.confirmButton')}
             </button>
             {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
           </div>
@@ -500,10 +501,10 @@ export function ContentWizard({
       {currentStep === 'publish' && (
         <div style={{ maxWidth: 620, margin: '0 auto', width: '100%' }}>
           <div className="card">
-            <h2>Publish</h2>
+            <h2>{t('publish.title')}</h2>
 
             {/* Platforms */}
-            <div className="eyebrow" style={{ marginBottom: 8 }}>Platforms</div>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>{t('publish.platformsLabel')}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
               {availablePlatforms.map(p => {
                 const selected = platforms.includes(p);
@@ -517,24 +518,24 @@ export function ContentWizard({
             </div>
             {availablePlatforms.length < (CONTENT_TYPE_PLATFORMS[item.type]?.length ?? 0) && (
               <p className="muted" style={{ fontSize: 12, marginTop: -16, marginBottom: 24 }}>
-                Instagram and TikTok require an image or video, which this content doesn&apos;t have.
+                {t('publish.mediaRequiredNote')}
               </p>
             )}
 
             {/* Timing toggle */}
-            <div className="eyebrow" style={{ marginBottom: 8 }}>Timing</div>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>{t('publish.timingLabel')}</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
               {(['now', 'later'] as const).map(m => (
                 <button key={m} type="button" className={`btn${scheduleMode === m ? ' active' : ''}`}
                   onClick={() => setScheduleMode(m)}>
-                  {m === 'now' ? 'Publish now' : 'Schedule for later'}
+                  {m === 'now' ? t('publish.publishNow') : t('publish.scheduleForLater')}
                 </button>
               ))}
             </div>
 
             {scheduleMode === 'later' && (
               <div style={{ marginBottom: 20 }}>
-                <label className="field-label">Date (MM/DD/YYYY) &amp; time</label>
+                <label className="field-label">{t('publish.dateTimeLabel')}</label>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                   <input
                     type="number" inputMode="numeric" placeholder="MM" min={1} max={12}
@@ -565,7 +566,7 @@ export function ContentWizard({
                 </div>
                 {scheduledUtc && scheduledUtc < new Date(Date.now() + 5 * 60 * 1000) && (
                   <div className="error" style={{ marginTop: 6, fontSize: 12 }}>
-                    Pick a time at least 5 minutes from now.
+                    {t('publish.pickTimeError')}
                   </div>
                 )}
               </div>
@@ -573,7 +574,7 @@ export function ContentWizard({
 
             {item.mediaUrl && (
               <div style={{ marginBottom: 20 }}>
-                <div className="eyebrow" style={{ marginBottom: 8 }}>Video</div>
+                <div className="eyebrow" style={{ marginBottom: 8 }}>{t('publish.videoLabel')}</div>
                 <video src={item.mediaUrl} controls style={{ width: '100%', maxWidth: 400, borderRadius: 8, background: '#000' }} />
               </div>
             )}
@@ -582,23 +583,23 @@ export function ContentWizard({
               can(role, 'publish') ? (
                 <button className="btn primary" style={{ width: '100%' }}
                   disabled={busy || platforms.length === 0}
-                  onClick={() => run(() => publishAction(item.id, platforms), 'Published successfully!')}>
-                  {busy ? 'Publishing…' : `Publish to ${platforms.length} platform${platforms.length !== 1 ? 's' : ''}`}
+                  onClick={() => run(() => publishAction(item.id, platforms), t('publish.publishedToast'))}>
+                  {busy ? t('publish.publishing') : t('publish.publishButton', { count: platforms.length })}
                 </button>
               ) : (
-                <p className="muted" style={{ fontSize: 13 }}>Publishing requires manager access.</p>
+                <p className="muted" style={{ fontSize: 13 }}>{t('publish.publishingRequiresManager')}</p>
               )
             ) : (
               can(role, 'schedule') ? (
                 <button className="btn primary" style={{ width: '100%' }}
                   disabled={busy || platforms.length === 0 || !scheduledUtc || scheduledUtc < new Date(Date.now() + 5 * 60 * 1000)}
-                  onClick={() => run(() => scheduleWithTimeAction(item.id, platforms, scheduledAt, timezone), 'Content scheduled!')}>
-                  {busy ? 'Scheduling…' : scheduledUtc
-                    ? `Schedule for ${scheduledUtc.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: timezone })}`
-                    : 'Pick a time above'}
+                  onClick={() => run(() => scheduleWithTimeAction(item.id, platforms, scheduledAt, timezone), t('publish.scheduledToast'))}>
+                  {busy ? t('publish.scheduling') : scheduledUtc
+                    ? t('publish.scheduleFor', { date: scheduledUtc.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: timezone }) })
+                    : t('publish.pickTimeAbove')}
                 </button>
               ) : (
-                <p className="muted" style={{ fontSize: 13 }}>Scheduling requires manager access.</p>
+                <p className="muted" style={{ fontSize: 13 }}>{t('publish.schedulingRequiresManager')}</p>
               )
             )}
             {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}

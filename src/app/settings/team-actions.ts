@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/session';
 import { can } from '@/lib/permissions';
 import { adminDb, throwOnError } from '@/lib/supabase';
@@ -10,10 +11,11 @@ import { isInvitableRole } from '@/lib/team-roles';
 
 export async function inviteTeammateAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
   const s = await requireSession();
-  if (!can(s.role, 'manage_team')) return { ok: false, error: 'Permission denied.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.team' });
+  if (!can(s.role, 'manage_team')) return { ok: false, error: t('permissionDenied') };
 
   const role = String(formData.get('role') ?? '');
-  if (!isInvitableRole(role)) return { ok: false, error: 'Invalid role.' };
+  if (!isInvitableRole(role)) return { ok: false, error: t('invalidRole') };
 
   // Blocks new invites once the campaign already has `limit` members — matches
   // the admin's existing generateInviteAction check. Note: this counts current
@@ -22,7 +24,7 @@ export async function inviteTeammateAction(formData: FormData): Promise<{ ok: bo
   // limitation the admin flow has today).
   const seats = await getCampaignSeatUsage(s.campaignId);
   if (seats.limit !== null && seats.used >= seats.limit) {
-    return { ok: false, error: "Your plan's member limit is reached. Upgrade your plan to add more teammates." };
+    return { ok: false, error: t('memberLimitReached') };
   }
 
   await throwOnError(
@@ -42,16 +44,17 @@ export async function inviteTeammateAction(formData: FormData): Promise<{ ok: bo
 
 export async function removeTeammateAction(userId: string): Promise<{ ok: boolean; error?: string }> {
   const s = await requireSession();
-  if (!can(s.role, 'manage_team')) return { ok: false, error: 'Permission denied.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.team' });
+  if (!can(s.role, 'manage_team')) return { ok: false, error: t('permissionDenied') };
 
   const { data: target } = await adminDb.from('users').select('id, role, campaign_id').eq('id', userId).maybeSingle();
-  if (!target || target.campaign_id !== s.campaignId) return { ok: false, error: 'User not found.' };
-  if (target.role === 'owner') return { ok: false, error: "The campaign owner can't be removed." };
+  if (!target || target.campaign_id !== s.campaignId) return { ok: false, error: t('userNotFound') };
+  if (target.role === 'owner') return { ok: false, error: t('ownerCannotBeRemoved') };
 
   try {
     await throwOnError(adminDb.from('users').delete().eq('id', userId), 'users.remove_teammate');
   } catch {
-    return { ok: false, error: "This teammate has created content in the campaign and can't be removed right now." };
+    return { ok: false, error: t('teammateHasContentCannotRemove') };
   }
   revalidatePath('/settings');
   return { ok: true };
@@ -59,12 +62,13 @@ export async function removeTeammateAction(userId: string): Promise<{ ok: boolea
 
 export async function changeTeammateRoleAction(userId: string, newRole: string): Promise<{ ok: boolean; error?: string }> {
   const s = await requireSession();
-  if (!can(s.role, 'manage_team')) return { ok: false, error: 'Permission denied.' };
-  if (!isInvitableRole(newRole)) return { ok: false, error: 'Invalid role.' };
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.team' });
+  if (!can(s.role, 'manage_team')) return { ok: false, error: t('permissionDenied') };
+  if (!isInvitableRole(newRole)) return { ok: false, error: t('invalidRole') };
 
   const { data: target } = await adminDb.from('users').select('id, role, campaign_id').eq('id', userId).maybeSingle();
-  if (!target || target.campaign_id !== s.campaignId) return { ok: false, error: 'User not found.' };
-  if (target.role === 'owner') return { ok: false, error: "The campaign owner's role can't be changed here." };
+  if (!target || target.campaign_id !== s.campaignId) return { ok: false, error: t('userNotFound') };
+  if (target.role === 'owner') return { ok: false, error: t('ownerRoleCannotBeChanged') };
 
   await throwOnError(adminDb.from('users').update({ role: newRole }).eq('id', userId), 'users.change_teammate_role');
   revalidatePath('/settings');

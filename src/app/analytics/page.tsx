@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { getTranslations } from 'next-intl/server';
 import { AppFrame } from '@/components/AppFrame';
 import { requireSession } from '@/lib/session';
 import { getPerformanceSummary, getLatestInsight } from '@/lib/analytics';
@@ -20,9 +21,9 @@ function Delta({ value }: { value: number | null }) {
   );
 }
 
-function BarList({ rows, labelKey }: { rows: { engagement: number; [k: string]: unknown }[]; labelKey: string }) {
+function BarList({ rows, labelKey, emptyLabel }: { rows: { engagement: number; [k: string]: unknown }[]; labelKey: string; emptyLabel: string }) {
   if (rows.length === 0) {
-    return <p className="muted" style={{ padding: '24px 0', textAlign: 'center' }}>No data yet.</p>;
+    return <p className="muted" style={{ padding: '24px 0', textAlign: 'center' }}>{emptyLabel}</p>;
   }
   const max = Math.max(...rows.map(r => r.engagement), 1);
   return (
@@ -45,6 +46,8 @@ function BarList({ rows, labelKey }: { rows: { engagement: number; [k: string]: 
 export default async function AnalyticsPage() {
   const s = await requireSession();
   if (s.role === 'super_admin') redirect('/admin');
+  const t = await getTranslations('analytics');
+  const tType = await getTranslations('content.types');
 
   const [summary, insight, monitoring] = await Promise.all([
     getPerformanceSummary(s.campaignId),
@@ -55,32 +58,32 @@ export default async function AnalyticsPage() {
   const hasData = summary.totals.postsCount > 0;
 
   const tiles = [
-    { label: 'Reach', value: summary.totals.reach, delta: pctDelta(summary.totals.reach, summary.priorTotals.reach) },
-    { label: 'Engagement', value: summary.totals.engagement, delta: pctDelta(summary.totals.engagement, summary.priorTotals.engagement) },
-    { label: 'Engagement rate', value: summary.totals.impressions > 0 ? `${((summary.totals.engagement / summary.totals.impressions) * 100).toFixed(1)}%` : '—', delta: null },
-    { label: 'Video watch time', value: `${summary.totals.videoAvgWatchSeconds.toFixed(0)}s`, delta: null },
+    { label: t('tiles.reach'), value: summary.totals.reach, delta: pctDelta(summary.totals.reach, summary.priorTotals.reach) },
+    { label: t('tiles.engagement'), value: summary.totals.engagement, delta: pctDelta(summary.totals.engagement, summary.priorTotals.engagement) },
+    { label: t('tiles.engagementRate'), value: summary.totals.impressions > 0 ? `${((summary.totals.engagement / summary.totals.impressions) * 100).toFixed(1)}%` : '—', delta: null },
+    { label: t('tiles.videoWatchTime'), value: `${summary.totals.videoAvgWatchSeconds.toFixed(0)}s`, delta: null },
   ];
 
   return (
     <AppFrame>
       <div style={{ marginBottom: 22 }}>
-        <span className="eyebrow">Last 30 days</span>
-        <h1 style={{ margin: '4px 0 0' }}>Analytics</h1>
+        <span className="eyebrow">{t('last30Days')}</span>
+        <h1 style={{ margin: '4px 0 0' }}>{t('pageTitle')}</h1>
       </div>
 
       {!hasData ? (
         <div className="card" style={{ padding: '40px 24px', textAlign: 'center' }}>
-          <p className="muted">Performance data will appear here once your published content has synced.</p>
+          <p className="muted">{t('noDataMessage')}</p>
         </div>
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
-            {tiles.map(t => (
-              <div key={t.label} className="card" style={{ padding: 16 }}>
-                <div className="eyebrow" style={{ marginBottom: 12 }}>{t.label}</div>
+            {tiles.map(tile => (
+              <div key={tile.label} className="card" style={{ padding: 16 }}>
+                <div className="eyebrow" style={{ marginBottom: 12 }}>{tile.label}</div>
                 <div className="data" style={{ fontSize: 28, fontWeight: 700, color: 'var(--text)' }}>
-                  {t.value}
-                  <Delta value={t.delta} />
+                  {tile.value}
+                  <Delta value={tile.delta} />
                 </div>
               </div>
             ))}
@@ -88,9 +91,9 @@ export default async function AnalyticsPage() {
 
           <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
             <div className="card">
-              <h2 style={{ margin: '0 0 10px' }}>Top performing content</h2>
+              <h2 style={{ margin: '0 0 10px' }}>{t('topPerformingContent')}</h2>
               {summary.topContent.length === 0 ? (
-                <p className="muted" style={{ padding: '24px 0', textAlign: 'center' }}>Nothing published yet this period.</p>
+                <p className="muted" style={{ padding: '24px 0', textAlign: 'center' }}>{t('noContentThisPeriod')}</p>
               ) : (
                 summary.topContent.map(c => (
                   <Link key={c.id} href={`/content/${c.id}`} style={{
@@ -99,7 +102,7 @@ export default async function AnalyticsPage() {
                   }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title}</div>
-                      <span className="mono" style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase' }}>{c.type.replace('_', ' ')}</span>
+                      <span className="mono" style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase' }}>{tType(c.type)}</span>
                     </div>
                     <span className="data" style={{ fontSize: 13, color: 'var(--accent)' }}>{c.engagement}</span>
                   </Link>
@@ -108,28 +111,31 @@ export default async function AnalyticsPage() {
             </div>
 
             <div className="card">
-              <h2 style={{ margin: '0 0 10px' }}>By platform</h2>
-              <BarList rows={summary.byPlatform} labelKey="platform" />
+              <h2 style={{ margin: '0 0 10px' }}>{t('byPlatform')}</h2>
+              <BarList rows={summary.byPlatform} labelKey="platform" emptyLabel={t('barListEmpty')} />
             </div>
           </div>
 
           <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
             <div className="card">
-              <h2 style={{ margin: '0 0 10px' }}>By content type</h2>
-              <BarList rows={summary.byContentType} labelKey="type" />
+              <h2 style={{ margin: '0 0 10px' }}>{t('byContentType')}</h2>
+              <BarList rows={summary.byContentType} labelKey="type" emptyLabel={t('barListEmpty')} />
             </div>
 
             <div className="card">
-              <h2 style={{ margin: '0 0 10px' }}>Opponent activity (context)</h2>
+              <h2 style={{ margin: '0 0 10px' }}>{t('opponentActivityTitle')}</h2>
               <p className="muted" style={{ fontSize: 13 }}>
-                Your campaign published <strong style={{ color: 'var(--text)' }}>{summary.totals.postsCount}</strong> pieces of content this period, versus{' '}
-                <strong style={{ color: 'var(--text)' }}>{monitoring.length}</strong> tracked mentions of your opponent.
+                {t.rich('opponentActivityText', {
+                  postsCount: summary.totals.postsCount,
+                  mentionsCount: monitoring.length,
+                  strong: (chunks) => <strong style={{ color: 'var(--text)' }}>{chunks}</strong>,
+                })}
               </p>
             </div>
           </div>
 
           <div className="card">
-            <h2 style={{ margin: '0 0 10px' }}>AI insight</h2>
+            <h2 style={{ margin: '0 0 10px' }}>{t('aiInsightTitle')}</h2>
             {insight ? (
               <>
                 <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text-2)' }}>{insight.summary}</p>
@@ -139,11 +145,11 @@ export default async function AnalyticsPage() {
                   ))}
                 </ul>
                 <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 10 }}>
-                  Generated {new Date(insight.generatedAt).toLocaleDateString('en-US')}
+                  {t('generatedOn', { date: new Date(insight.generatedAt).toLocaleDateString('en-US') })}
                 </div>
               </>
             ) : (
-              <p className="muted" style={{ padding: '12px 0' }}>Check back after your next scheduled sync for AI-generated insights.</p>
+              <p className="muted" style={{ padding: '12px 0' }}>{t('noInsightYet')}</p>
             )}
           </div>
         </>
