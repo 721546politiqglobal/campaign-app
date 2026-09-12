@@ -61,10 +61,8 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "q",        "value": "={{ $json.query_string }}" },
-            { "name": "language", "value": "en" },
-            { "name": "country",  "value": "us" },
-            { "name": "size",     "value": "10" }
+            { "name": "q",    "value": "={{ $json.query_string }}" },
+            { "name": "size", "value": "10" }
           ]
         },
         "options": { "response": { "response": { "neverError": true } } }
@@ -127,8 +125,7 @@
             { "name": "maxrecords", "value": "20" },
             { "name": "format",     "value": "json" },
             { "name": "timespan",   "value": "24h" },
-            { "name": "sort",       "value": "DateDesc" },
-            { "name": "sourcelang", "value": "eng" }
+            { "name": "sort",       "value": "DateDesc" }
           ]
         },
         "options": {

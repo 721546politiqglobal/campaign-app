@@ -1,6 +1,7 @@
 // src/lib/candidate.ts
 import { adminDb } from './supabase';
 import { CandidateProfile, VoiceTone } from '@/domain/types';
+import type { Locale } from '@/lib/locale';
 import { uid } from './store';
 
 function toProfile(r: Record<string, unknown>): CandidateProfile {
@@ -38,6 +39,7 @@ function toProfile(r: Record<string, unknown>): CandidateProfile {
     selfVoiceConsentConfirmedAt: (r.self_voice_consent_confirmed_at as string | null) ?? null,
     videoAspectRatio: (r.video_aspect_ratio as '16:9' | '9:16' | '1:1') ?? '16:9',
     videoBackground: (r.video_background as string) ?? 'plain',
+    contentLocale: (r.content_locale as Locale) ?? 'en',
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
   };
@@ -89,6 +91,7 @@ export async function upsertCandidateProfile(
     ...(data.selfVoiceConsentConfirmedAt !== undefined && { self_voice_consent_confirmed_at: data.selfVoiceConsentConfirmedAt ?? null }),
     ...(data.videoAspectRatio  !== undefined && { video_aspect_ratio:  data.videoAspectRatio }),
     ...(data.videoBackground   !== undefined && { video_background:    data.videoBackground }),
+    ...(data.contentLocale     !== undefined && { content_locale:      data.contentLocale }),
     updated_at:      new Date().toISOString(),
   };
 

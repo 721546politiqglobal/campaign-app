@@ -45,6 +45,144 @@ describe('ClaudeContentGenerator.draft', () => {
   });
 });
 
+describe('ClaudeContentGenerator.draft — explicit locale', () => {
+  it('passes the Spanish directive to the system prompt and echoes the locale back', async () => {
+    const { generator, create } = makeGenerator();
+    create.mockResolvedValue({
+      content: [{ type: 'text', text: 'Title: Un gran titular\n\nCuerpo del mensaje.' }],
+    });
+
+    const out = await generator.draft({ instruction: 'escribe algo', type: 'social_post', locale: 'es' });
+
+    expect(out.locale).toBe('es');
+    expect(out.title).toBe('Un gran titular');
+    expect(out.text).toBe('Cuerpo del mensaje.');
+    const [[callArgs]] = create.mock.calls;
+    expect(callArgs.system).toMatch(/fluent, natural Spanish/i);
+  });
+
+  it('defaults to English when no locale is given (backward compatible)', async () => {
+    const { generator, create } = makeGenerator();
+    create.mockResolvedValue({ content: [{ type: 'text', text: 'Title: A great headline\n\nBody.' }] });
+
+    const out = await generator.draft({ instruction: 'write something', type: 'social_post' });
+
+    expect(out.locale).toBe('en');
+  });
+
+  it('falls back to English for an unsupported locale value rather than throwing', async () => {
+    const { generator, create } = makeGenerator();
+    create.mockResolvedValue({ content: [{ type: 'text', text: 'Title: A great headline\n\nBody.' }] });
+
+    const out = await generator.draft({ instruction: 'write something', type: 'social_post', locale: 'fr' as never });
+
+    expect(out.locale).toBe('en');
+  });
+
+  it('does not strip a body line that legitimately starts with "Language:" outside of match-mode', async () => {
+    const { generator, create } = makeGenerator();
+    create.mockResolvedValue({
+      content: [{ type: 'text', text: 'Title: A post about languages\n\nLanguage: English is the most common tongue here.' }],
+    });
+
+    const out = await generator.draft({ instruction: 'write something', type: 'talking_points', locale: 'en' });
+
+    expect(out.text).toContain('Language: English is the most common tongue here.');
+  });
+});
+
+describe('ClaudeContentGenerator.draft — match-mode (opponent-rebuttal language matching)', () => {
+  it('parses a "Language: es" marker in match-mode and strips it from the body', async () => {
+    const { generator, create } = makeGenerator();
+    create.mockResolvedValue({
+      content: [{ type: 'text', text: 'Language: es\nTitle: Un gran titular\n\nCuerpo del mensaje.' }],
+    });
+
+    const out = await generator.draft({
+      instruction: 'responde a esto', type: 'social_post', matchLanguageOf: 'Un anuncio del oponente en español',
+    });
+
+    expect(out.locale).toBe('es');
+    expect(out.title).toBe('Un gran titular');
+    expect(out.text).toBe('Cuerpo del mensaje.');
+    const [[callArgs]] = create.mock.calls;
+    expect(callArgs.messages[0].content).not.toMatch(/detect the language/i);
+    expect(callArgs.messages[0].content).toMatch(/spanish/i);
+  });
+
+  it('resolves a regional Spanish variant in the Language marker (e.g. "es-MX") to "es"', async () => {
+    const { generator, create } = makeGenerator();
+    create.mockResolvedValue({
+      content: [{ type: 'text', text: 'Language: es-MX\nTitle: Un gran titular\n\nCuerpo del mensaje.' }],
+    });
+
+    const out = await generator.draft({
+      instruction: 'responde a esto', type: 'social_post', matchLanguageOf: 'Un anuncio del oponente en español',
+    });
+
+    expect(out.locale).toBe('es');
+  });
+
+  it('falls back to English when the Language marker is missing from a match-mode response', async () => {
+    const { generator, create } = makeGenerator();
+    create.mockResolvedValue({ content: [{ type: 'text', text: 'Title: A great headline\n\nBody.' }] });
+
+    const out = await generator.draft({ instruction: 'respond to this', type: 'social_post', matchLanguageOf: 'An opponent post' });
+
+    expect(out.locale).toBe('en');
+    expect(out.title).toBe('A great headline');
+  });
+
+  it('falls back to English when the Language marker value is malformed', async () => {
+    const { generator, create } = makeGenerator();
+    create.mockResolvedValue({
+      content: [{ type: 'text', text: 'Language: klingon\nTitle: A great headline\n\nBody.' }],
+    });
+
+    const out = await generator.draft({ instruction: 'respond to this', type: 'social_post', matchLanguageOf: 'An opponent post' });
+
+    expect(out.locale).toBe('en');
+    expect(out.text).toBe('Body.');
+  });
+
+  it('an explicit locale takes priority over match-mode and never asks the model to detect', async () => {
+    const { generator, create } = makeGenerator();
+    create.mockResolvedValue({ content: [{ type: 'text', text: 'Title: Headline\n\nBody.' }] });
+
+    await generator.draft({ instruction: 'write something', type: 'social_post', locale: 'en', matchLanguageOf: 'Some Spanish opponent text' });
+
+    const [[callArgs]] = create.mock.calls;
+    expect(callArgs.messages[0].content).not.toMatch(/detect the language/i);
+  });
+
+  it('does not enter match-mode when matchLanguageOf is empty/whitespace', async () => {
+    const { generator, create } = makeGenerator();
+    create.mockResolvedValue({ content: [{ type: 'text', text: 'Title: Headline\n\nBody.' }] });
+
+    const out = await generator.draft({ instruction: 'write something', type: 'social_post', matchLanguageOf: '   ' });
+
+    expect(out.locale).toBe('en');
+    const [[callArgs]] = create.mock.calls;
+    expect(callArgs.messages[0].content).not.toMatch(/detect the language/i);
+  });
+});
+
+describe('MockContentGenerator.draft — locale', () => {
+  it('echoes back an explicit locale without a real model call', async () => {
+    const { MockContentGenerator } = await import('./index');
+    const generator = new MockContentGenerator();
+    const out = await generator.draft({ instruction: 'write a post', type: 'social_post', locale: 'es' });
+    expect(out.locale).toBe('es');
+  });
+
+  it('defaults to English when no locale is given', async () => {
+    const { MockContentGenerator } = await import('./index');
+    const generator = new MockContentGenerator();
+    const out = await generator.draft({ instruction: 'write a post', type: 'social_post' });
+    expect(out.locale).toBe('en');
+  });
+});
+
 describe('HeyGenPhotoAvatarProvider.uploadAsset', () => {
   it('posts multipart form data and returns the asset id', async () => {
     const fetchMock = vi.fn().mockResolvedValue({

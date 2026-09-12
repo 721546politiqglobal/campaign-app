@@ -1,3 +1,5 @@
+import { SUPPORTED_LOCALES } from './locale';
+
 export const PARTIES = ['Democratic', 'Republican', 'Independent', 'Green', 'Libertarian', 'Other'] as const;
 const TONES = ['formal', 'conversational', 'urgent', 'inspirational'];
 
@@ -5,6 +7,7 @@ export interface ProfileInput {
   fullName: string; preferredName: string; office: string; district: string;
   party: string; bio: string; tagline: string; targetAudience: string;
   voiceTone: string; googleAlertsRssUrl?: string; photoUrl?: string;
+  contentLocale?: string;
 }
 
 type Result = { ok: true } | { ok: false; errors: Record<string, string> };
@@ -34,6 +37,9 @@ export function validateCandidateProfile(input: ProfileInput): Result {
   }
   if (input.party && !PARTIES.some(p => p.toLowerCase() === input.party.trim().toLowerCase())) {
     errors.party = 'Choose a party from the list.';
+  }
+  if (input.contentLocale && !(SUPPORTED_LOCALES as readonly string[]).includes(input.contentLocale)) {
+    errors.contentLocale = 'Choose a supported content language.';
   }
   if (!TONES.includes(input.voiceTone)) errors.voiceTone = 'Pick a valid voice tone.';
   if (input.googleAlertsRssUrl && !isHttpUrl(input.googleAlertsRssUrl)) {

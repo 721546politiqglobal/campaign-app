@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { createContentAction, generateDraftAction } from '@/app/actions';
 import type { ContentType } from '@/domain/types';
+import type { Locale } from '@/lib/locale';
 
 // Order the picker offers, not the enum's declaration order.
 const TYPE_OPTIONS: readonly ContentType[] = [
@@ -15,10 +16,13 @@ const BRIEF_SUGGESTION_KEYS = [
   'townHall', 'opponentAttack', 'healthcarePlan', 'thankVolunteers', 'pushBackClaim',
 ] as const;
 
-export function ContentEditor() {
+export function ContentEditor({ defaultLocale }: { defaultLocale: Locale }) {
   const t = useTranslations('content');
+  const tc = useTranslations('common');
   const searchParams = useSearchParams();
   const [type, setType]               = useState((searchParams.get('type') as string) || 'reel');
+  const [locale, setLocale]           = useState<Locale>(defaultLocale);
+  const [savedLocale, setSavedLocale] = useState<Locale>(defaultLocale);
   const [instruction, setInstruction] = useState(searchParams.get('brief') || '');
   const [title, setTitle]             = useState('');
   const [body, setBody]               = useState('');
@@ -34,12 +38,12 @@ export function ContentEditor() {
     if (!instruction.trim()) { setError(t('editor.describeFirst')); return; }
     setBusy(true); setError('');
     try {
-      const out = await generateDraftAction(instruction, type);
+      const out = await generateDraftAction(instruction, type, locale);
       // Quota/billing refusals come back as { ok: false, error } and carry the
       // real reason (which limit, and what to do about it) — show it verbatim
       // rather than guessing on the user's behalf.
       if (!out.ok) { setError(out.error); return; }
-      setTitle(out.title); setBody(out.text); setIsAi(true); setGenerated(true);
+      setTitle(out.title); setBody(out.text); setSavedLocale(out.locale); setIsAi(true); setGenerated(true);
     } catch {
       // Only unexpected exceptions land here (Next.js redacts their messages in
       // production), so a generic fallback is all that's available.
@@ -50,6 +54,7 @@ export function ContentEditor() {
   return (
     <form action={createContentAction}>
       <input type="hidden" name="isAiGenerated" value={isAi ? 'on' : 'off'} />
+      <input type="hidden" name="locale" value={savedLocale} />
 
       <div className="card" style={{ marginBottom: 16 }}>
         <h2>{t('editor.brief')}</h2>
@@ -68,6 +73,16 @@ export function ContentEditor() {
             </label>
           ))}
         </div>
+        <label className="field-label">{t('editor.language')}</label>
+        <select
+          className="input"
+          value={locale}
+          onChange={e => setLocale(e.target.value as Locale)}
+          style={{ marginBottom: 14, maxWidth: 220 }}
+        >
+          <option value="en">{tc('languageEnglish')}</option>
+          <option value="es">{tc('languageSpanish')}</option>
+        </select>
         <label className="field-label">{t('editor.whatShouldThisSay')}</label>
         <textarea
           value={instruction}
@@ -93,7 +108,7 @@ export function ContentEditor() {
           </button>
           {!generated && (
             <button type="button" className="btn" style={{ fontSize: 13 }}
-              onClick={() => { setIsAi(false); setGenerated(true); }}>
+              onClick={() => { setIsAi(false); setGenerated(true); setSavedLocale(locale); }}>
               {t('editor.writeItMyself')}
             </button>
           )}

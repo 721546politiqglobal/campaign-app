@@ -1,3 +1,5 @@
+import type { Locale } from '@/lib/locale';
+
 export type ContentStatus =
   | 'draft' | 'in_review' | 'approved' | 'scheduled' | 'publishing' | 'published' | 'rejected' | 'archived';
 
@@ -40,6 +42,7 @@ export interface ContentItem {
   mediaUrl?: string | null;
   videoJobId?: string | null;
   videoStatus?: 'processing' | 'completed' | 'failed' | null;
+  locale: Locale;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -150,6 +153,7 @@ export interface CandidateProfile {
   selfVoiceConsentConfirmedAt?: string | null;
   videoAspectRatio: '16:9' | '9:16' | '1:1';
   videoBackground: string;
+  contentLocale: Locale;
   createdAt: string;
   updatedAt: string;
 }

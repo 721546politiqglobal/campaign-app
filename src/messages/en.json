@@ -110,6 +110,7 @@
     },
     "editor": {
       "brief": "Brief",
+      "language": "Language",
       "whatShouldThisSay": "What should this say?",
       "instructionPlaceholder": "e.g. Announce our healthcare town hall on Saturday",
       "describeFirst": "Describe what you want first.",
@@ -227,7 +228,7 @@
       "heading": "Candidate profile",
       "error": {
         "title": "Profile not saved",
-        "body": "Check the party, voice tone, and any URL fields — one of them isn't valid."
+        "body": "Check the party, voice tone, content language, and any URL fields — one of them isn't valid."
       },
       "fields": {
         "fullName": "Full name",
@@ -240,7 +241,8 @@
         "tagline": "Tagline",
         "targetAudience": "Target audience",
         "keyPositions": "Key positions (one per line)",
-        "voiceTone": "Voice tone"
+        "voiceTone": "Voice tone",
+        "contentLocale": "Content generation language"
       },
       "voiceToneOptions": {
         "conversational": "Conversational",

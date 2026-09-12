@@ -1,4 +1,5 @@
 import type { CandidateProfile } from '@/domain/types';
+import type { Locale } from '@/lib/locale';
 
 export const PLATFORM_CONSTRAINTS: Record<string, string> = {
   social_post: 'Keep it under 280 characters for X/Twitter compatibility. Write naturally — only use hashtags if they feel organic.',
@@ -17,12 +18,21 @@ export const CONTENT_COST_CENTS: Record<string, number> = {
   reel:           10_00,
 };
 
-export function buildCandidatePrompt(profile: CandidateProfile, contentType: string): string {
+// Appended (never replacing) the English instructions above — Claude
+// generates fluent, idiomatic Spanish from a directive on top of an
+// English system prompt just as well as from a fully Spanish one, without
+// a second template to keep in sync (see the 2026-09-10 content-i18n spec,
+// "Approach A" vs "Approach C").
+const SPANISH_DIRECTIVE =
+  'Write your entire response in fluent, natural Spanish (not a literal or machine translation) — except keep the marker word "Title:" itself in English exactly as shown in these instructions.';
+
+export function buildCandidatePrompt(profile: CandidateProfile, contentType: string, locale: Locale = 'en'): string {
   const positions = profile.keyPositions.map(p => `• ${p}`).join('\n');
   const platformNote = PLATFORM_CONSTRAINTS[contentType] ?? '';
   const personNote = contentType === 'press_release'
     ? 'Write in THIRD PERSON — refer to the candidate by name, not as "I".'
     : 'Write in FIRST PERSON as the candidate.';
+  const localeNote = locale === 'es' ? `\n- ${SPANISH_DIRECTIVE}` : '';
 
   return `You are a professional political communications expert.
 You are writing on behalf of ${profile.preferredName} (full name: ${profile.fullName}).
@@ -43,5 +53,5 @@ RULES:
 - Never invent facts or policy positions not listed above.
 - Never use placeholder text like name templates or district placeholders.
 - Use the actual candidate name, office, and district from this context.
-${platformNote ? `- Format requirements: ${platformNote}` : ''}`;
+${platformNote ? `- Format requirements: ${platformNote}` : ''}${localeNote}`;
 }

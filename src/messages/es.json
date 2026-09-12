@@ -110,6 +110,7 @@
     },
     "editor": {
       "brief": "Resumen",
+      "language": "Idioma",
       "whatShouldThisSay": "¿Qué debería decir esto?",
       "instructionPlaceholder": "p. ej. Anuncia nuestra asamblea comunitaria sobre salud el sábado",
       "describeFirst": "Describe primero lo que quieres.",
@@ -227,7 +228,7 @@
       "heading": "Perfil del candidato",
       "error": {
         "title": "El perfil no se guardó",
-        "body": "Revisa el partido, el tono de voz y los campos de URL — uno de ellos no es válido."
+        "body": "Revisa el partido, el tono de voz, el idioma de contenido y los campos de URL — uno de ellos no es válido."
       },
       "fields": {
         "fullName": "Nombre completo",
@@ -240,7 +241,8 @@
         "tagline": "Eslogan",
         "targetAudience": "Público objetivo",
         "keyPositions": "Posturas clave (una por línea)",
-        "voiceTone": "Tono de voz"
+        "voiceTone": "Tono de voz",
+        "contentLocale": "Idioma de generación de contenido"
       },
       "voiceToneOptions": {
         "conversational": "Conversacional",

@@ -18,6 +18,7 @@ function parseConsentStatus<F>(raw: unknown, fallback: F): ConsentStatus | F {
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
 import type { CandidateProfile } from '@/domain/types';
+import type { Locale } from '@/lib/locale';
 
 export interface ContentGenerator {
   draft(input: {
@@ -25,7 +26,9 @@ export interface ContentGenerator {
     type: string;
     audience?: string;
     candidateProfile?: CandidateProfile;
-  }): Promise<{ text: string; title: string }>;
+    locale?: Locale;
+    matchLanguageOf?: string;
+  }): Promise<{ text: string; title: string; locale: Locale }>;
 }
 
 export interface VideoProvider {
@@ -84,29 +87,53 @@ export class ClaudeContentGenerator implements ContentGenerator {
     this.client = new Anthropic({ apiKey });
   }
 
-  async draft({ instruction, type, candidateProfile }: {
+  async draft({ instruction, type, candidateProfile, locale, matchLanguageOf }: {
     instruction: string;
     type: string;
     audience?: string;
     candidateProfile?: CandidateProfile;
+    locale?: Locale;
+    matchLanguageOf?: string;
   }) {
     const { buildCandidatePrompt } = await import('@/lib/prompt');
+    const { isSupportedLocale, DEFAULT_LOCALE } = await import('@/lib/locale');
+
+    // Two mutually exclusive modes: an explicit locale (the caller already
+    // knows what language to write in — the Content Wizard's language
+    // selector) always wins over match-mode (detect-and-mirror the
+    // language of `matchLanguageOf`, used for opponent-rebuttal drafts
+    // where there's no upfront selection).
+    const explicitLocale = isSupportedLocale(locale) ? locale : undefined;
+    const excerptToMatch = !explicitLocale ? matchLanguageOf?.trim() : undefined;
 
     const systemPrompt = candidateProfile
-      ? buildCandidatePrompt(candidateProfile, type)
-      : 'You are a professional political campaign copywriter. Write factual, persuasive campaign content.';
+      ? buildCandidatePrompt(candidateProfile, type, explicitLocale ?? DEFAULT_LOCALE)
+      : explicitLocale === 'es'
+        ? 'You are a professional political campaign copywriter. Write factual, persuasive campaign content in fluent, natural Spanish. Keep the literal marker word "Title:" in English exactly as shown in the instructions.'
+        : 'You are a professional political campaign copywriter. Write factual, persuasive campaign content.';
+
+    const userMessage = excerptToMatch
+      ? `Content type: ${type}
+Brief: ${instruction}
+
+The text below is what you are responding to. If the text below is written in Spanish, write your entire response in Spanish; otherwise write your entire response in English.
+
+Text to match the language of:
+"""
+${excerptToMatch}
+"""
+
+Write the content now. First line: "Language: en" or "Language: es" (whichever language you are about to write in). Second line: "Title: [your title here]". Then a blank line, then the body.`
+      : `Content type: ${type}
+Brief: ${instruction}
+
+Write the content now. Start with "Title: [your title here]" on the first line, then a blank line, then the body.`;
 
     const msg = await this.client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       system: systemPrompt,
-      messages: [{
-        role: 'user',
-        content: `Content type: ${type}
-Brief: ${instruction}
-
-Write the content now. Start with "Title: [your title here]" on the first line, then a blank line, then the body.`,
-      }],
+      messages: [{ role: 'user', content: userMessage }],
     });
 
     const block = msg.content[0];
@@ -117,10 +144,29 @@ Write the content now. Start with "Title: [your title here]" on the first line, 
     }
     const raw = block.text;
     const lines = raw.split('\n');
+
+    const languageLine = excerptToMatch ? lines.find(l => l.toLowerCase().startsWith('language:')) : undefined;
+    const parsedLocale = languageLine
+      ? languageLine.replace(/^language:\s*/i, '').trim().toLowerCase().split('-')[0]
+      : null;
+
     const titleLine = lines.find(l => l.toLowerCase().startsWith('title:'));
     const title = titleLine ? titleLine.replace(/^title:\s*/i, '').trim() : instruction.slice(0, 60);
-    const body = lines.filter(l => !l.toLowerCase().startsWith('title:')).join('\n').trim();
-    return { title, text: body };
+
+    const body = lines
+      .filter(l => !l.toLowerCase().startsWith('title:') && (!excerptToMatch || !l.toLowerCase().startsWith('language:')))
+      .join('\n')
+      .trim();
+
+    // Explicit mode: the caller already told us the language, so echo it
+    // back verbatim. Match-mode: trust the parsed marker only if it's a
+    // value we recognize — a missing or garbled marker (model
+    // non-compliance) falls back to English rather than failing the whole
+    // generation; the content itself is still usable, the locale tag is
+    // metadata, not a hard requirement.
+    const resolvedLocale: Locale = explicitLocale ?? (isSupportedLocale(parsedLocale) ? parsedLocale : DEFAULT_LOCALE);
+
+    return { title, text: body, locale: resolvedLocale };
   }
 }
 
@@ -606,14 +652,19 @@ export class NewsDataMonitoringSource implements MonitoringSource {
 // ── Mock implementations (used when no API key is present) ───────────────────
 
 export class MockContentGenerator implements ContentGenerator {
-  async draft({ instruction, type }: { instruction: string; type: string; candidateProfile?: CandidateProfile }) {
+  async draft({ instruction, type, locale }: {
+    instruction: string; type: string; candidateProfile?: CandidateProfile;
+    locale?: Locale; matchLanguageOf?: string;
+  }) {
+    const { isSupportedLocale, DEFAULT_LOCALE } = await import('@/lib/locale');
+    const resolvedLocale: Locale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
     const title = instruction.replace(/^(make|write|draft)\s+(a|an)?\s*/i, '').slice(0, 60) || 'Untitled draft';
     const text =
       `Here's how our plan answers what voters told us matters most.\n\n` +
       `${instruction.trim()}\n\n` +
       `We'll keep costs down, protect what works, and fix what doesn't. ` +
       `Read the full proposal and tell us what you think.`;
-    return { title: title[0].toUpperCase() + title.slice(1), text };
+    return { title: title[0].toUpperCase() + title.slice(1), text, locale: resolvedLocale };
   }
 }
 

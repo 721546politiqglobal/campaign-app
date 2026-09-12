@@ -20,6 +20,7 @@ const profile: CandidateProfile = {
   monitoringKeywords: [],
   videoAspectRatio: '16:9',
   videoBackground: 'plain',
+  contentLocale: 'en',
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
 };
@@ -48,6 +49,28 @@ describe('buildCandidatePrompt', () => {
 
   it('does not contain placeholder brackets', () => {
     const prompt = buildCandidatePrompt(profile, 'email');
+    expect(prompt).not.toMatch(/\[.*?\]/);
+  });
+});
+
+describe('buildCandidatePrompt — locale', () => {
+  it('defaults to no Spanish directive when locale is omitted', () => {
+    const prompt = buildCandidatePrompt(profile, 'social_post');
+    expect(prompt).not.toMatch(/fluent, natural Spanish/i);
+  });
+
+  it('appends the Spanish directive when locale is "es"', () => {
+    const prompt = buildCandidatePrompt(profile, 'social_post', 'es');
+    expect(prompt).toMatch(/fluent, natural Spanish/i);
+  });
+
+  it('still instructs keeping the "Title:" marker in English for Spanish output', () => {
+    const prompt = buildCandidatePrompt(profile, 'social_post', 'es');
+    expect(prompt).toContain('"Title:"');
+  });
+
+  it('does not introduce placeholder brackets even with the Spanish directive appended', () => {
+    const prompt = buildCandidatePrompt(profile, 'email', 'es');
     expect(prompt).not.toMatch(/\[.*?\]/);
   });
 });

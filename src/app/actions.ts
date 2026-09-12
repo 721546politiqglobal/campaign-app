@@ -17,7 +17,7 @@ import { zonedNaiveToUtc } from '@/lib/timezone';
 import { QuotaExceeded, contentPeriodStart, videoPeriodStart } from '@/domain/quota';
 import { BillingBlocked } from '@/domain/billing';
 import { can } from '@/lib/permissions';
-import { getLocale } from '@/lib/locale';
+import { getLocale, isSupportedLocale, DEFAULT_LOCALE, type Locale } from '@/lib/locale';
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -216,10 +216,20 @@ export async function logoutAction() {
 
 export async function createContentAction(formData: FormData) {
   const s = await requireSession();
-  const campaign = await getCampaign(s.campaignId);
+  const { getCandidateProfile } = await import('@/lib/candidate');
+  const [campaign, profile] = await Promise.all([
+    getCampaign(s.campaignId),
+    getCandidateProfile(s.campaignId),
+  ]);
   if (!campaign) throw new Error('Campaign not found');
   const rawType = String(formData.get('type') ?? '');
   const type: ContentType = isContentType(rawType) ? rawType : 'reel';
+  const rawLocale = String(formData.get('locale') ?? '');
+  const locale: Locale = isSupportedLocale(rawLocale)
+    ? rawLocale
+    : isSupportedLocale(profile?.contentLocale)
+      ? profile!.contentLocale
+      : DEFAULT_LOCALE;
   const id = uid();
   await throwOnError(
     adminDb.from('content_items').insert({
@@ -236,15 +246,16 @@ export async function createContentAction(formData: FormData) {
       is_ai_generated: VIDEO_CONTENT_TYPES.includes(type) || formData.get('isAiGenerated') === 'on',
       target_jurisdictions: campaign.jurisdictions,
       created_by: s.userId,
+      locale,
     }),
     'content_items.create',
   );
   redirect(`/content/${id}`);
 }
 
-export type DraftResult = { ok: true; title: string; text: string } | { ok: false; error: string };
+export type DraftResult = { ok: true; title: string; text: string; locale: Locale } | { ok: false; error: string };
 
-export async function generateDraftAction(instruction: string, type: string): Promise<DraftResult> {
+export async function generateDraftAction(instruction: string, type: string, locale?: string): Promise<DraftResult> {
   const s = await requireSession();
   const { getCandidateProfile } = await import('@/lib/candidate');
 
@@ -253,6 +264,15 @@ export async function generateDraftAction(instruction: string, type: string): Pr
     getCandidateProfile(s.campaignId),
   ]);
   if (!campaign) throw new Error('Campaign not found');
+
+  // The caller (ContentEditor) always passes its selected language, but a
+  // missing/corrupted/unsupported value falls back to the campaign's own
+  // content-generation default rather than erroring the whole draft.
+  const resolvedLocale: Locale = isSupportedLocale(locale)
+    ? locale
+    : isSupportedLocale(profile?.contentLocale)
+      ? profile!.contentLocale
+      : DEFAULT_LOCALE;
 
   // Quota/billing refusals are returned, not thrown: Next.js redacts thrown
   // server-action errors in production, so a thrown QuotaExceeded would reach
@@ -264,8 +284,8 @@ export async function generateDraftAction(instruction: string, type: string): Pr
     const periodStart = contentPeriodStart(campaign.currentPeriodEnd);
     await quotaGate.checkAndIncrement(s.campaignId, 'content', periodStart, plan?.contentLimitMonthly ?? null);
     const out = await withQuotaRelease(s.campaignId, 'content', periodStart, () =>
-      contentGenerator.draft({ instruction, type, candidateProfile: profile ?? undefined }));
-    return { ok: true, title: out.title, text: out.text };
+      contentGenerator.draft({ instruction, type, candidateProfile: profile ?? undefined, locale: resolvedLocale }));
+    return { ok: true, title: out.title, text: out.text, locale: out.locale };
   } catch (e) {
     if (e instanceof QuotaExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
     throw e;
@@ -596,8 +616,24 @@ export async function generateFromMonitoringAction(
       `If the excerpt is too thin to respond to specifically (e.g. it's only engagement stats with no real quoted text or caption), say so plainly instead of inventing details that aren't there. ` +
       `Be factual, on-message, and persuasive.`;
 
+    // A rebuttal should speak the same language the opponent's post did —
+    // it's addressed to the same audience the opponent just spoke to — not
+    // whatever the campaign's content default happens to be. But that only
+    // makes sense when there's real excerpt text to detect a language
+    // from; a thin result (engagement stats only, no real text) falls back
+    // to the campaign's own default instead of asking the model to guess.
+    const excerptText = String(result.excerpt ?? '').trim();
     const out = await withQuotaRelease(s.campaignId, 'content', periodStart, () =>
-      contentGenerator.draft({ instruction, type: contentType, candidateProfile: profile ?? undefined }));
+      contentGenerator.draft(
+        excerptText
+          ? { instruction, type: contentType, candidateProfile: profile ?? undefined, matchLanguageOf: excerptText }
+          : {
+              instruction,
+              type: contentType,
+              candidateProfile: profile ?? undefined,
+              locale: isSupportedLocale(profile?.contentLocale) ? profile!.contentLocale : DEFAULT_LOCALE,
+            },
+      ));
 
     const id = uid();
     await throwOnError(
@@ -611,6 +647,7 @@ export async function generateFromMonitoringAction(
         is_ai_generated: true,
         target_jurisdictions: campaign.jurisdictions,
         created_by: s.userId,
+        locale: out.locale,
       }),
       'content_items.from_monitoring',
     );

@@ -3,6 +3,7 @@
 
 import { adminDb } from './supabase';
 import { ContentStatus, ContentType } from '@/domain/types';
+import type { Locale } from '@/lib/locale';
 
 export interface Campaign {
   id: string; name: string; jurisdictions: string[]; tags: string[];
@@ -386,6 +387,7 @@ function toItem(r: Record<string, unknown>) {
     isAiGenerated: r.is_ai_generated as boolean,
     targetJurisdictions: r.target_jurisdictions as string[],
     mediaUrl: r.media_url as string | null,
+    locale: (r.locale as Locale) ?? 'en',
     createdBy: r.created_by as string,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,

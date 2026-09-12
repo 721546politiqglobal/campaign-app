@@ -2,6 +2,7 @@ import { adminDb, throwOnError } from './supabase';
 import {
   ContentItem, ContentStatus, ContentRepo, ApprovalRepo, DisclosureRepo, AuditRepo,
 } from '@/domain/types';
+import type { Locale } from '@/lib/locale';
 import { BillingRepo, CampaignBillingInfo } from '@/domain/billing';
 import { QuotaRepo } from '@/domain/quota';
 
@@ -20,6 +21,7 @@ function toContentItem(r: Record<string, unknown>): ContentItem {
     mediaUrl: r.media_url as string | null,
     videoJobId: (r.video_job_id as string | null) ?? null,
     videoStatus: (r.video_status as 'processing' | 'completed' | 'failed' | null) ?? null,
+    locale: (r.locale as Locale) ?? 'en',
     createdBy: r.created_by as string,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,

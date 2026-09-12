@@ -98,3 +98,30 @@ describe('upsertCandidateProfile - self-voice-clone mapping', () => {
     }));
   });
 });
+
+describe('getCandidateProfile / upsertCandidateProfile — content_locale', () => {
+  it('defaults contentLocale to "en" when the column is absent from a legacy row', async () => {
+    single.mockResolvedValue({
+      data: { id: 'cp-1', campaign_id: 'c-1', full_name: 'Jane', preferred_name: 'J', office: 'Senate', district: 'CA', created_at: 't', updated_at: 't' },
+    });
+    const { getCandidateProfile } = await import('./candidate');
+    const p = await getCandidateProfile('c-1');
+    expect(p?.contentLocale).toBe('en');
+  });
+
+  it('maps content_locale from the row when present', async () => {
+    single.mockResolvedValue({
+      data: { id: 'cp-1', campaign_id: 'c-1', full_name: 'Jane', preferred_name: 'J', office: 'Senate', district: 'CA', created_at: 't', updated_at: 't', content_locale: 'es' },
+    });
+    const { getCandidateProfile } = await import('./candidate');
+    const p = await getCandidateProfile('c-1');
+    expect(p?.contentLocale).toBe('es');
+  });
+
+  it('writes contentLocale to its snake_case column on update', async () => {
+    single.mockResolvedValue({ data: { id: 'profile-1', campaign_id: 'c-1' } });
+    const { upsertCandidateProfile } = await import('./candidate');
+    await upsertCandidateProfile('c-1', { contentLocale: 'es' });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ content_locale: 'es' }));
+  });
+});

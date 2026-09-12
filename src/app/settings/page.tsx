@@ -48,6 +48,7 @@ async function saveProfileAction(formData: FormData) {
     voiceTone:      String(formData.get('voice_tone') ?? 'conversational'),
     googleAlertsRssUrl: String(formData.get('google_alerts_rss_url') ?? '').trim(),
     photoUrl:       String(formData.get('photo_url') ?? '').trim(),
+    contentLocale:  String(formData.get('content_locale') ?? '').trim(),
   };
   // Reject garbage before it reaches AI-drafting prompts (UX-3).
   const check = validateCandidateProfile(fields);
@@ -68,6 +69,10 @@ async function saveProfileAction(formData: FormData) {
     bio:            fields.bio,
     keyPositions,
     voiceTone:      (String(formData.get('voice_tone') ?? 'conversational')) as VoiceTone,
+    // Defensive fallback in addition to the blocking validateCandidateProfile
+    // check above — belt-and-suspenders against any value that somehow
+    // reaches this point outside the select's fixed option set.
+    contentLocale:  isSupportedLocale(fields.contentLocale) ? fields.contentLocale : DEFAULT_LOCALE,
     targetAudience: String(formData.get('target_audience') ?? '').trim(),
     tagline:        String(formData.get('tagline')         ?? '').trim(),
     photoUrl:       String(formData.get('photo_url')       ?? '').trim() || null,
@@ -90,6 +95,7 @@ export default async function Settings({
   searchParams: { error?: string };
 }) {
   const t = await getTranslations('settings');
+  const tc = await getTranslations('common');
   const s = await requireSession();
   const [campaign, profile] = await Promise.all([
     getCampaign(s.campaignId),
@@ -173,6 +179,13 @@ export default async function Settings({
               <option value="formal">{t('profile.voiceToneOptions.formal')}</option>
               <option value="urgent">{t('profile.voiceToneOptions.urgent')}</option>
               <option value="inspirational">{t('profile.voiceToneOptions.inspirational')}</option>
+            </select>
+          </div>
+          <div>
+            <label className="field-label">{t('profile.fields.contentLocale')}</label>
+            <select name="content_locale" className="input" defaultValue={isSupportedLocale(profile?.contentLocale) ? profile.contentLocale : DEFAULT_LOCALE} disabled={!canEdit}>
+              <option value="en">{tc('languageEnglish')}</option>
+              <option value="es">{tc('languageSpanish')}</option>
             </select>
           </div>
           <div style={{ borderTop: '1px solid var(--border)', margin: '8px 0 2px', paddingTop: 16 }}>

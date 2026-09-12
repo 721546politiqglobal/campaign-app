@@ -9,7 +9,7 @@ function makeItem(over: Partial<ContentItem> = {}): ContentItem {
   return {
     id: 'ci-1', campaignId: 'c-1', type: 'social_post', title: 't', body: 'b',
     status: 'approved', isAiGenerated: false, targetJurisdictions: ['US-CA'],
-    mediaUrl: null, createdBy: 'u-1', createdAt: '2026-07-15T00:00:00Z', updatedAt: '2026-07-15T00:00:00Z',
+    mediaUrl: null, locale: 'en', createdBy: 'u-1', createdAt: '2026-07-15T00:00:00Z', updatedAt: '2026-07-15T00:00:00Z',
     ...over,
   };
 }
