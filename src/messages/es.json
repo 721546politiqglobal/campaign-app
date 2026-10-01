@@ -776,7 +776,7 @@
       "title": "El PolitIQ<br></br>para campañas<br></br><accent>modernas.</accent>",
       "subtitle": "Contenido redactado por IA. Revisado por humanos. Totalmente conforme. Gestiona toda tu operación de comunicación desde un único centro de mando.",
       "ctaPrimary": "Comenzar",
-      "ctaSecondary": "Ver la plataforma",
+      "watchDemo": "Ver la demostración de 80 segundos",
       "trustFec": "Registros conformes con la FEC",
       "trustDisclosures": "Divulgaciones según cada estado",
       "trustAudit": "Registro de auditoría completo"
@@ -854,6 +854,14 @@
       },
       "copyright": "© 2026 PolitIQ. Todos los derechos reservados.",
       "bottomNote": "Hecha para campañas que juegan para ganar."
+    },
+    "demo": {
+      "title": "Conozca Politiq.global en 80 segundos",
+      "subtitle": "Su centro de mando de campaña completo: creación de contenido con IA, mensajes de campaña, producción de video, gestión de redes sociales, monitoreo de oponentes y respuesta rápida.",
+      "startCampaign": "Inicie su campaña",
+      "requestDemo": "Solicitar una demostración",
+      "close": "Cerrar video",
+      "unsupported": "Su navegador no admite video incrustado."
     }
   },
   "login": {

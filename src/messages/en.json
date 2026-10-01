@@ -776,7 +776,7 @@
       "title": "The PolitIQ<br></br>for modern<br></br><accent>campaigns.</accent>",
       "subtitle": "AI-drafted content. Human-reviewed. Fully compliant. Run your entire communications operation from one command center.",
       "ctaPrimary": "Get Started",
-      "ctaSecondary": "See the Platform",
+      "watchDemo": "Watch the 80-Second Demo",
       "trustFec": "FEC-compliant records",
       "trustDisclosures": "State-aware disclosures",
       "trustAudit": "Full audit trail"
@@ -854,6 +854,14 @@
       },
       "copyright": "© 2026 PolitIQ. All rights reserved.",
       "bottomNote": "Built for campaigns that play to win."
+    },
+    "demo": {
+      "title": "See Politiq.global in 80 seconds",
+      "subtitle": "Your complete campaign command center: AI content creation, campaign messaging, video production, social media management, opponent monitoring and rapid response.",
+      "startCampaign": "Start Your Campaign",
+      "requestDemo": "Request a Demo",
+      "close": "Close video",
+      "unsupported": "Your browser does not support embedded video."
     }
   },
   "login": {

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { PreAuthLanguageToggle } from '@/components/PreAuthLanguageToggle';
+import { DemoVideoModal } from '@/components/DemoVideoModal';
 import type { Locale } from '@/lib/locale';
 
 const FEATURES = [
@@ -171,6 +172,8 @@ function AppPreview() {
 export function LandingPageClient({ currentLocale, isLoggedIn }: { currentLocale: Locale; isLoggedIn: boolean }) {
   const t = useTranslations('landing');
   const [scrolled, setScrolled] = useState(false);
+  const [demoOpen, setDemoOpen] = useState(false);
+  const openDemo = () => setDemoOpen(true);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -188,7 +191,7 @@ export function LandingPageClient({ currentLocale, isLoggedIn }: { currentLocale
           </Link>
           <div className="lp-navlinks">
             <a href="#features">{t('nav.features')}</a>
-            <a href="#workflow">{t('nav.howItWorks')}</a>
+            <button type="button" className="lp-navlink-btn" onClick={openDemo}>{t('nav.howItWorks')}</button>
           </div>
           <div className="lp-nav-actions">
             {!isLoggedIn && <PreAuthLanguageToggle currentLocale={currentLocale} />}
@@ -218,9 +221,14 @@ export function LandingPageClient({ currentLocale, isLoggedIn }: { currentLocale
                   <path d="M3 7H11M8 4L11 7L8 10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </Link>
-              <a href="#features" className="lp-btn-ghost">
-                {t('hero.ctaSecondary')}
-              </a>
+              <button type="button" className="lp-btn-ghost lp-btn-demo" onClick={openDemo}>
+                <span className="lp-btn-demo-icon" aria-hidden>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                    <path d="M2.5 1.5L8.5 5L2.5 8.5V1.5Z" fill="currentColor"/>
+                  </svg>
+                </span>
+                {t('hero.watchDemo')}
+              </button>
             </div>
             <div className="lp-hero-trust">
               <span>{t('hero.trustFec')}</span>
@@ -321,7 +329,7 @@ export function LandingPageClient({ currentLocale, isLoggedIn }: { currentLocale
               <div className="lp-footer-col">
                 <div className="lp-footer-col-title">{t('footer.columns.product')}</div>
                 <a href="#features">{t('footer.links.features')}</a>
-                <a href="#workflow">{t('footer.links.howItWorks')}</a>
+                <button type="button" className="lp-footer-link-btn" onClick={openDemo}>{t('footer.links.howItWorks')}</button>
               </div>
               <div className="lp-footer-col">
                 <div className="lp-footer-col-title">{t('footer.columns.legal')}</div>
@@ -342,6 +350,8 @@ export function LandingPageClient({ currentLocale, isLoggedIn }: { currentLocale
           </div>
         </div>
       </footer>
+
+      <DemoVideoModal open={demoOpen} onClose={() => setDemoOpen(false)} />
     </div>
   );
 }
