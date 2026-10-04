@@ -856,7 +856,12 @@
       "bottomNote": "Built for campaigns that play to win."
     },
     "demo": {
-      "title": "See Politiq.global in 80 seconds",
+      "title": "See Politiq.global in action",
+      "tabsLabel": "Demo videos",
+      "videos": {
+        "commercial": "Commercial",
+        "walkthrough": "Platform Walkthrough"
+      },
       "subtitle": "Your complete campaign command center: AI content creation, campaign messaging, video production, social media management, opponent monitoring and rapid response.",
       "startCampaign": "Start Your Campaign",
       "requestDemo": "Request a Demo",

@@ -351,7 +351,7 @@ export function LandingPageClient({ currentLocale, isLoggedIn }: { currentLocale
         </div>
       </footer>
 
-      <DemoVideoModal open={demoOpen} onClose={() => setDemoOpen(false)} />
+      <DemoVideoModal open={demoOpen} onClose={() => setDemoOpen(false)} locale={currentLocale} />
     </div>
   );
 }

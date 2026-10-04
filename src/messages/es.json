@@ -776,7 +776,7 @@
       "title": "El PolitIQ<br></br>para campañas<br></br><accent>modernas.</accent>",
       "subtitle": "Contenido redactado por IA. Revisado por humanos. Totalmente conforme. Gestiona toda tu operación de comunicación desde un único centro de mando.",
       "ctaPrimary": "Comenzar",
-      "watchDemo": "Ver la demostración de 80 segundos",
+      "watchDemo": "Ver la demostración en video",
       "trustFec": "Registros conformes con la FEC",
       "trustDisclosures": "Divulgaciones según cada estado",
       "trustAudit": "Registro de auditoría completo"
@@ -856,7 +856,12 @@
       "bottomNote": "Hecha para campañas que juegan para ganar."
     },
     "demo": {
-      "title": "Conozca Politiq.global en 80 segundos",
+      "title": "Vea Politiq.global en acción",
+      "tabsLabel": "Videos de demostración",
+      "videos": {
+        "commercial": "Comercial",
+        "walkthrough": "Recorrido por la plataforma"
+      },
       "subtitle": "Su centro de mando de campaña completo: creación de contenido con IA, mensajes de campaña, producción de video, gestión de redes sociales, monitoreo de oponentes y respuesta rápida.",
       "startCampaign": "Inicie su campaña",
       "requestDemo": "Solicitar una demostración",

@@ -1,19 +1,34 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
+import type { Locale } from '@/lib/locale';
 
-const VIDEO_SRC = '/videos/politiq-demo.mp4';
-const POSTER_SRC = '/videos/politiq-demo-poster.jpg';
+type DemoVideoKey = 'commercial' | 'walkthrough';
+
+// Each locale has its own recorded commercial and product walkthrough, shown
+// as tabs in the modal in this order.
+const VIDEOS: Record<Locale, { key: DemoVideoKey; duration: string }[]> = {
+  en: [
+    { key: 'commercial', duration: '1:21' },
+    { key: 'walkthrough', duration: '1:46' },
+  ],
+  es: [
+    { key: 'commercial', duration: '1:29' },
+    { key: 'walkthrough', duration: '1:46' },
+  ],
+};
 
 // Native <dialog> + showModal() gives us the focus trap, Escape-to-close and
 // inert background for free. The video never autoplays: it only starts when
 // the visitor presses play in the native controls.
-export function DemoVideoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function DemoVideoModal({ open, onClose, locale }: { open: boolean; onClose: () => void; locale: Locale }) {
   const t = useTranslations('landing.demo');
   const dialogRef = useRef<HTMLDialogElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const videos = VIDEOS[locale];
+  const [active, setActive] = useState<DemoVideoKey>(videos[0].key);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -60,16 +75,41 @@ export function DemoVideoModal({ open, onClose }: { open: boolean; onClose: () =
             </svg>
           </button>
         </div>
-        <div className="lp-demo-video-wrap">
+        <div className="lp-demo-tabs" role="tablist" aria-label={t('tabsLabel')}>
+          {videos.map(v => (
+            <button
+              key={v.key}
+              type="button"
+              role="tab"
+              id={`lp-demo-tab-${v.key}`}
+              aria-selected={active === v.key}
+              aria-controls="lp-demo-tabpanel"
+              className={`lp-demo-tab${active === v.key ? ' active' : ''}`}
+              onClick={() => setActive(v.key)}
+            >
+              <span>{t(`videos.${v.key}`)}</span>
+              <span className="lp-demo-tab-duration">{v.duration}</span>
+            </button>
+          ))}
+        </div>
+        <div
+          className="lp-demo-video-wrap"
+          id="lp-demo-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`lp-demo-tab-${active}`}
+        >
+          {/* Keyed on the video so switching tabs swaps in a fresh, paused
+              player instead of carrying over playback position. */}
           <video
+            key={`${locale}-${active}`}
             ref={videoRef}
             className="lp-demo-video"
             controls
             playsInline
             preload="metadata"
-            poster={POSTER_SRC}
+            poster={`/videos/${locale}/${active}-poster.jpg`}
           >
-            <source src={VIDEO_SRC} type="video/mp4" />
+            <source src={`/videos/${locale}/${active}.mp4`} type="video/mp4" />
             {t('unsupported')}
           </video>
         </div>
