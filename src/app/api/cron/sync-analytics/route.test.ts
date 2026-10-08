@@ -8,6 +8,7 @@ describe('cron sync-analytics auth fails closed', () => {
     vi.doMock('@/lib/supabase', () => ({ adminDb: { from: vi.fn() } }));
     vi.doMock('@/lib/services', () => ({ analyticsProvider: { getPostAnalytics: vi.fn() } }));
     vi.doMock('@/lib/analytics', () => ({ upsertPostMetrics: vi.fn(), generateInsight: vi.fn(), insertInsightSnapshot: vi.fn() }));
+    vi.doMock('@/lib/channels', () => ({ getCampaignSocialProfile: vi.fn(async () => ({ profileKey: 'pk', accounts: [], syncedAt: null })) }));
     const { GET } = await import('./route');
     const res = await GET(new Request('http://x', { headers: { authorization: 'Bearer undefined' } }) as any);
     expect(res.status).toBe(401);
@@ -34,6 +35,7 @@ describe('cron sync-analytics batch behavior', () => {
     vi.doMock('@/lib/supabase', () => ({ adminDb: makeAdminDb([ITEM_A, ITEM_B]) }));
     vi.doMock('@/lib/services', () => ({ analyticsProvider: { getPostAnalytics } }));
     vi.doMock('@/lib/analytics', () => ({ upsertPostMetrics, generateInsight, insertInsightSnapshot }));
+    vi.doMock('@/lib/channels', () => ({ getCampaignSocialProfile: vi.fn(async () => ({ profileKey: 'pk', accounts: [], syncedAt: null })) }));
 
     const { GET } = await import('./route');
     const res = await GET(new Request('http://x', { headers: { authorization: 'Bearer secret' } }) as any);
@@ -56,6 +58,7 @@ describe('cron sync-analytics batch behavior', () => {
     vi.doMock('@/lib/supabase', () => ({ adminDb: makeAdminDb([ITEM_A, ITEM_B]) }));
     vi.doMock('@/lib/services', () => ({ analyticsProvider: { getPostAnalytics } }));
     vi.doMock('@/lib/analytics', () => ({ upsertPostMetrics, generateInsight, insertInsightSnapshot }));
+    vi.doMock('@/lib/channels', () => ({ getCampaignSocialProfile: vi.fn(async () => ({ profileKey: 'pk', accounts: [], syncedAt: null })) }));
 
     const { GET } = await import('./route');
     const res = await GET(new Request('http://x', { headers: { authorization: 'Bearer secret' } }) as any);
@@ -70,6 +73,7 @@ describe('cron sync-analytics batch behavior', () => {
     vi.doMock('@/lib/supabase', () => ({ adminDb: makeAdminDb([{ id: 'ci-3', campaign_id: 'c-1', ayrshare_post_ids: {} }]) }));
     vi.doMock('@/lib/services', () => ({ analyticsProvider: { getPostAnalytics } }));
     vi.doMock('@/lib/analytics', () => ({ upsertPostMetrics: vi.fn(), generateInsight: vi.fn(), insertInsightSnapshot: vi.fn() }));
+    vi.doMock('@/lib/channels', () => ({ getCampaignSocialProfile: vi.fn(async () => ({ profileKey: 'pk', accounts: [], syncedAt: null })) }));
 
     const { GET } = await import('./route');
     const res = await GET(new Request('http://x', { headers: { authorization: 'Bearer secret' } }) as any);
@@ -77,5 +81,33 @@ describe('cron sync-analytics batch behavior', () => {
 
     expect(getPostAnalytics).not.toHaveBeenCalled();
     expect(json).toEqual({ synced: 0, failed: 0, insightsGenerated: 0 });
+  });
+
+  it('skips items whose campaign has no profile key (never queries Ayrshare without one)', async () => {
+    const getPostAnalytics = vi.fn();
+    vi.doMock('@/lib/supabase', () => ({ adminDb: makeAdminDb([ITEM_A]) }));
+    vi.doMock('@/lib/services', () => ({ analyticsProvider: { getPostAnalytics } }));
+    vi.doMock('@/lib/analytics', () => ({ upsertPostMetrics: vi.fn(), generateInsight: vi.fn(), insertInsightSnapshot: vi.fn() }));
+    vi.doMock('@/lib/channels', () => ({ getCampaignSocialProfile: vi.fn(async () => ({ profileKey: null, accounts: [], syncedAt: null })) }));
+
+    const { GET } = await import('./route');
+    const res = await GET(new Request('http://x', { headers: { authorization: 'Bearer secret' } }) as any);
+    const json = await res.json();
+
+    expect(getPostAnalytics).not.toHaveBeenCalled();
+    expect(json).toEqual({ synced: 0, failed: 0, insightsGenerated: 0 });
+  });
+
+  it('counts an item as failed when its campaign profile lookup throws', async () => {
+    const getPostAnalytics = vi.fn();
+    vi.doMock('@/lib/supabase', () => ({ adminDb: makeAdminDb([ITEM_A]) }));
+    vi.doMock('@/lib/services', () => ({ analyticsProvider: { getPostAnalytics } }));
+    vi.doMock('@/lib/analytics', () => ({ upsertPostMetrics: vi.fn(), generateInsight: vi.fn(), insertInsightSnapshot: vi.fn() }));
+    vi.doMock('@/lib/channels', () => ({ getCampaignSocialProfile: vi.fn(async () => { throw new Error('db down'); }) }));
+
+    const { GET } = await import('./route');
+    const res = await GET(new Request('http://x', { headers: { authorization: 'Bearer secret' } }) as any);
+    expect(await res.json()).toEqual({ synced: 0, failed: 1, insightsGenerated: 0 });
+    expect(getPostAnalytics).not.toHaveBeenCalled();
   });
 });

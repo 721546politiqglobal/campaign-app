@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const getSession = vi.fn();
 vi.mock('@/lib/session', () => ({ getSession }));
+const getCandidateProfile = vi.fn((_campaignId: string) => Promise.resolve({ heygenBaseAvatarId: 'b1' } as { heygenBaseAvatarId: string | null } | null));
+vi.mock('@/lib/candidate', () => ({ getCandidateProfile }));
+const listAvatars = vi.fn((_campaignId: string) => Promise.resolve([] as { heygenGroupId: string | null }[]));
+vi.mock('@/lib/avatars', () => ({ listAvatars }));
 
 describe('heygen avatars proxy auth', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -15,10 +19,41 @@ describe('heygen avatars proxy auth', () => {
   });
 });
 
+// INT-10: the proxy uses the app's single HeyGen key, so an arbitrary baseId
+// would expose any other tenant's avatar looks.
+describe('heygen avatars proxy tenant scoping', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getSession.mockResolvedValue({ userId: 'u-1', campaignId: 'c-1' });
+    process.env.HEYGEN_API_KEY = 'test-key';
+  });
+  afterEach(() => { vi.unstubAllGlobals(); delete process.env.HEYGEN_API_KEY; });
+
+  it('refuses a baseId that is not one of the caller campaign’s avatars, without calling HeyGen', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const { GET } = await import('./route');
+    const { NextRequest } = await import('next/server');
+    const res = await GET(new NextRequest('http://x/api/heygen/avatars?baseId=someone-elses-group'));
+    expect(res.status).toBe(403);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('allows a group id from the campaign’s own avatars', async () => {
+    listAvatars.mockResolvedValueOnce([{ heygenGroupId: 'grp-own' }]);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { avatar_list: [{ avatar_id: 'a1', avatar_name: 'n' }] } }) }));
+    const { GET } = await import('./route');
+    const { NextRequest } = await import('next/server');
+    const res = await GET(new NextRequest('http://x/api/heygen/avatars?baseId=grp-own'));
+    expect(res.status).toBe(200);
+  });
+});
+
 describe('heygen avatars proxy — v2 avatar_list parsing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getSession.mockResolvedValue({ userId: 'u-1' });
+    getSession.mockResolvedValue({ userId: 'u-1', campaignId: 'c-1' });
+    getCandidateProfile.mockResolvedValue({ heygenBaseAvatarId: 'b000d4cc322f423fb0f275c23d5c7553' });
     process.env.HEYGEN_API_KEY = 'test-key';
   });
 

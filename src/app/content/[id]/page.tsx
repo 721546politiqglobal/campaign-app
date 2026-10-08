@@ -8,16 +8,25 @@ import { requireSession } from '@/lib/session';
 import { disclosureEngine } from '@/lib/services';
 import { getContentItem, getDisclosuresForItem, getAuditEntries, getCampaign } from '@/lib/data';
 import { getCandidateProfile } from '@/lib/candidate';
+import { getCampaignSocialProfile } from '@/lib/channels';
+import type { SocialAccount } from '@/domain/channels';
 
 export default async function ContentDetail({ params }: { params: { id: string } }) {
   const t = await getTranslations('content');
   const s = await requireSession();
-  const [item, discs, log, profile, campaign] = await Promise.all([
+  const [item, discs, log, profile, campaign, social] = await Promise.all([
     getContentItem(params.id),
     getDisclosuresForItem(params.id),
     getAuditEntries(params.id),
     getCandidateProfile(s.campaignId),
     getCampaign(s.campaignId),
+    // Only pre-selects the wizard's networks; the publish/schedule actions
+    // re-check server-side. A failed read (e.g. migration 044 not yet applied)
+    // must not take the whole content page down with it.
+    getCampaignSocialProfile(s.campaignId).catch(e => {
+      console.error('[content] social profile read failed', e);
+      return { accounts: [] as SocialAccount[] };
+    }),
   ]);
   if (!item || item.campaignId !== s.campaignId) notFound();
 
@@ -58,6 +67,7 @@ export default async function ContentDetail({ params }: { params: { id: string }
           aspectRatio: profile?.videoAspectRatio ?? '16:9',
         }}
         role={s.role}
+        connectedPlatforms={social.accounts.filter(a => !a.refreshRequired).map(a => a.platform)}
       />
 
       {log.length > 0 && (

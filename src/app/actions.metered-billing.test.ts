@@ -30,7 +30,7 @@ vi.mock('@/lib/services', () => ({
   lifecycle: {}, disclosureEngine: {}, publisher: {}, photoAvatarProvider: {},
   billingGate, quotaGate, contentGenerator, videoProvider, voiceProvider,
 }));
-vi.mock('@/lib/repos', () => ({ contentRepo: {}, approvalRepo: {}, disclosureRepo: {}, auditRepo: { append: vi.fn() } }));
+vi.mock('@/lib/repos', () => ({ contentRepo: { get: vi.fn((id: string) => Promise.resolve({ id, campaignId: 'c-1' })) }, approvalRepo: {}, disclosureRepo: {}, auditRepo: { append: vi.fn() } }));
 
 beforeEach(() => {
   vi.clearAllMocks();

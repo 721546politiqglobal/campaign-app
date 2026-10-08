@@ -58,25 +58,39 @@ export class ContentLifecycle {
   async schedule(itemId: string, actorUserId: string): Promise<void> {
     const item = await this.require(itemId);
     this.assertTransition(item.status, 'scheduled');
-    if (!(await this.approvals.hasApproval(itemId))) {
-      throw new GateError('Can\u2019t schedule: no human approval on record.');
-    }
-    // Every AI-generated item now always requires exactly one disclosure (the
-    // campaign's default text, or a generic fallback) \u2014 there's no more
-    // per-jurisdiction "genuinely requires none" exemption, so this can gate
-    // on "any row exists" directly.
-    if (item.isAiGenerated && (await this.disclosures.listFor(itemId)).length === 0) {
-      throw new GateError('Can\u2019t schedule: AI content needs a disclosure attached first.');
-    }
+    await this.assertGate(item, 'schedule');
     await this.content.setStatus(itemId, 'scheduled');
     await this.log(item, actorUserId, 'schedule');
+  }
+
+  // Same hard gate as schedule(), callable BEFORE the publisher runs: posting
+  // to social can't be undone, so checking only in markPublished() (after the
+  // post is already live) is too late.
+  async assertPublishable(itemId: string): Promise<void> {
+    const item = await this.require(itemId);
+    this.assertTransition(item.status, 'published');
+    await this.assertGate(item, 'publish');
   }
 
   async markPublished(itemId: string, actorUserId: string): Promise<void> {
     const item = await this.require(itemId);
     this.assertTransition(item.status, 'published');
+    await this.assertGate(item, 'publish');
     await this.content.setStatus(itemId, 'published');
     await this.log(item, actorUserId, 'publish');
+  }
+
+  private async assertGate(item: ContentItem, verb: 'schedule' | 'publish'): Promise<void> {
+    if (!(await this.approvals.hasApproval(item.id))) {
+      throw new GateError(`Can\u2019t ${verb}: no human approval on record.`);
+    }
+    // Every AI-generated item now always requires exactly one disclosure (the
+    // campaign's default text, or a generic fallback) \u2014 there's no more
+    // per-jurisdiction "genuinely requires none" exemption, so this can gate
+    // on "any row exists" directly.
+    if (item.isAiGenerated && (await this.disclosures.listFor(item.id)).length === 0) {
+      throw new GateError(`Can\u2019t ${verb}: AI content needs a disclosure attached first.`);
+    }
   }
 
   private assertTransition(from: ContentStatus, to: ContentStatus): void {

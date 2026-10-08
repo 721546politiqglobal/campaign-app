@@ -127,9 +127,46 @@ describe('ContentLifecycle transition guards', () => {
   // showing 'approved' forever.
   it('marks published directly from approved (the "Publish now" path)', async () => {
     const item = makeItem({ status: 'approved' });
-    const { lifecycle, state, audit } = fakes(item);
+    const { lifecycle, state, audit } = fakes(item, { approved: true });
     await lifecycle.markPublished('ci-1', 'u-1');
     expect(state.status).toBe('published');
     expect(audit).toContain('publish');
+  });
+});
+
+// Publishing is irreversible (it goes out to social platforms), so it has to
+// clear the same hard gate as scheduling — and that check must be callable
+// BEFORE the publisher runs, not only when marking the item published after.
+describe('ContentLifecycle.assertPublishable — the hard gate before going live', () => {
+  it('refuses a draft item', async () => {
+    const { lifecycle } = fakes(makeItem({ status: 'draft' }), { approved: true });
+    await expect(lifecycle.assertPublishable('ci-1')).rejects.toThrow(GateError);
+  });
+
+  it('refuses an approved item with no approval on record', async () => {
+    const { lifecycle } = fakes(makeItem({ status: 'approved' }), { approved: false });
+    await expect(lifecycle.assertPublishable('ci-1')).rejects.toThrow(/no human approval/);
+  });
+
+  it('refuses approved AI content that has no disclosure attached', async () => {
+    const { lifecycle } = fakes(makeItem({ status: 'approved', isAiGenerated: true }), { approved: true, disclosures: [] });
+    await expect(lifecycle.assertPublishable('ci-1')).rejects.toThrow(/needs a disclosure/);
+  });
+
+  it('allows an approved, disclosed AI item and a scheduled item', async () => {
+    const disc: DisclosureRecord = {
+      id: 'd-1', contentItemId: 'ci-1', campaignId: 'c-1',
+      disclosureText: 'AI disclosure', placement: 'overlay', appliedAt: '2026-07-15T00:00:00Z',
+    };
+    await expect(fakes(makeItem({ status: 'approved', isAiGenerated: true }), { approved: true, disclosures: [disc] })
+      .lifecycle.assertPublishable('ci-1')).resolves.toBeUndefined();
+    await expect(fakes(makeItem({ status: 'scheduled' }), { approved: true })
+      .lifecycle.assertPublishable('ci-1')).resolves.toBeUndefined();
+  });
+
+  it('markPublished enforces the same gate', async () => {
+    const { lifecycle, state } = fakes(makeItem({ status: 'approved', isAiGenerated: true }), { approved: true, disclosures: [] });
+    await expect(lifecycle.markPublished('ci-1', 'u-1')).rejects.toThrow(/needs a disclosure/);
+    expect(state.status).toBe('approved');
   });
 });

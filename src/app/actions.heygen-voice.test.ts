@@ -12,7 +12,7 @@ vi.mock('@/lib/supabase', () => ({
   throwOnError: async (q: any) => (await q).data,
 }));
 vi.mock('@/lib/store', () => ({ uid: vi.fn(), prefixedId: vi.fn(), inviteCode: vi.fn() }));
-vi.mock('@/lib/repos', () => ({ contentRepo: {}, approvalRepo: {}, disclosureRepo: {}, auditRepo: {} }));
+vi.mock('@/lib/repos', () => ({ contentRepo: { get: vi.fn((id: string) => Promise.resolve({ id, campaignId: 'c-1' })) }, approvalRepo: {}, disclosureRepo: {}, auditRepo: {} }));
 const generateAvatarVideo = vi.fn(() => Promise.resolve({ videoId: 'job-1' }));
 vi.mock('@/lib/services', () => ({
   lifecycle: {}, disclosureEngine: {}, contentGenerator: {}, publisher: {},

@@ -13,6 +13,7 @@
       "content": "Contenido",
       "monitoring": "Monitoreo",
       "analytics": "Analítica",
+      "channels": "Canales",
       "avatars": "Avatares",
       "team": "Equipo",
       "settings": "Configuración",
@@ -218,7 +219,11 @@
       "scheduledToast": "¡Contenido programado!",
       "scheduleFor": "Programar para {date}",
       "pickTimeAbove": "Elige una hora arriba",
-      "schedulingRequiresManager": "Programar requiere acceso de gerente."
+      "schedulingRequiresManager": "Programar requiere acceso de gerente.",
+      "notConnectedNote": "Solo se pueden seleccionar canales conectados.",
+      "manageChannels": "Gestionar canales",
+      "noChannelsTitle": "Aún no hay canales conectados",
+      "noChannelsBody": "Conecta las cuentas sociales de esta campaña para publicar."
     }
   },
   "settings": {
@@ -330,6 +335,69 @@
     "generatedOn": "Generado {date}",
     "noInsightYet": "Vuelve a consultar después de tu próxima sincronización programada para ver información generada por IA.",
     "barListEmpty": "Aún no hay datos."
+  },
+  "channels": {
+    "eyebrow": "Publicación",
+    "title": "Canales",
+    "subtitle": "Conecta las cuentas sociales en las que publica esta campaña.",
+    "progress": "{connected} de {total} conectadas",
+    "connectAccounts": "Conectar cuentas",
+    "connect": "Conectar",
+    "connectNetwork": "Conectar {network}",
+    "connecting": "Conectando…",
+    "reconnect": "Reconectar",
+    "reconnectNetwork": "Reconectar {network}",
+    "disconnect": "Desconectar",
+    "disconnectNetwork": "Desconectar {network}",
+    "disconnectConfirm": "¿Desconectar {network}? Las publicaciones programadas no saldrán hasta que vuelvas a conectar.",
+    "cancel": "Cancelar",
+    "viewProfile": "Ver perfil",
+    "statusConnected": "Conectada",
+    "statusNotConnected": "No conectada",
+    "statusReconnect": "Requiere reconexión",
+    "waiting": "Termina la conexión en la ventana que se abrió. Esta página se actualizará automáticamente.",
+    "waitingCancel": "Ya la cerré",
+    "connectedToast": "{network} conectada",
+    "disconnectedToast": "{network} desconectada",
+    "refreshFailed": "No se pudieron actualizar las conexiones. Se muestra el último estado conocido.",
+    "finishing": "Terminando…",
+    "actionFailed": "Algo salió mal. Inténtalo de nuevo.",
+    "closeWindow": "Todo listo: ya puedes cerrar esta ventana.",
+    "readOnly": "Solo los propietarios y gerentes pueden cambiar las conexiones.",
+    "trust": "Las cuentas se conectan directamente con el inicio de sesión oficial de cada red. PolitIQ nunca ve tus contraseñas y puedes desconectarlas cuando quieras.",
+    "stepsTitle": "Configúralo en un minuto",
+    "step1Title": "Conecta",
+    "step1Body": "Elige las redes en las que publica esta campaña.",
+    "step2Title": "Autoriza el acceso",
+    "step2Body": "Inicia sesión en cada red y permite publicar.",
+    "step3Title": "Publica",
+    "step3Body": "El contenido aprobado se publica en tus cuentas.",
+    "networks": {
+      "instagram": {
+        "name": "Instagram",
+        "description": "Publicaciones, Reels e Historias"
+      },
+      "facebook": {
+        "name": "Facebook",
+        "description": "Publicaciones y videos de página"
+      },
+      "x": {
+        "name": "X",
+        "description": "Publicaciones e hilos"
+      },
+      "linkedin": {
+        "name": "LinkedIn",
+        "description": "Actualizaciones de perfil y página"
+      },
+      "tiktok": {
+        "name": "TikTok",
+        "description": "Video corto"
+      },
+      "youtube": {
+        "name": "YouTube",
+        "description": "Videos y Shorts"
+      }
+    }
   },
   "avatars": {
     "eyebrow": "Configuración",
@@ -978,6 +1046,7 @@
     "actions": {
       "contentNotFound": "Contenido no encontrado.",
       "permissionDenied": "Permiso denegado.",
+      "channelsNotConnected": "Conecta {platforms} en la página Canales primero.",
       "mediaRequiredForPlatforms": "{platforms} requieren una imagen o video, y este contenido no tiene ninguno adjunto.",
       "publishingFailed": "Error al publicar: {details}",
       "unknownReason": "desconocido",
@@ -1068,6 +1137,13 @@
       "teammateHasContentCannotRemove": "Este miembro del equipo ha creado contenido en la campaña y no se puede eliminar en este momento.",
       "ownerRoleCannotBeChanged": "El rol del propietario de la campaña no se puede cambiar aquí.",
       "invalidLanguage": "Idioma no válido."
+    },
+    "channels": {
+      "permissionDenied": "Solo los propietarios y gerentes pueden cambiar las conexiones sociales.",
+      "setupFailed": "No pudimos configurar las conexiones sociales de esta campaña. Contacta con soporte.",
+      "serviceUnavailable": "No se pudo conectar con el servicio de conexiones sociales. Inténtalo de nuevo.",
+      "notConfigured": "Las conexiones sociales aún no están configuradas.",
+      "unknownNetwork": "Esa red no es compatible."
     }
   }
 }

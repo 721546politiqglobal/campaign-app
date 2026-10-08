@@ -16,40 +16,66 @@ import {
   AyrshareAnalyticsProvider, MockAnalyticsProvider,
 } from '@/integrations';
 import type { PhotoAvatarProvider, Publisher, AnalyticsProvider } from '@/integrations';
+import {
+  AyrshareSocialAccountsProvider, MockSocialAccountsProvider,
+  type SocialAccountsProvider,
+} from '@/integrations/social-accounts';
 
 export const disclosureEngine = new DisclosureEngine();
 export const lifecycle = new ContentLifecycle(contentRepo, approvalRepo, disclosureRepo, auditRepo);
 export const quotaGate = new QuotaGate(quotaRepo);
 export const billingGate = new BillingGate(billingRepo);
 
-// Pick the real adapter when its key is present, otherwise fall back to the
-// Mock adapter — in every environment, including production. This file is
-// reached by every page (transitively via `@/app/actions`), so a missing key
-// must never throw here: that would crash the whole app rather than just the
-// one feature that needed the key. Demo/staging deployments are expected to
-// run with only a subset of keys configured; unconfigured integrations mock
-// instead of erroring.
-function realOrMock<R, M>(key: string | undefined, real: () => R, mock: () => M): R | M {
-  return key ? real() : mock();
+// Pick the real adapter when its key is present. Without a key, local dev and
+// tests get the Mock adapter; a production build gets a stand-in that fails
+// each call with a clear "X is not configured" error (INT-3) — a fake
+// "completed" example.com video or canned draft looks like real output and can
+// end up attached and published. This file is reached by every page
+// (transitively via `@/app/actions`), so a missing key must never throw HERE:
+// that would crash the whole app rather than just the one feature that needed
+// the key. Demo/staging deployments running a production build opt back into
+// mocks with ALLOW_MOCK_PROVIDERS=true.
+const mocksAllowed =
+  process.env.NODE_ENV !== 'production' || process.env.ALLOW_MOCK_PROVIDERS === 'true';
+
+function realOrMock<R, M>(envVar: string, real: () => R, mock: () => M): R | M {
+  if (process.env[envVar]) return real();
+  return mocksAllowed ? mock() : missingKeyProvider<M>(envVar);
+}
+
+export class MissingProviderKeyError extends Error {
+  constructor(envVar: string) {
+    super(`${envVar} is not configured. This feature is unavailable until it is set.`);
+  }
+}
+
+// Every method rejects with MissingProviderKeyError. `then` stays undefined so
+// the object isn't mistaken for a thenable if it is ever awaited.
+function missingKeyProvider<T>(envVar: string): T {
+  return new Proxy({}, {
+    get: (_target, prop) => prop === 'then'
+      ? undefined
+      : async () => { throw new MissingProviderKeyError(envVar); },
+  }) as T;
 }
 
 export const contentGenerator = realOrMock(
-  process.env.LLM_API_KEY,
+  'LLM_API_KEY',
   () => new ClaudeContentGenerator(process.env.LLM_API_KEY!),
   () => new MockContentGenerator());
 
 export const videoProvider = realOrMock(
-  process.env.HEYGEN_API_KEY,
+  'HEYGEN_API_KEY',
   () => new HeyGenVideoProvider(process.env.HEYGEN_API_KEY!),
   () => new MockVideoProvider());
 
 export const photoAvatarProvider: PhotoAvatarProvider = realOrMock(
-  process.env.HEYGEN_API_KEY,
+  'HEYGEN_API_KEY',
   () => new HeyGenPhotoAvatarProvider(process.env.HEYGEN_API_KEY!),
   () => new MockPhotoAvatarProvider());
 
 export const voiceProvider = realOrMock(
-  process.env.ELEVENLABS_API_KEY,
+  'ELEVENLABS_API_KEY',
   () => new ElevenLabsVoiceProvider(process.env.ELEVENLABS_API_KEY!),
   () => new MockVoiceProvider());
 
@@ -64,12 +90,24 @@ export const publisher: Publisher = process.env.AYRSHARE_API_KEY
     ? new MissingKeyPublisher()
     : new MockPublisher();
 
-export const analyticsProvider: AnalyticsProvider = realOrMock(
-  process.env.AYRSHARE_API_KEY,
-  () => new AyrshareAnalyticsProvider(process.env.AYRSHARE_API_KEY!),
-  () => new MockAnalyticsProvider());
+// Analytics has nothing to fake — the mock just reports no metrics — so it
+// stays a mock in every environment rather than failing the sync cron.
+export const analyticsProvider: AnalyticsProvider = process.env.AYRSHARE_API_KEY
+  ? new AyrshareAnalyticsProvider(process.env.AYRSHARE_API_KEY)
+  : new MockAnalyticsProvider();
 
 export const monitoringSource = realOrMock(
-  process.env.NEWSDATA_API_KEY,
+  'NEWSDATA_API_KEY',
   () => new NewsDataMonitoringSource(process.env.NEWSDATA_API_KEY!),
   () => new MockMonitoringSource());
+
+// Per-campaign social connections (Ayrshare User Profiles). Stricter than
+// realOrMock: never the mock in a production build, even with
+// ALLOW_MOCK_PROVIDERS — the mock writes a 'mock-' profile key into the
+// campaign row, which would poison a real database. Without the key a
+// production build errors on use instead of pretending accounts are linked.
+export const socialAccounts: SocialAccountsProvider = process.env.AYRSHARE_API_KEY
+  ? new AyrshareSocialAccountsProvider(process.env.AYRSHARE_API_KEY)
+  : process.env.NODE_ENV !== 'production'
+    ? new MockSocialAccountsProvider()
+    : missingKeyProvider<SocialAccountsProvider>('AYRSHARE_API_KEY');

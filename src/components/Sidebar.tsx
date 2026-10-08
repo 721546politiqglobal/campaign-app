@@ -57,6 +57,17 @@ export const NAV = [
     ),
   },
   {
+    href: '/channels',
+    key: 'channels',
+    icon: (
+      <svg className="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <path d="M6.5 9.5l3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+        <path d="M7.2 4.6l1.1-1.1a2.6 2.6 0 0 1 3.7 3.7l-1.1 1.1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+        <path d="M8.8 11.4l-1.1 1.1a2.6 2.6 0 0 1-3.7-3.7l1.1-1.1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
     href: '/avatars',
     key: 'avatars',
     icon: (

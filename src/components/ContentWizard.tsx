@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import type { Role } from '@/domain/types';
 import { ContentItem, VIDEO_CONTENT_TYPES, MEDIA_REQUIRED_PLATFORMS } from '@/domain/types';
@@ -67,6 +68,7 @@ export function ContentWizard({
   requiredDisclosure,
   videoSettings,
   role,
+  connectedPlatforms,
 }: {
   item: ContentItem;
   hasDisclosure: boolean;
@@ -78,6 +80,7 @@ export function ContentWizard({
     aspectRatio?: '16:9' | '9:16' | '1:1';
   };
   role: Role;
+  connectedPlatforms: Platform[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -95,7 +98,9 @@ export function ContentWizard({
   const [body, setBody] = useState(item.body);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [platforms, setPlatforms] = useState<Platform[]>(availablePlatforms);
+  const [platforms, setPlatforms] = useState<Platform[]>(
+    availablePlatforms.filter(p => connectedPlatforms.includes(p)),
+  );
   const [videoId, setVideoId] = useState<string | null>(item.videoJobId ?? null);
   const [videoStatus, setVideoStatus] = useState<'idle' | 'generating' | 'ready' | 'failed' | 'timed_out'>(
     item.videoStatus === 'processing' && !item.mediaUrl ? 'generating' : 'idle',
@@ -507,15 +512,30 @@ export function ContentWizard({
             <div className="eyebrow" style={{ marginBottom: 8 }}>{t('publish.platformsLabel')}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
               {availablePlatforms.map(p => {
-                const selected = platforms.includes(p);
+                const connected = connectedPlatforms.includes(p);
+                const selected = connected && platforms.includes(p);
                 return (
-                  <label key={p} className={`chip${selected ? ' on' : ''}`}>
-                    <input type="checkbox" checked={selected} onChange={() => togglePlatform(p)} style={{ display: 'none' }} />
+                  <label key={p} className={`chip${selected ? ' on' : ''}`}
+                    style={connected ? undefined : { opacity: 0.4, cursor: 'not-allowed' }}
+                    title={connected ? undefined : t('publish.notConnectedNote')}>
+                    <input type="checkbox" checked={selected} disabled={!connected}
+                      onChange={() => togglePlatform(p)} style={{ display: 'none' }} />
                     {p.charAt(0).toUpperCase() + p.slice(1)}
                   </label>
                 );
               })}
             </div>
+            {connectedPlatforms.length === 0 ? (
+              <div className="card" style={{ marginTop: -12, marginBottom: 24, padding: 14 }}>
+                <strong style={{ fontSize: 13 }}>{t('publish.noChannelsTitle')}</strong>
+                <p className="muted" style={{ margin: '4px 0 10px', fontSize: 12 }}>{t('publish.noChannelsBody')}</p>
+                <Link href="/channels" className="btn primary">{t('publish.manageChannels')}</Link>
+              </div>
+            ) : availablePlatforms.some(p => !connectedPlatforms.includes(p)) && (
+              <p className="muted" style={{ fontSize: 12, marginTop: -16, marginBottom: 24 }}>
+                {t('publish.notConnectedNote')} <Link href="/channels">{t('publish.manageChannels')}</Link>
+              </p>
+            )}
             {availablePlatforms.length < (CONTENT_TYPE_PLATFORMS[item.type]?.length ?? 0) && (
               <p className="muted" style={{ fontSize: 12, marginTop: -16, marginBottom: 24 }}>
                 {t('publish.mediaRequiredNote')}

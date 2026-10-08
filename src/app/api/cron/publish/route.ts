@@ -4,6 +4,15 @@ import { publisher } from '@/lib/services';
 import { disclosureRepo } from '@/lib/repos';
 import { combineDisclosureText } from '@/domain/disclosure';
 import type { Platform } from '@/domain/types';
+import { getCampaignSocialProfile, type CampaignSocialProfile } from '@/lib/channels';
+import { unconnectedPlatforms } from '@/domain/channels';
+
+// Up to 50 sequential publishes, each an external Ayrshare call.
+export const maxDuration = 300;
+
+// A row still 'publishing' this long after its claim belongs to a run that was
+// killed mid-publish (timeout/crash) — well past maxDuration above.
+const STALE_CLAIM_MS = 15 * 60 * 1000;
 
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
@@ -11,6 +20,14 @@ export async function GET(req: NextRequest) {
   if (!secret || auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // Release rows a crashed run stranded in 'publishing' (NEW-3). Back to
+  // 'approved', not 'scheduled': the post may already have gone out, so a
+  // human re-schedules it rather than this cron double-posting.
+  await adminDb.from('content_items')
+    .update({ status: 'approved', updated_at: new Date().toISOString() })
+    .eq('status', 'publishing')
+    .lt('updated_at', new Date(Date.now() - STALE_CLAIM_MS).toISOString());
 
   const { data: dueItems } = await adminDb
     .from('content_items')
@@ -26,9 +43,11 @@ export async function GET(req: NextRequest) {
 
   const results_out: { id: string; ok: boolean; error?: string }[] = [];
 
+  const profiles = new Map<string, CampaignSocialProfile>();
+
   for (const item of dueItems) {
     // Atomically claim: only one runner can flip scheduled → publishing. A
-    // concurrent 5-min run (or a crash-restarted run) that lost the race gets
+    // concurrent run (or a crash-restarted run) that lost the race gets
     // zero rows back and skips, so nothing is published twice (INT-11).
     const { data: claimed, error: claimError } = await adminDb
       .from('content_items')
@@ -39,9 +58,32 @@ export async function GET(req: NextRequest) {
     if (claimError || !claimed || claimed.length === 0) continue;
 
     try {
+      let profile = profiles.get(item.campaign_id);
+      if (!profile) {
+        profile = await getCampaignSocialProfile(item.campaign_id);
+        profiles.set(item.campaign_id, profile);
+      }
+      const platforms = (item.platforms ?? []) as Platform[];
+      const missing = profile.profileKey ? unconnectedPlatforms(platforms, profile.accounts) : platforms;
+      if (!profile.profileKey || missing.length > 0) {
+        // Never fall back to the Primary Profile (other tenants' accounts).
+        await adminDb.from('content_items')
+          .update({ status: 'approved', updated_at: new Date().toISOString() })
+          .eq('id', item.id);
+        await adminDb.from('audit_entries').insert({
+          campaign_id: item.campaign_id,
+          action: 'cron_publish_not_connected',
+          entity_type: 'content_item',
+          entity_id: item.id,
+          details: { missing },
+        });
+        results_out.push({ id: item.id, ok: false, error: 'channels not connected' });
+        continue;
+      }
       const disclosures = await disclosureRepo.listFor(item.id);
       const results = await publisher.publish({
-        platforms: (item.platforms ?? []) as Platform[],
+        platforms,
+        profileKey: profile.profileKey,
         title: item.title, text: item.body,
         disclosureText: combineDisclosureText(disclosures),
         mediaUrl: item.media_url ?? undefined,
@@ -79,6 +121,18 @@ export async function GET(req: NextRequest) {
       });
       results_out.push({ id: item.id, ok: true });
     } catch (e) {
+      // Don't leave the claimed row stranded in 'publishing' (NEW-3). Same
+      // reasoning as the stale-claim release above: back to 'approved'.
+      await adminDb.from('content_items')
+        .update({ status: 'approved', updated_at: new Date().toISOString() })
+        .eq('id', item.id);
+      await adminDb.from('audit_entries').insert({
+        campaign_id: item.campaign_id,
+        action: 'cron_publish_error',
+        entity_type: 'content_item',
+        entity_id: item.id,
+        details: { error: String(e) },
+      });
       results_out.push({ id: item.id, ok: false, error: String(e) });
     }
   }

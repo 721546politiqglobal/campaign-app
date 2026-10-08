@@ -16,14 +16,14 @@ describe('AyrsharePublisher.publish', () => {
       json: async () => ({ id: 'top-level-id', postIds: [{ platform: 'facebook', id: 'post-abc', status: 'success' }] }),
     }));
     const publisher = new AyrsharePublisher('test-key');
-    const results = await publisher.publish({ platforms: ['facebook'], title: 't', text: 'hi', disclosureText: '' });
+    const results = await publisher.publish({ platforms: ['facebook'], title: 't', text: 'hi', disclosureText: '', profileKey: 'pk-test' });
     expect(results).toEqual([{ platform: 'facebook', status: 'scheduled', postId: 'top-level-id' }]);
   });
 
   it('omits postId (without throwing) when the Ayrshare response has no top-level id', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
     const publisher = new AyrsharePublisher('test-key');
-    const results = await publisher.publish({ platforms: ['x'], title: 't', text: 'hi', disclosureText: '' });
+    const results = await publisher.publish({ platforms: ['x'], title: 't', text: 'hi', disclosureText: '', profileKey: 'pk-test' });
     expect(results).toEqual([{ platform: 'x', status: 'scheduled' }]);
   });
 
@@ -35,7 +35,7 @@ describe('AyrsharePublisher.publish', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ postIds: [] }) });
     vi.stubGlobal('fetch', fetchMock);
     const publisher = new AyrsharePublisher('test-key');
-    await publisher.publish({ platforms: ['youtube'], title: 'My Video Title', text: 'hi', disclosureText: '' });
+    await publisher.publish({ platforms: ['youtube'], title: 'My Video Title', text: 'hi', disclosureText: '', profileKey: 'pk-test' });
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.youTubeOptions).toEqual({ title: 'My Video Title' });
   });
@@ -44,7 +44,7 @@ describe('AyrsharePublisher.publish', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ postIds: [] }) });
     vi.stubGlobal('fetch', fetchMock);
     const publisher = new AyrsharePublisher('test-key');
-    await publisher.publish({ platforms: ['instagram'], title: 'My Video Title', text: 'hi', disclosureText: '' });
+    await publisher.publish({ platforms: ['instagram'], title: 'My Video Title', text: 'hi', disclosureText: '', profileKey: 'pk-test' });
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.youTubeOptions).toBeUndefined();
   });
@@ -64,19 +64,29 @@ describe('AyrsharePublisher.publish', () => {
       }),
     }));
     const publisher = new AyrsharePublisher('test-key');
-    const results = await publisher.publish({ platforms: ['instagram'], title: 't', text: 'hi', disclosureText: '' });
+    const results = await publisher.publish({ platforms: ['instagram'], title: 't', text: 'hi', disclosureText: '', profileKey: 'pk-test' });
     expect(results).toEqual([{ platform: 'instagram', status: 'failed', error: 'Instagram Error: media is required' }]);
   });
 
   it('falls back to HTTP status when the error response has neither errors[] nor a top-level message', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({}) }));
     const publisher = new AyrsharePublisher('test-key');
-    const results = await publisher.publish({ platforms: ['tiktok'], title: 't', text: 'hi', disclosureText: '' });
+    const results = await publisher.publish({ platforms: ['tiktok'], title: 't', text: 'hi', disclosureText: '', profileKey: 'pk-test' });
     expect(results).toEqual([{ platform: 'tiktok', status: 'failed', error: 'HTTP 400' }]);
   });
 });
 
 describe('AyrshareAnalyticsProvider.getPostAnalytics', () => {
+  // Without a Profile-Key Ayrshare reads the PRIMARY profile — never query it
+  // on behalf of a campaign that has no profile of its own.
+  it('returns [] without calling Ayrshare when the profile key is empty', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const r = await new AyrshareAnalyticsProvider('k').getPostAnalytics([{ platform: 'instagram', postId: 'p1' }], '');
+    expect(r).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   // Response shapes below are the ACTUAL shapes returned by Ayrshare for real
   // posts (captured live) — not invented. Ayrshare nests the platform key at
   // the top level of the response, with metrics one level under `.analytics`,
@@ -90,7 +100,7 @@ describe('AyrshareAnalyticsProvider.getPostAnalytics', () => {
       }),
     }));
     const provider = new AyrshareAnalyticsProvider('test-key');
-    const out = await provider.getPostAnalytics([{ platform: 'youtube', postId: 'top-id' }]);
+    const out = await provider.getPostAnalytics([{ platform: 'youtube', postId: 'top-id' }], 'pk-test');
     expect(out).toEqual([{ platform: 'youtube', impressions: 0, reach: 0, likes: 2, comments: 1, shares: 0, saves: 0, videoViews: 5, videoAvgWatchSeconds: 12.5 }]);
   });
 
@@ -106,7 +116,7 @@ describe('AyrshareAnalyticsProvider.getPostAnalytics', () => {
       }),
     }));
     const provider = new AyrshareAnalyticsProvider('test-key');
-    const out = await provider.getPostAnalytics([{ platform: 'instagram', postId: 'top-id' }]);
+    const out = await provider.getPostAnalytics([{ platform: 'instagram', postId: 'top-id' }], 'pk-test');
     expect(out).toEqual([{ platform: 'instagram', impressions: 0, reach: 19, likes: 3, comments: 1, shares: 2, saves: 4, videoViews: 32, videoAvgWatchSeconds: 1.145 }]);
   });
 
@@ -122,7 +132,7 @@ describe('AyrshareAnalyticsProvider.getPostAnalytics', () => {
       }),
     }));
     const provider = new AyrshareAnalyticsProvider('test-key');
-    const out = await provider.getPostAnalytics([{ platform: 'tiktok', postId: 'top-id' }]);
+    const out = await provider.getPostAnalytics([{ platform: 'tiktok', postId: 'top-id' }], 'pk-test');
     expect(out).toEqual([{ platform: 'tiktok', impressions: 0, reach: 0, likes: 0, comments: 0, shares: 0, saves: 0, videoViews: 12, videoAvgWatchSeconds: 2.82 }]);
   });
 
@@ -132,7 +142,7 @@ describe('AyrshareAnalyticsProvider.getPostAnalytics', () => {
       json: async () => ({ id: 'top-id', status: 'success', facebook: { id: 'fb-id', analytics: { likes: 1 } } }),
     }));
     const provider = new AyrshareAnalyticsProvider('test-key');
-    const out = await provider.getPostAnalytics([{ platform: 'facebook', postId: 'top-id' }]);
+    const out = await provider.getPostAnalytics([{ platform: 'facebook', postId: 'top-id' }], 'pk-test');
     expect(out).toEqual([]);
   });
 
@@ -148,14 +158,14 @@ describe('AyrshareAnalyticsProvider.getPostAnalytics', () => {
     const out = await provider.getPostAnalytics([
       { platform: 'instagram', postId: 'post-bad' },
       { platform: 'youtube', postId: 'post-good' },
-    ]);
+    ], 'pk-test');
     expect(out).toEqual([{ platform: 'youtube', impressions: 0, reach: 0, likes: 2, comments: 1, shares: 0, saves: 0, videoViews: 5, videoAvgWatchSeconds: 0 }]);
   });
 
   it('skips a post on a network failure without throwing', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
     const provider = new AyrshareAnalyticsProvider('test-key');
-    const out = await provider.getPostAnalytics([{ platform: 'youtube', postId: 'post-abc' }]);
+    const out = await provider.getPostAnalytics([{ platform: 'youtube', postId: 'post-abc' }], 'pk-test');
     expect(out).toEqual([]);
   });
 });

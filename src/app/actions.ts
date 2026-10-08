@@ -12,6 +12,8 @@ import { HeyGenAccessDeniedError, HeyGenVoiceCloneLimitError } from '@/integrati
 import { contentRepo, approvalRepo, disclosureRepo, auditRepo } from '@/lib/repos';
 import { ContentType, ContentStatus, ContentItem, Platform, VIDEO_CONTENT_TYPES, isContentType, platformsMissingRequiredMedia } from '@/domain/types';
 import { GateError } from '@/domain/content-lifecycle';
+import { getCampaignSocialProfile } from '@/lib/channels';
+import { unconnectedPlatforms } from '@/domain/channels';
 import { combineDisclosureText } from '@/domain/disclosure';
 import { zonedNaiveToUtc } from '@/lib/timezone';
 import { QuotaExceeded, contentPeriodStart, videoPeriodStart } from '@/domain/quota';
@@ -59,6 +61,25 @@ async function requireOwnedItem(id: string, campaignId: string): Promise<Content
   const item = await contentRepo.get(id);
   if (!item || item.campaignId !== campaignId) return null;
   return item;
+}
+
+// Publishing only ever goes through the campaign's own Ayrshare profile — no
+// fallback to the Primary Profile (that's other tenants' accounts). Returns
+// the profile key, or the platforms the campaign still has to connect.
+async function requireConnectedChannels(
+  campaignId: string,
+  platforms: Platform[],
+): Promise<{ profileKey: string } | { missing: Platform[] }> {
+  const { profileKey, accounts } = await getCampaignSocialProfile(campaignId);
+  const missing = profileKey ? unconnectedPlatforms(platforms, accounts) : platforms;
+  return missing.length > 0 || !profileKey ? { missing } : { profileKey };
+}
+
+// The "connect these first" error is read by campaign staff, so it names the
+// networks as the Channels page does ("Instagram, X"), not by internal id.
+async function networkNames(locale: string, platforms: Platform[]): Promise<string> {
+  const t = await getTranslations({ locale, namespace: 'channels' });
+  return platforms.map(p => t(`networks.${p}.name`)).join(', ');
 }
 
 // super_admin sessions carry no campaign (campaignId === null). Tenant-scoped
@@ -337,6 +358,14 @@ export async function publishAction(id: string, platforms: Platform[]): Promise<
   if (blocked.length > 0) {
     return { ok: false, error: t('mediaRequiredForPlatforms', { platforms: blocked.join(', ') }) };
   }
+  const channels = await requireConnectedChannels(s.campaignId, platforms);
+  if ('missing' in channels) {
+    return { ok: false, error: t('channelsNotConnected', { platforms: await networkNames(s.locale, channels.missing) }) };
+  }
+  // Hard gate (approval + AI disclosure) before anything goes live — the post
+  // can't be pulled back if markPublished rejects it afterwards.
+  const gate = await guard(() => lifecycle.assertPublishable(id));
+  if (!gate.ok) return gate;
   const disc = await disclosureRepo.listFor(id);
   // Publish first, inspect the per-platform results, and only mark the item
   // published if at least one platform actually accepted the post.
@@ -344,6 +373,7 @@ export async function publishAction(id: string, platforms: Platform[]): Promise<
     platforms, title: item.title, text: item.body,
     disclosureText: combineDisclosureText(disc),
     mediaUrl: item.mediaUrl ?? undefined,
+    profileKey: channels.profileKey,
   });
   const failed = results.filter(r => r.status === 'failed');
   if (failed.length === results.length) {
@@ -390,6 +420,8 @@ export async function generateVideoAction(
 ): Promise<Result & { videoId?: string }> {
   const s = await requireSession();
   const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  // Ownership first: the job id is written onto this row below (NEW-2).
+  if (!(await requireOwnedItem(contentId, s.campaignId))) return { ok: false, error: t('contentNotFound') };
   const { getCandidateProfile } = await import('@/lib/candidate');
   const [campaign, profile] = await Promise.all([
     getCampaign(s.campaignId),
@@ -456,6 +488,11 @@ export async function generateVideoAction(
 
 export async function getVideoStatusAction(videoId: string): Promise<{ status: string; url?: string }> {
   const s = await requireSession(); // was unauthenticated — anyone could probe HeyGen job status (INT-10)
+  // Only answer for jobs attached to one of the caller's own content items —
+  // otherwise any logged-in user could read another tenant's video URL.
+  const { data: owned } = await adminDb.from('content_items')
+    .select('id').eq('video_job_id', videoId).eq('campaign_id', s.campaignId).maybeSingle();
+  if (!owned) return { status: 'failed' };
   const result = await videoProvider.getVideoStatus(videoId);
   // Reconcile the persisted job so a resumed poll lands the final state on the
   // content row (INT-5). Scoped to the caller's campaign.
@@ -776,6 +813,11 @@ export async function scheduleWithTimeAction(
     const blocked = platformsMissingRequiredMedia(platforms, !!item.mediaUrl);
     if (blocked.length > 0) {
       throw new GateError(t('mediaRequiredForPlatforms', { platforms: blocked.join(', ') }));
+    }
+
+    const channels = await requireConnectedChannels(s.campaignId, platforms);
+    if ('missing' in channels) {
+      throw new GateError(t('channelsNotConnected', { platforms: await networkNames(s.locale, channels.missing) }));
     }
 
     // Hard gate: enforces human approval, and disclosure-on-file for AI content,

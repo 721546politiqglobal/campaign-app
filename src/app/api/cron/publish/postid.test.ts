@@ -8,11 +8,15 @@ const dueItem = { id: 'ci-1', campaign_id: 'c-1', body: 'b', media_url: null, pl
 function makeAdminDb(payloads: Record<string, unknown>[]) {
   const selectDue: any = { eq: () => selectDue, not: () => selectDue, lte: () => selectDue, limit: () => Promise.resolve({ data: [dueItem], error: null }) };
   const claim: any = { eq: () => claim, select: () => Promise.resolve({ data: [{ id: 'ci-1' }], error: null }) };
+  const staleRelease: any = { eq: () => ({ lt: () => Promise.resolve({ error: null }) }) };
   let updateCalls = 0;
   return {
     from: () => ({
       select: () => selectDue,
       update: (payload: Record<string, unknown>) => {
+        // The run opens by releasing stale 'publishing' claims (.eq().lt());
+        // see recovery.test.ts. Not counted as one of the per-item updates.
+        if (updateCalls === 0 && payload.status === 'approved') return staleRelease;
         updateCalls += 1;
         if (updateCalls === 1) return claim;
         payloads.push(payload);
@@ -31,6 +35,7 @@ describe('cron publish persists ayrshare post ids', () => {
     vi.doMock('@/lib/supabase', () => ({ adminDb: makeAdminDb(payloads) }));
     vi.doMock('@/lib/services', () => ({ publisher: { publish: vi.fn(() => Promise.resolve([{ platform: 'x', status: 'scheduled', postId: 'post-123' }])) } }));
     vi.doMock('@/lib/repos', () => ({ disclosureRepo: { listFor: vi.fn(() => []) } }));
+    vi.doMock('@/lib/channels', () => ({ getCampaignSocialProfile: vi.fn(async () => ({ profileKey: 'pk', syncedAt: null, accounts: [{ platform: 'x', name: 'x', handle: null, profileUrl: null, avatarUrl: null, refreshRequired: false }] })) }));
     const { GET } = await import('./route');
     const { NextRequest } = await import('next/server');
     await GET(new NextRequest('http://x', { headers: { authorization: 'Bearer secret' } }));
@@ -43,6 +48,7 @@ describe('cron publish persists ayrshare post ids', () => {
     vi.doMock('@/lib/supabase', () => ({ adminDb: makeAdminDb(payloads) }));
     vi.doMock('@/lib/services', () => ({ publisher: { publish: vi.fn(() => Promise.resolve([{ platform: 'x', status: 'scheduled' }])) } }));
     vi.doMock('@/lib/repos', () => ({ disclosureRepo: { listFor: vi.fn(() => []) } }));
+    vi.doMock('@/lib/channels', () => ({ getCampaignSocialProfile: vi.fn(async () => ({ profileKey: 'pk', syncedAt: null, accounts: [{ platform: 'x', name: 'x', handle: null, profileUrl: null, avatarUrl: null, refreshRequired: false }] })) }));
     const { GET } = await import('./route');
     const { NextRequest } = await import('next/server');
     await GET(new NextRequest('http://x', { headers: { authorization: 'Bearer secret' } }));

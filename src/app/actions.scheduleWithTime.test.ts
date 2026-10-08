@@ -20,6 +20,11 @@ vi.mock('@/lib/repos', () => ({
   contentRepo: { get }, approvalRepo: { add: vi.fn() },
   disclosureRepo: { add: vi.fn(), listFor: vi.fn(() => Promise.resolve([])) }, auditRepo: { append: vi.fn() },
 }));
+const getCampaignSocialProfile = vi.fn(async () => ({
+  profileKey: 'pk-1' as string | null, syncedAt: null,
+  accounts: ['x', 'instagram', 'tiktok', 'facebook'].map(platform => ({ platform, name: platform, handle: null, profileUrl: null, avatarUrl: null, refreshRequired: false })),
+}));
+vi.mock('@/lib/channels', () => ({ getCampaignSocialProfile }));
 const schedule = vi.fn(() => Promise.resolve());
 vi.mock('@/lib/services', () => ({
   lifecycle: { schedule },
@@ -32,7 +37,9 @@ const ITEM = {
   id: 'x', campaignId: 'c-1', status: 'approved', type: 'social_post', isAiGenerated: false,
   body: 'b', title: 't', targetJurisdictions: [], mediaUrl: null,
 };
-const FUTURE = new Date(Date.now() + 60 * 60 * 1000);
+// A week out: the fixture pins 12:00 on that date, so "an hour from now" was
+// in the past whenever the suite ran after midday.
+const FUTURE = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 const SCHEDULED_AT = `${FUTURE.getFullYear()}-${String(FUTURE.getMonth() + 1).padStart(2, '0')}-${String(FUTURE.getDate()).padStart(2, '0')}T12:00`;
 
 describe('scheduleWithTimeAction blocks media-required platforms with no media', () => {
@@ -54,5 +61,14 @@ describe('scheduleWithTimeAction blocks media-required platforms with no media',
     const r = await scheduleWithTimeAction('x', ['instagram'] as any, SCHEDULED_AT, 'America/New_York');
     expect(r.ok).toBe(true);
     expect(schedule).toHaveBeenCalled();
+  });
+
+  it('refuses to schedule to a network the campaign has not connected', async () => {
+    get.mockResolvedValue({ ...ITEM, mediaUrl: 'https://media.test/v.mp4' });
+    getCampaignSocialProfile.mockResolvedValueOnce({ profileKey: 'pk-1', syncedAt: null, accounts: [] });
+    const { scheduleWithTimeAction } = await import('./actions');
+    const r = await scheduleWithTimeAction('x', ['instagram'] as any, SCHEDULED_AT, 'America/New_York');
+    expect(r).toEqual({ ok: false, error: 'Connect Instagram on the Channels page first.' });
+    expect(schedule).not.toHaveBeenCalled();
   });
 });

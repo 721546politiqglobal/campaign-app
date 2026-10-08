@@ -13,6 +13,7 @@
       "content": "Content",
       "monitoring": "Monitoring",
       "analytics": "Analytics",
+      "channels": "Channels",
       "avatars": "Avatars",
       "team": "Team",
       "settings": "Settings",
@@ -218,7 +219,11 @@
       "scheduledToast": "Content scheduled!",
       "scheduleFor": "Schedule for {date}",
       "pickTimeAbove": "Pick a time above",
-      "schedulingRequiresManager": "Scheduling requires manager access."
+      "schedulingRequiresManager": "Scheduling requires manager access.",
+      "notConnectedNote": "Only connected channels can be selected.",
+      "manageChannels": "Manage channels",
+      "noChannelsTitle": "No channels connected yet",
+      "noChannelsBody": "Connect this campaign's social accounts to publish."
     }
   },
   "settings": {
@@ -330,6 +335,69 @@
     "generatedOn": "Generated {date}",
     "noInsightYet": "Check back after your next scheduled sync for AI-generated insights.",
     "barListEmpty": "No data yet."
+  },
+  "channels": {
+    "eyebrow": "Publishing",
+    "title": "Channels",
+    "subtitle": "Connect the social accounts this campaign publishes to.",
+    "progress": "{connected} of {total} connected",
+    "connectAccounts": "Connect accounts",
+    "connect": "Connect",
+    "connectNetwork": "Connect {network}",
+    "connecting": "Connecting…",
+    "reconnect": "Reconnect",
+    "reconnectNetwork": "Reconnect {network}",
+    "disconnect": "Disconnect",
+    "disconnectNetwork": "Disconnect {network}",
+    "disconnectConfirm": "Disconnect {network}? Posts scheduled to it won't go out until you reconnect.",
+    "cancel": "Cancel",
+    "viewProfile": "View profile",
+    "statusConnected": "Connected",
+    "statusNotConnected": "Not connected",
+    "statusReconnect": "Reconnect needed",
+    "waiting": "Finish connecting in the window that opened. This page will update automatically.",
+    "waitingCancel": "I closed it",
+    "connectedToast": "{network} connected",
+    "disconnectedToast": "{network} disconnected",
+    "refreshFailed": "Couldn't refresh connections. Showing the last known status.",
+    "finishing": "Finishing up…",
+    "actionFailed": "Something went wrong. Please try again.",
+    "closeWindow": "All set — you can close this window.",
+    "readOnly": "Only owners and managers can change connections.",
+    "trust": "Accounts connect directly through each network's official login. PolitIQ never sees your passwords, and you can disconnect anytime.",
+    "stepsTitle": "Get set up in a minute",
+    "step1Title": "Connect",
+    "step1Body": "Choose the networks this campaign posts to.",
+    "step2Title": "Approve access",
+    "step2Body": "Sign in to each network and allow publishing.",
+    "step3Title": "Publish",
+    "step3Body": "Approved content goes out to your accounts.",
+    "networks": {
+      "instagram": {
+        "name": "Instagram",
+        "description": "Posts, Reels and Stories"
+      },
+      "facebook": {
+        "name": "Facebook",
+        "description": "Page posts and videos"
+      },
+      "x": {
+        "name": "X",
+        "description": "Posts and threads"
+      },
+      "linkedin": {
+        "name": "LinkedIn",
+        "description": "Profile and page updates"
+      },
+      "tiktok": {
+        "name": "TikTok",
+        "description": "Short-form video"
+      },
+      "youtube": {
+        "name": "YouTube",
+        "description": "Videos and Shorts"
+      }
+    }
   },
   "avatars": {
     "eyebrow": "Configuration",
@@ -978,6 +1046,7 @@
     "actions": {
       "contentNotFound": "Content not found.",
       "permissionDenied": "Permission denied.",
+      "channelsNotConnected": "Connect {platforms} on the Channels page first.",
       "mediaRequiredForPlatforms": "{platforms} require an image or video, and this content has none attached.",
       "publishingFailed": "Publishing failed: {details}",
       "unknownReason": "unknown",
@@ -1068,6 +1137,13 @@
       "teammateHasContentCannotRemove": "This teammate has created content in the campaign and can't be removed right now.",
       "ownerRoleCannotBeChanged": "The campaign owner's role can't be changed here.",
       "invalidLanguage": "Invalid language."
+    },
+    "channels": {
+      "permissionDenied": "Only owners and managers can change social connections.",
+      "setupFailed": "We couldn't set up social connections for this campaign. Please contact support.",
+      "serviceUnavailable": "Couldn't reach the social connection service. Please try again.",
+      "notConfigured": "Social connections aren't configured yet.",
+      "unknownNetwork": "That network isn't supported."
     }
   }
 }

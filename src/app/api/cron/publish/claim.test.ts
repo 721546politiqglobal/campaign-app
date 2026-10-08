@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const publish = vi.fn(() => Promise.resolve([{ platform: 'x', status: 'scheduled' }]));
 vi.mock('@/lib/services', () => ({ publisher: { publish } }));
 vi.mock('@/lib/repos', () => ({ disclosureRepo: { listFor: vi.fn(() => []) } }));
+vi.mock('@/lib/channels', () => ({ getCampaignSocialProfile: vi.fn(async () => ({ profileKey: 'pk', syncedAt: null, accounts: [{ platform: 'x', name: 'x', handle: null, profileUrl: null, avatarUrl: null, refreshRequired: false }] })) }));
 
 const dueItem = { id: 'ci-1', campaign_id: 'c-1', body: 'b', media_url: null, platforms: ['x'] };
 
@@ -12,11 +13,17 @@ function makeAdminDb(claimRows: unknown[]) {
   const selectDue: any = { eq: () => selectDue, not: () => selectDue, lte: () => selectDue, limit: () => Promise.resolve({ data: [dueItem], error: null }) };
   const claim: any = { eq: () => claim, select: () => Promise.resolve({ data: claimRows, error: null }) };
   const finalUpdate: any = { eq: () => Promise.resolve({ error: null }) };
+  const staleRelease: any = { eq: () => ({ lt: () => Promise.resolve({ error: null }) }) };
   let updateCalls = 0;
   return {
     from: () => ({
       select: () => selectDue,
-      update: () => { updateCalls += 1; return updateCalls === 1 ? claim : finalUpdate; },
+      update: (payload: Record<string, unknown>) => {
+        // The run opens by releasing stale 'publishing' claims (.eq().lt());
+        // see recovery.test.ts. Not counted as one of the per-item updates.
+        if (updateCalls === 0 && payload.status === 'approved') return staleRelease;
+        updateCalls += 1; return updateCalls === 1 ? claim : finalUpdate;
+      },
       insert: () => Promise.resolve({ error: null }),
     }),
   };
@@ -29,6 +36,7 @@ describe('cron publish atomic claim', () => {
     vi.doMock('@/lib/supabase', () => ({ adminDb: makeAdminDb([]) }));
     vi.doMock('@/lib/services', () => ({ publisher: { publish } }));
     vi.doMock('@/lib/repos', () => ({ disclosureRepo: { listFor: vi.fn(() => []) } }));
+    vi.doMock('@/lib/channels', () => ({ getCampaignSocialProfile: vi.fn(async () => ({ profileKey: 'pk', syncedAt: null, accounts: [{ platform: 'x', name: 'x', handle: null, profileUrl: null, avatarUrl: null, refreshRequired: false }] })) }));
     const { GET } = await import('./route');
     const { NextRequest } = await import('next/server');
     await GET(new NextRequest('http://x', { headers: { authorization: 'Bearer secret' } }));
@@ -39,6 +47,7 @@ describe('cron publish atomic claim', () => {
     vi.doMock('@/lib/supabase', () => ({ adminDb: makeAdminDb([{ id: 'ci-1' }]) }));
     vi.doMock('@/lib/services', () => ({ publisher: { publish } }));
     vi.doMock('@/lib/repos', () => ({ disclosureRepo: { listFor: vi.fn(() => []) } }));
+    vi.doMock('@/lib/channels', () => ({ getCampaignSocialProfile: vi.fn(async () => ({ profileKey: 'pk', syncedAt: null, accounts: [{ platform: 'x', name: 'x', handle: null, profileUrl: null, avatarUrl: null, refreshRequired: false }] })) }));
     const { GET } = await import('./route');
     const { NextRequest } = await import('next/server');
     await GET(new NextRequest('http://x', { headers: { authorization: 'Bearer secret' } }));

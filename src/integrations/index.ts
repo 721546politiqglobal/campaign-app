@@ -69,7 +69,9 @@ export interface PhotoAvatarProvider {
 }
 
 export interface Publisher {
-  publish(input: { platforms: Platform[]; title: string; text: string; disclosureText: string; mediaUrl?: string }):
+  // profileKey: the campaign's Ayrshare User Profile — without it Ayrshare
+  // posts to the Primary Profile, i.e. some other tenant's accounts.
+  publish(input: { platforms: Platform[]; title: string; text: string; disclosureText: string; mediaUrl?: string; profileKey: string }):
     Promise<{ platform: Platform; status: 'scheduled' | 'failed'; error?: string; postId?: string }[]>;
 }
 
@@ -503,9 +505,14 @@ const PLATFORM_MAP: Record<Platform, string> = {
 export class AyrsharePublisher implements Publisher {
   constructor(private apiKey: string) {}
 
-  async publish({ platforms, title, text, disclosureText, mediaUrl }: {
-    platforms: Platform[]; title: string; text: string; disclosureText: string; mediaUrl?: string;
+  async publish({ platforms, title, text, disclosureText, mediaUrl, profileKey }: {
+    platforms: Platform[]; title: string; text: string; disclosureText: string; mediaUrl?: string; profileKey: string;
   }) {
+    // Block, don't fall back: without a campaign profile key Ayrshare would
+    // post to the Primary Profile, so refuse before any API call.
+    if (!profileKey) {
+      return platforms.map(p => ({ platform: p, status: 'failed' as const, error: 'No connected social profile for this campaign.' }));
+    }
     const post = disclosureText ? `${text}\n\n${disclosureText}` : text;
     const results: { platform: Platform; status: 'scheduled' | 'failed'; error?: string; postId?: string }[] = [];
 
@@ -522,7 +529,7 @@ export class AyrsharePublisher implements Publisher {
 
         const res = await fetch('https://app.ayrshare.com/api/post', {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+          headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json', 'Profile-Key': profileKey },
           body: JSON.stringify(body),
         });
         const json = await res.json();
@@ -547,7 +554,7 @@ export class AyrsharePublisher implements Publisher {
 }
 
 export interface AnalyticsProvider {
-  getPostAnalytics(posts: { platform: Platform; postId: string }[]): Promise<{
+  getPostAnalytics(posts: { platform: Platform; postId: string }[], profileKey: string): Promise<{
     platform: Platform; impressions: number; reach: number; likes: number;
     comments: number; shares: number; saves: number;
     videoViews: number; videoAvgWatchSeconds: number;
@@ -602,13 +609,15 @@ const ANALYTICS_EXTRACTORS: Partial<Record<string, (a: RawAnalytics) => Normaliz
 export class AyrshareAnalyticsProvider implements AnalyticsProvider {
   constructor(private apiKey: string) {}
 
-  async getPostAnalytics(posts: { platform: Platform; postId: string }[]) {
+  async getPostAnalytics(posts: { platform: Platform; postId: string }[], profileKey: string) {
+    // Without a Profile-Key Ayrshare reads the PRIMARY profile's posts.
+    if (!profileKey) return [];
     const out: { platform: Platform; impressions: number; reach: number; likes: number; comments: number; shares: number; saves: number; videoViews: number; videoAvgWatchSeconds: number }[] = [];
     for (const { platform, postId } of posts) {
       try {
         const res = await fetch('https://app.ayrshare.com/api/analytics/post', {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+          headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json', 'Profile-Key': profileKey },
           body: JSON.stringify({ id: postId }),
         });
         const json = await res.json();
@@ -669,7 +678,7 @@ export class MockContentGenerator implements ContentGenerator {
 }
 
 export class MockPublisher implements Publisher {
-  async publish({ platforms }: { platforms: Platform[] }) {
+  async publish({ platforms }: { platforms: Platform[]; profileKey?: string }) {
     return platforms.map(p => ({ platform: p, status: 'scheduled' as const }));
   }
 }
@@ -681,7 +690,7 @@ export class MockPublisher implements Publisher {
 // callers (publishAction, the cron route) already know how to surface a
 // failed publish, so this fails loudly through the exact same paths.
 export class MissingKeyPublisher implements Publisher {
-  async publish({ platforms }: { platforms: Platform[] }) {
+  async publish({ platforms }: { platforms: Platform[]; profileKey?: string }) {
     return platforms.map(p => ({
       platform: p,
       status: 'failed' as const,
@@ -691,7 +700,7 @@ export class MissingKeyPublisher implements Publisher {
 }
 
 export class MockAnalyticsProvider implements AnalyticsProvider {
-  async getPostAnalytics(_posts: { platform: Platform; postId: string }[]) { return []; }
+  async getPostAnalytics(_posts: { platform: Platform; postId: string }[], _profileKey?: string) { return []; }
 }
 
 export class MockVideoProvider implements VideoProvider {

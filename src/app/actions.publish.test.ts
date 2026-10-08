@@ -17,8 +17,13 @@ vi.mock('@/lib/repos', () => ({
   contentRepo: { get }, approvalRepo: { add: vi.fn() },
   disclosureRepo: { add: vi.fn(), listFor: vi.fn(() => Promise.resolve([])) }, auditRepo: { append: vi.fn() },
 }));
+const getCampaignSocialProfile = vi.fn(async () => ({
+  profileKey: 'pk-1' as string | null, syncedAt: null,
+  accounts: ['x', 'instagram', 'tiktok', 'facebook'].map(platform => ({ platform, name: platform, handle: null, profileUrl: null, avatarUrl: null, refreshRequired: false })),
+}));
+vi.mock('@/lib/channels', () => ({ getCampaignSocialProfile }));
 const publish = vi.fn();
-const lifecycle = { markPublished: vi.fn(() => Promise.resolve()) };
+const lifecycle = { markPublished: vi.fn(() => Promise.resolve()), assertPublishable: vi.fn(() => Promise.resolve()) };
 vi.mock('@/lib/services', () => ({
   lifecycle, disclosureEngine: { requiredFor: vi.fn(() => []) },
   quotaGate: { checkAndIncrement: vi.fn(), checkAvatarCap: vi.fn(), release: vi.fn() }, billingGate: { check: vi.fn() },
@@ -29,6 +34,44 @@ const ITEM = { id: 'x', campaignId: 'c-1', status: 'scheduled', type: 'social_po
 
 describe('publishAction does not mark published when everything fails', () => {
   beforeEach(() => { vi.clearAllMocks(); });
+
+  it('refuses networks the campaign has not connected, before calling the publisher', async () => {
+    get.mockResolvedValue(ITEM);
+    getCampaignSocialProfile.mockResolvedValueOnce({ profileKey: 'pk-1', syncedAt: null, accounts: [] });
+    const { publishAction } = await import('./actions');
+    const r = await publishAction('x', ['x'] as any);
+    expect(r).toEqual({ ok: false, error: 'Connect X on the Channels page first.' });
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('refuses everything when the campaign has no Ayrshare profile yet', async () => {
+    get.mockResolvedValue(ITEM);
+    getCampaignSocialProfile.mockResolvedValueOnce({ profileKey: null, syncedAt: null, accounts: [] });
+    const { publishAction } = await import('./actions');
+    const r = await publishAction('x', ['x'] as any);
+    expect(r.ok).toBe(false);
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('passes the campaign profile key to the publisher', async () => {
+    get.mockResolvedValue(ITEM);
+    publish.mockResolvedValue([{ platform: 'x', status: 'scheduled' }]);
+    const { publishAction } = await import('./actions');
+    await publishAction('x', ['x'] as any);
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ profileKey: 'pk-1' }));
+  });
+
+  // Posting to social can't be undone — the approval/disclosure gate must run
+  // before the publisher, not only in markPublished afterwards (NEW-1).
+  it('never calls the publisher when the item fails the publish gate', async () => {
+    get.mockResolvedValue({ ...ITEM, status: 'draft' });
+    const { GateError } = await import('@/domain/content-lifecycle');
+    lifecycle.assertPublishable.mockRejectedValueOnce(new GateError('Can’t move content from draft to published.'));
+    const { publishAction } = await import('./actions');
+    const r = await publishAction('x', ['x'] as any);
+    expect(r).toEqual({ ok: false, error: 'Can’t move content from draft to published.' });
+    expect(publish).not.toHaveBeenCalled();
+  });
 
   it('returns an error and never marks published when all platforms fail', async () => {
     get.mockResolvedValue(ITEM);

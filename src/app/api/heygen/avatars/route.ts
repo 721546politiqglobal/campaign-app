@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
+import { getCandidateProfile } from '@/lib/candidate';
+import { listAvatars } from '@/lib/avatars';
 
 interface NormalizedAvatar {
   avatar_id: string;
@@ -18,6 +20,12 @@ export async function GET(req: NextRequest) {
   if (!apiKey) return NextResponse.json({ avatars: [] });
 
   const baseId = req.nextUrl.searchParams.get('baseId');
+
+  // The proxy calls HeyGen with the app's single shared key, so only answer
+  // for avatar groups that belong to the caller's own campaign (INT-10).
+  if (baseId && !(await campaignOwnsBaseId(session.campaignId, baseId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   // If a base ID is supplied, try photo-avatar group first (talking photos),
   // then fall back to filtering studio avatars by avatar_id.
@@ -80,4 +88,11 @@ export async function GET(req: NextRequest) {
 
   // No baseId — return empty (never expose the full 1,283-avatar list)
   return NextResponse.json({ avatars: [] });
+}
+
+async function campaignOwnsBaseId(campaignId: string | null, baseId: string): Promise<boolean> {
+  if (!campaignId) return false;
+  const [profile, avatars] = await Promise.all([getCandidateProfile(campaignId), listAvatars(campaignId)]);
+  if (profile?.heygenBaseAvatarId === baseId) return true;
+  return avatars.some(a => a.heygenGroupId === baseId);
 }
