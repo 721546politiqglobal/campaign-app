@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
 import { NextIntlClientProvider } from 'next-intl';
-import { getMessages } from 'next-intl/server';
+import { getMessages, getTranslations } from 'next-intl/server';
 import { ToastProvider } from '@/components/Toast';
+import { ConfirmProvider } from '@/components/ui/ConfirmDialog';
 import { getLocale } from '@/lib/locale';
+import { getTheme, themeAttribute } from '@/lib/theme';
 import './globals.css';
 
 // Self-hosted so the build has no network dependency on Google Fonts — an
@@ -20,20 +22,32 @@ const manrope = localFont({
   display: 'swap',
 });
 
-export const metadata: Metadata = {
-  title: 'PolitIQ',
-  description: 'AI campaign communications — human approval and disclosure built in.',
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations('common.meta');
+  return { title: t('title'), description: t('description') };
+}
+
+export const viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#F7F8FA' },
+    { media: '(prefers-color-scheme: dark)', color: '#0B0D12' },
+  ],
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale = getLocale();
   const messages = await getMessages();
+  // Explicit light/dark sets data-theme on the server so there is no flash;
+  // `system` renders no attribute and the CSS media query decides.
+  const theme = themeAttribute(getTheme());
 
   return (
-    <html lang={locale} className={manrope.variable}>
+    <html lang={locale} className={manrope.variable} data-theme={theme}>
       <body>
         <NextIntlClientProvider messages={messages}>
-          <ToastProvider>{children}</ToastProvider>
+          <ToastProvider>
+            <ConfirmProvider>{children}</ConfirmProvider>
+          </ToastProvider>
         </NextIntlClientProvider>
       </body>
     </html>

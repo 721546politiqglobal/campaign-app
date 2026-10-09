@@ -6,7 +6,7 @@ const dueItem = { id: 'ci-1', campaign_id: 'c-1', body: 'b', media_url: null, pl
 // .limit(), the claiming UPDATE terminates at .select(), and the final
 // status UPDATE terminates at .eq() — its payload is what we assert on.
 function makeAdminDb(payloads: Record<string, unknown>[]) {
-  const selectDue: any = { eq: () => selectDue, not: () => selectDue, lte: () => selectDue, limit: () => Promise.resolve({ data: [dueItem], error: null }) };
+  const selectDue: any = { eq: () => selectDue, not: () => selectDue, lte: () => selectDue, order: () => selectDue, limit: () => Promise.resolve({ data: [dueItem], error: null }) };
   const claim: any = { eq: () => claim, select: () => Promise.resolve({ data: [{ id: 'ci-1' }], error: null }) };
   const staleRelease: any = { eq: () => ({ lt: () => Promise.resolve({ error: null }) }) };
   let updateCalls = 0;

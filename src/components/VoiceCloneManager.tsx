@@ -6,9 +6,16 @@ import { useRouter } from 'next/navigation';
 import { beginVoiceCloneUploadAction, finalizeVoiceCloneAction, checkVoiceCloneStatusAction, previewVoiceCloneAction } from '@/app/actions';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import { useToast } from '@/components/Toast';
+import { Dialog } from '@/components/ui/Dialog';
+import { Field } from '@/components/ui/Field';
+import { Badge, type BadgeTone } from '@/components/ui/Badge';
+import { MicIcon, PlayIcon, UploadIcon, RefreshIcon } from '@/components/icons';
 
 const POLL_MS = 5000;
 const mediaRecorderSupported = typeof MediaRecorder !== 'undefined';
+
+type VoiceStatus = 'training' | 'ready' | 'failed' | null;
+const STATUS_TONE: Record<NonNullable<VoiceStatus>, BadgeTone> = { training: 'info', ready: 'ok', failed: 'bad' };
 
 // Explicitly pick a supported MIME type instead of accepting the browser's
 // silent default: Firefox's MediaRecorder defaults to "audio/ogg;codecs=opus"
@@ -22,12 +29,12 @@ function pickRecordingMimeType(): string | undefined {
 }
 
 export function VoiceCloneManager({
-  status,
+  status: serverStatus,
   name,
-  error,
+  error: serverError,
   canManage,
 }: {
-  status: 'training' | 'ready' | 'failed' | null;
+  status: VoiceStatus;
   name: string | null;
   error: string | null;
   canManage: boolean;
@@ -35,6 +42,13 @@ export function VoiceCloneManager({
   const router = useRouter();
   const t = useTranslations('voice');
   const { toast } = useToast();
+
+  // Polling can learn a new status before the route re-renders; keep it local
+  // and refresh the route once, rather than on every tick.
+  const [local, setLocal] = useState<{ status: VoiceStatus; error: string | null } | null>(null);
+  useEffect(() => { setLocal(null); }, [serverStatus, serverError]);
+  const status = local?.status ?? serverStatus;
+  const error = local ? local.error : serverError;
 
   const [modalOpen, setModalOpen] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -79,10 +93,16 @@ export function VoiceCloneManager({
     if (status !== 'training') return;
     let cancelled = false;
     async function pollOnce() {
-      await checkVoiceCloneStatusAction();
-      if (!cancelled) router.refresh();
+      try {
+        const r = await checkVoiceCloneStatusAction();
+        if (cancelled || !r.ok || r.status === undefined || r.status === 'training') return;
+        setLocal({ status: r.status, error: r.errorMessage ?? null });
+        router.refresh(); // once, on the actual change
+      } catch (e) {
+        console.error('[voice] status poll failed', e);
+      }
     }
-    const interval = setInterval(pollOnce, POLL_MS);
+    const interval = setInterval(() => { void pollOnce(); }, POLL_MS);
     return () => { cancelled = true; clearInterval(interval); };
   }, [status, router]);
 
@@ -188,37 +208,34 @@ export function VoiceCloneManager({
   }
 
   async function handleSubmit() {
-    if (!file) return;
+    if (!file || submitting) return;
     setSubmitting(true);
+    try {
+      const begin = await beginVoiceCloneUploadAction(consent, { name: file.name, type: file.type, size: file.size });
+      if (!begin.ok) { toast(begin.error, 'error'); return; }
+      if (!begin.path || !begin.token) { toast(t('toast.failedToStartCloning'), 'error'); return; }
 
-    const begin = await beginVoiceCloneUploadAction(consent, { name: file.name, type: file.type, size: file.size });
-    if (!begin.ok) {
-      setSubmitting(false);
-      toast(begin.error, 'error');
-      return;
-    }
-    if (!begin.path || !begin.token) {
-      setSubmitting(false);
-      toast(t('toast.failedToStartCloning'), 'error');
-      return;
-    }
+      const { error: uploadError } = await supabaseBrowser.storage.from('media')
+        .uploadToSignedUrl(begin.path, begin.token, file);
+      if (uploadError) {
+        console.error('[voice] sample upload failed', uploadError);
+        toast(t('toast.uploadFailed'), 'error');
+        return;
+      }
 
-    const { error: uploadError } = await supabaseBrowser.storage.from('media')
-      .uploadToSignedUrl(begin.path, begin.token, file);
-    if (uploadError) {
+      const result = await finalizeVoiceCloneAction(voiceName, begin.path);
+      if (result.ok) {
+        toast(t('toast.cloningStarted'));
+        resetModal();
+        router.refresh();
+      } else {
+        toast(result.error ?? t('toast.failedToCloneVoice'), 'error');
+      }
+    } catch (e) {
+      console.error('[voice] clone submit failed', e);
+      toast(t('toast.genericError'), 'error');
+    } finally {
       setSubmitting(false);
-      toast(t('toast.uploadFailed', { message: uploadError.message }), 'error');
-      return;
-    }
-
-    const result = await finalizeVoiceCloneAction(voiceName, begin.path);
-    setSubmitting(false);
-    if (result.ok) {
-      toast(t('toast.cloningStarted'));
-      resetModal();
-      router.refresh();
-    } else {
-      toast(result.error ?? t('toast.failedToCloneVoice'), 'error');
     }
   }
 
@@ -230,6 +247,7 @@ export function VoiceCloneManager({
       });
       return;
     }
+    if (previewLoading) return;
     setPreviewLoading(true);
     try {
       const result = await previewVoiceCloneAction();
@@ -242,160 +260,158 @@ export function VoiceCloneManager({
         setPreviewAudioUrl(null);
         toast(t('toast.couldntPlaySample'), 'error');
       });
+    } catch (e) {
+      console.error('[voice] preview failed', e);
+      toast(t('toast.genericError'), 'error');
     } finally {
       setPreviewLoading(false);
     }
   }
 
+  const recordingClock = `${Math.floor(recordedSeconds / 60)}:${String(recordedSeconds % 60).padStart(2, '0')}`;
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div className="eyebrow">{t('clone.yourVoice')}</div>
+    <div className="stack">
+      <div className="row-between av-head">
+        <span className="eyebrow">{t('clone.yourVoice')}</span>
         {canManage && status !== 'training' && (
-          <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setModalOpen(true)}>
+          <button type="button" className="btn btn-sm" onClick={() => setModalOpen(true)}>
+            <MicIcon size={14} />
             {status === 'ready' ? t('clone.replaceVoice') : t('clone.cloneYourVoice')}
           </button>
         )}
       </div>
 
       {!status && (
-        <p className="muted" style={{ fontSize: 13 }}>
-          {canManage
-            ? t('clone.noVoiceCanManage')
-            : t('clone.noVoiceReadOnly')}
-        </p>
+        <p className="muted text-sm">{canManage ? t('clone.noVoiceCanManage') : t('clone.noVoiceReadOnly')}</p>
       )}
 
       {status && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-          <span style={{
-            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-            background: status === 'ready' ? 'var(--ok)' : status === 'failed' ? 'var(--bad)' : 'var(--warn)',
-            boxShadow: `0 0 6px ${status === 'ready' ? 'var(--ok)' : status === 'failed' ? 'var(--bad)' : 'var(--warn)'}`,
-          }} />
-          <span>
+        <div className="vc-status">
+          <Badge tone={STATUS_TONE[status]} dot>
             {status === 'training' && t('clone.status.training')}
             {status === 'ready' && t('clone.status.ready', { name: name ?? '' })}
             {status === 'failed' && t('clone.status.failed', { message: error ?? t('clone.status.unknownError') })}
-          </span>
-          {status === 'ready' && (
-            <button type="button" className="btn" style={{ fontSize: 12 }} disabled={previewLoading} onClick={handlePlaySample}>
+          </Badge>
+          {status === 'ready' && canManage && (
+            <button type="button" className="btn btn-sm" disabled={previewLoading} aria-busy={previewLoading} onClick={handlePlaySample}>
+              <PlayIcon size={14} />
               {previewLoading ? t('clone.generatingSample') : t('clone.playSample')}
             </button>
           )}
         </div>
       )}
 
-      {modalOpen && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            {step === 1 && (
-              <>
-                <div className="modal-step">{t('clone.modal.consent.stepLabel')}</div>
-                <h3 style={{ marginBottom: 14, fontSize: 16 }}>{t('clone.modal.consent.title')}</h3>
-                <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, lineHeight: 1.5 }}>
-                  <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
-                  {t('clone.modal.consent.text')}
-                </label>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={resetModal}>{t('clone.modal.cancel')}</button>
-                  <button className="btn primary" disabled={!consent} onClick={() => setStep(2)}>{t('clone.modal.next')}</button>
-                </div>
-              </>
-            )}
-            {step === 2 && (
-              <>
-                <div className="modal-step">{t('clone.modal.audio.stepLabel')}</div>
-                <h3 style={{ marginBottom: 12, fontSize: 16 }}>{t('clone.modal.audio.title')}</h3>
-
-                <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                  <button type="button" className={audioSource === 'record' ? 'btn primary' : 'btn'} style={{ fontSize: 12 }}
-                    aria-pressed={audioSource === 'record'} onClick={() => selectAudioSource('record')}>
-                    {t('clone.modal.audio.recordTab')}
-                  </button>
-                  <button type="button" className={audioSource === 'upload' ? 'btn primary' : 'btn'} style={{ fontSize: 12 }}
-                    aria-pressed={audioSource === 'upload'} onClick={() => selectAudioSource('upload')}>
-                    {t('clone.modal.audio.uploadTab')}
-                  </button>
-                </div>
-
-                {audioSource === 'upload' && (
-                  <>
-                    <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-                      {t('clone.modal.audio.uploadInstructions')}
-                    </p>
-                    <input type="file" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/webm,audio/ogg"
-                      onChange={e => setFile(e.target.files?.[0] ?? null)} />
-                  </>
-                )}
-
-                {audioSource === 'record' && mediaRecorderSupported && (
-                  <>
-                    <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-                      {t('clone.modal.audio.recordInstructions')}
-                    </p>
-                    {micError && (
-                      <p className="muted" style={{ fontSize: 12, marginBottom: 10, color: 'var(--bad)' }}>{micError}</p>
-                    )}
-                    {!isRecording && !file && (
-                      <button type="button" className="btn primary" style={{ fontSize: 13 }} onClick={startRecording}>
-                        {t('clone.modal.audio.startRecording')}
-                      </button>
-                    )}
-                    {isRecording && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--bad)', boxShadow: '0 0 6px var(--bad)' }} />
-                        <span className="mono" aria-live="polite">{Math.floor(recordedSeconds / 60)}:{String(recordedSeconds % 60).padStart(2, '0')}</span>
-                        <button type="button" className="btn" style={{ fontSize: 13 }} disabled={recordedSeconds < 1} onClick={stopRecording}>
-                          {t('clone.modal.audio.stopRecording')}
-                        </button>
-                      </div>
-                    )}
-                    {!isRecording && file && (
-                      <button type="button" className="btn" style={{ fontSize: 12 }}
-                        onClick={() => { setFile(null); setRecordDurationWarning(null); }}>
-                        {t('clone.modal.audio.reRecord')}
-                      </button>
-                    )}
-                  </>
-                )}
-
-                {audioSource === 'record' && !mediaRecorderSupported && (
-                  <p className="muted" style={{ fontSize: 12 }}>
-                    {t('clone.modal.audio.recordingNotSupported')}
-                  </p>
-                )}
-
-                {file && (
-                  <audio src={audioPreviewUrl ?? undefined} controls style={{ width: '100%', marginTop: 12 }} />
-                )}
-                {recordDurationWarning && (
-                  <p className="muted" style={{ fontSize: 12, marginTop: 8, color: 'var(--warn)' }}>{recordDurationWarning}</p>
-                )}
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={() => setStep(1)}>{t('clone.modal.back')}</button>
-                  <button className="btn primary" disabled={!file} onClick={() => setStep(3)}>{t('clone.modal.next')}</button>
-                </div>
-              </>
-            )}
-            {step === 3 && (
-              <>
-                <div className="modal-step">{t('clone.modal.name.stepLabel')}</div>
-                <h3 style={{ marginBottom: 12, fontSize: 16 }}>{t('clone.modal.name.title')}</h3>
-                <input className="input" placeholder={t('clone.modal.name.placeholder')} value={voiceName}
-                  onChange={e => setVoiceName(e.target.value)} maxLength={60} />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={() => setStep(2)}>{t('clone.modal.back')}</button>
-                  <button className="btn primary" disabled={submitting || !voiceName.trim()} onClick={handleSubmit}>
-                    {submitting ? t('clone.modal.name.cloning') : t('clone.modal.name.submit')}
-                  </button>
-                </div>
-              </>
-            )}
+      <Dialog
+        open={modalOpen}
+        onClose={resetModal}
+        title={status === 'ready' ? t('clone.replaceVoice') : t('clone.cloneYourVoice')}
+        description={step === 1 ? t('clone.modal.consent.stepLabel') : step === 2 ? t('clone.modal.audio.stepLabel') : t('clone.modal.name.stepLabel')}
+        size="md"
+        closeOnBackdrop={!submitting && !isRecording}
+        footer={
+          step === 1 ? (
+            <>
+              <button type="button" className="btn" onClick={resetModal}>{t('clone.modal.cancel')}</button>
+              <button type="button" className="btn btn-primary" disabled={!consent} onClick={() => setStep(2)}>{t('clone.modal.next')}</button>
+            </>
+          ) : step === 2 ? (
+            <>
+              <button type="button" className="btn" onClick={() => setStep(1)}>{t('clone.modal.back')}</button>
+              <button type="button" className="btn btn-primary" disabled={!file || isRecording} onClick={() => setStep(3)}>{t('clone.modal.next')}</button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="btn" disabled={submitting} onClick={() => setStep(2)}>{t('clone.modal.back')}</button>
+              <button type="button" className="btn btn-primary" disabled={submitting || !voiceName.trim()} aria-busy={submitting} onClick={handleSubmit}>
+                {submitting ? t('clone.modal.name.cloning') : t('clone.modal.name.submit')}
+              </button>
+            </>
+          )
+        }
+      >
+        {step === 1 && (
+          <div className="stack">
+            <h3 className="av-step-title">{t('clone.modal.consent.title')}</h3>
+            <label className="checkrow av-consent">
+              <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
+              <span>{t('clone.modal.consent.text')}</span>
+            </label>
           </div>
-        </div>
-      )}
+        )}
+
+        {step === 2 && (
+          <div className="stack">
+            <h3 className="av-step-title">{t('clone.modal.audio.title')}</h3>
+
+            <div className="segmented segmented-sm" role="radiogroup" aria-label={t('clone.modal.audio.sourceLabel')}>
+              <button type="button" role="radio" aria-checked={audioSource === 'upload'} onClick={() => selectAudioSource('upload')}>
+                <UploadIcon size={14} />{t('clone.modal.audio.uploadTab')}
+              </button>
+              <button type="button" role="radio" aria-checked={audioSource === 'record'} onClick={() => selectAudioSource('record')}>
+                <MicIcon size={14} />{t('clone.modal.audio.recordTab')}
+              </button>
+            </div>
+
+            {audioSource === 'upload' && (
+              <Field label={t('clone.modal.audio.fileLabel')} hint={t('clone.modal.audio.uploadInstructions')}>
+                {(p) => (
+                  <input {...p} type="file" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/webm,audio/ogg"
+                    onChange={e => setFile(e.target.files?.[0] ?? null)} />
+                )}
+              </Field>
+            )}
+
+            {audioSource === 'record' && mediaRecorderSupported && (
+              <div className="vc-record">
+                <p className="muted text-sm">{t('clone.modal.audio.recordInstructions')}</p>
+                {micError && <p className="field-error" role="alert">{micError}</p>}
+                {!isRecording && !file && (
+                  <button type="button" className="btn btn-primary" onClick={startRecording}>
+                    <MicIcon size={14} />{t('clone.modal.audio.startRecording')}
+                  </button>
+                )}
+                {isRecording && (
+                  <div className="vc-recording" role="status" aria-live="polite">
+                    <span className="vc-rec-dot" aria-hidden="true" />
+                    <span className="sr-only">{t('clone.modal.audio.recording')}</span>
+                    <span className="mono num vc-clock">{recordingClock}</span>
+                    <button type="button" className="btn btn-sm" disabled={recordedSeconds < 1} onClick={stopRecording}>
+                      {t('clone.modal.audio.stopRecording')}
+                    </button>
+                  </div>
+                )}
+                {!isRecording && file && (
+                  <button type="button" className="btn btn-sm" onClick={() => { setFile(null); setRecordDurationWarning(null); }}>
+                    <RefreshIcon size={14} />{t('clone.modal.audio.reRecord')}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {audioSource === 'record' && !mediaRecorderSupported && (
+              <p className="muted text-sm">{t('clone.modal.audio.recordingNotSupported')}</p>
+            )}
+
+            {file && audioPreviewUrl && (
+              <audio src={audioPreviewUrl} controls className="vc-audio" aria-label={t('clone.modal.audio.previewLabel')} />
+            )}
+            {recordDurationWarning && <p className="av-warn text-xs" role="status">{recordDurationWarning}</p>}
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="stack">
+            <h3 className="av-step-title">{t('clone.modal.name.title')}</h3>
+            <Field label={t('clone.modal.name.label')}>
+              {(p) => (
+                <input {...p} className="input" placeholder={t('clone.modal.name.placeholder')} value={voiceName}
+                  onChange={e => setVoiceName(e.target.value)} maxLength={60} autoFocus />
+              )}
+            </Field>
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 }

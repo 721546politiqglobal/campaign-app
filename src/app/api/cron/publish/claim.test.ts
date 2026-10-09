@@ -10,7 +10,7 @@ const dueItem = { id: 'ci-1', campaign_id: 'c-1', body: 'b', media_url: null, pl
 // Due-items SELECT terminates at .limit(); the claiming UPDATE terminates at
 // .select() and returns `claimRows`; the final status UPDATE terminates at .eq().
 function makeAdminDb(claimRows: unknown[]) {
-  const selectDue: any = { eq: () => selectDue, not: () => selectDue, lte: () => selectDue, limit: () => Promise.resolve({ data: [dueItem], error: null }) };
+  const selectDue: any = { eq: () => selectDue, not: () => selectDue, lte: () => selectDue, order: () => selectDue, limit: () => Promise.resolve({ data: [dueItem], error: null }) };
   const claim: any = { eq: () => claim, select: () => Promise.resolve({ data: claimRows, error: null }) };
   const finalUpdate: any = { eq: () => Promise.resolve({ error: null }) };
   const staleRelease: any = { eq: () => ({ lt: () => Promise.resolve({ error: null }) }) };

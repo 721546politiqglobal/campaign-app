@@ -7,10 +7,10 @@ import { requireSession, signInAs, signOut } from '@/lib/session';
 import { adminDb, throwOnError } from '@/lib/supabase';
 import { uid, prefixedId } from '@/lib/store';
 import { getCampaign, getBillingPlan } from '@/lib/data';
-import { lifecycle, disclosureEngine, quotaGate, billingGate, contentGenerator, publisher, videoProvider, voiceProvider, photoAvatarProvider } from '@/lib/services';
+import { lifecycle, disclosureEngine, quotaGate, billingGate, contentGenerator, publisher, videoProvider, photoAvatarProvider } from '@/lib/services';
 import { HeyGenAccessDeniedError, HeyGenVoiceCloneLimitError } from '@/integrations';
 import { contentRepo, approvalRepo, disclosureRepo, auditRepo } from '@/lib/repos';
-import { ContentType, ContentStatus, ContentItem, Platform, VIDEO_CONTENT_TYPES, isContentType, platformsMissingRequiredMedia } from '@/domain/types';
+import { ContentType, ContentStatus, ContentItem, Platform, AvatarStatus, VIDEO_CONTENT_TYPES, isContentType, platformsMissingRequiredMedia } from '@/domain/types';
 import { GateError } from '@/domain/content-lifecycle';
 import { getCampaignSocialProfile } from '@/lib/channels';
 import { unconnectedPlatforms } from '@/domain/channels';
@@ -20,6 +20,7 @@ import { QuotaExceeded, contentPeriodStart, videoPeriodStart } from '@/domain/qu
 import { BillingBlocked } from '@/domain/billing';
 import { can } from '@/lib/permissions';
 import { getLocale, isSupportedLocale, DEFAULT_LOCALE, type Locale } from '@/lib/locale';
+import type { ActionFormState } from '@/lib/form-state';
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -91,16 +92,23 @@ function tenantId(s: { campaignId: string | null }): string | null {
 
 const DUMMY_HASH = '$2a$10$abcdefghijklmnopqrstuuabcdefghijklmnopqrstuuabcdefghijk';
 
-export async function loginAction(formData: FormData) {
+// Driven by `useFormState` on /login: validation / credential failures come
+// back as state (so the email survives and the message renders inline), a
+// successful sign-in redirects. The throttle, bcrypt timing guard and session
+// cookie behaviour are unchanged from the redirect-based version.
+export async function loginAction(_prev: ActionFormState, formData: FormData): Promise<ActionFormState> {
   const bcrypt = await import('bcryptjs');
   const { setSessionCookie } = await import('@/lib/session');
   const { headers } = await import('next/headers');
   const { isLockedOut, getAttempts, recordFailure, clearAttempts } = await import('@/lib/login-throttle');
+  const t = await getTranslations({ locale: getLocale(), namespace: 'login.errors' });
 
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
   const password = String(formData.get('password') ?? '');
+  // Never echo the password back.
+  const values = { email };
 
-  if (!email || !password) redirect('/login?error=1');
+  if (!email || !password) return { ok: false, error: t('incorrectCredentials'), values };
 
   const now = Date.now();
   const ip = (headers().get('x-forwarded-for') ?? '').split(',')[0].trim() || 'unknown';
@@ -110,7 +118,7 @@ export async function loginAction(formData: FormData) {
   // Fail closed on lockout before touching bcrypt (SEC-10).
   const [ipState, emailState] = await Promise.all([getAttempts(ipKey), getAttempts(emailKey)]);
   if (isLockedOut(ipState, now) || isLockedOut(emailState, now)) {
-    redirect('/login?error=locked');
+    return { ok: false, error: t('tooManyAttempts'), values };
   }
 
   const { data: user } = await adminDb
@@ -125,7 +133,7 @@ export async function loginAction(formData: FormData) {
 
   if (!valid || !user) {
     await Promise.all([recordFailure(ipKey, now), recordFailure(emailKey, now)]);
-    redirect('/login?error=1');
+    return { ok: false, error: t('incorrectCredentials'), values };
   }
 
   await Promise.all([clearAttempts(ipKey), clearAttempts(emailKey)]);
@@ -141,19 +149,34 @@ export async function loginAction(formData: FormData) {
   redirect(user.role === 'super_admin' ? '/admin' : '/dashboard');
 }
 
-export async function joinAction(formData: FormData) {
+// Driven by `useFormState` on /join: every validation failure returns state
+// with field-level messages and the typed values (never the password), so the
+// form is not wiped; success signs the joiner in and redirects.
+export async function joinAction(_prev: ActionFormState, formData: FormData): Promise<ActionFormState> {
   const bcrypt = await import('bcryptjs');
   const { setSessionCookie } = await import('@/lib/session');
+  // /join has a pre-auth language toggle and is fully translated, so honour the
+  // language the joiner actually picked instead of dropping everyone into
+  // English. getLocale() already falls back to the pre-auth `locale` cookie.
+  const locale = getLocale();
+  const t = await getTranslations({ locale, namespace: 'join.errors' });
 
   const code     = String(formData.get('code')     ?? '').trim();
   const name     = String(formData.get('name')     ?? '').trim();
   const email    = String(formData.get('email')    ?? '').trim().toLowerCase();
   const password = String(formData.get('password') ?? '');
+  const values = { code, name, email };
 
-  const base = `/join?code=${encodeURIComponent(code)}`;
-
-  if (!code || !name || !email || !password) redirect(`${base}&error=fields`);
-  if (password.length < 8)                   redirect(`${base}&error=password`);
+  const fieldErrors: Record<string, string> = {};
+  if (!code)  fieldErrors.code  = t('required');
+  if (!name)  fieldErrors.name  = t('required');
+  if (!email) fieldErrors.email = t('required');
+  if (!password) fieldErrors.password = t('required');
+  else if (password.length < 8) fieldErrors.password = t('passwordTooShort');
+  if (Object.keys(fieldErrors).length) {
+    const onlyPassword = Object.keys(fieldErrors).length === 1 && fieldErrors.password === t('passwordTooShort');
+    return { ok: false, error: onlyPassword ? t('passwordTooShort') : t('allFieldsRequired'), fieldErrors, values };
+  }
 
   const { data: invite } = await adminDb
     .from('invite_codes')
@@ -161,9 +184,9 @@ export async function joinAction(formData: FormData) {
     .eq('code', code)
     .single();
 
-  if (!invite)                                      redirect(`${base}&error=invalid`);
-  if (invite.used_at)                               redirect(`${base}&error=used`);
-  if (new Date(invite.expires_at) < new Date())     redirect(`${base}&error=expired`);
+  if (!invite)                                  return { ok: false, error: t('inviteInvalid'), fieldErrors: { code: t('inviteInvalid') }, values };
+  if (invite.used_at)                           return { ok: false, error: t('inviteUsed'),    fieldErrors: { code: t('inviteUsed') },    values };
+  if (new Date(invite.expires_at) < new Date()) return { ok: false, error: t('inviteExpired'), fieldErrors: { code: t('inviteExpired') }, values };
 
   // A user row may already exist here as a placeholder created by addUserAction
   // (name/email/role set, no password_hash yet). Only a row that already has a
@@ -173,14 +196,10 @@ export async function joinAction(formData: FormData) {
     .select('id, password_hash')
     .eq('email', email)
     .maybeSingle();
-  if (existing?.password_hash) redirect(`${base}&error=email`);
+  if (existing?.password_hash) return { ok: false, error: t('emailExists'), fieldErrors: { email: t('emailExists') }, values };
 
   const password_hash = await bcrypt.default.hash(password, 10);
   const userId = existing?.id ?? prefixedId('u-');
-  // /join has a pre-auth language toggle and is fully translated, so honour the
-  // language the joiner actually picked instead of dropping everyone into
-  // English. getLocale() already falls back to the pre-auth `locale` cookie.
-  const locale = getLocale();
 
   // Atomically claim the invite: only one concurrent redemption can flip
   // used_at from null. If no row comes back, someone else already claimed it
@@ -191,7 +210,7 @@ export async function joinAction(formData: FormData) {
     .is('used_at', null)
     .select()
     .maybeSingle();
-  if (!claimed) redirect(`${base}&error=used`);
+  if (!claimed) return { ok: false, error: t('inviteUsed'), fieldErrors: { code: t('inviteUsed') }, values };
 
   if (existing) {
     await throwOnError(
@@ -235,14 +254,24 @@ export async function logoutAction() {
   redirect('/login');
 }
 
-export async function createContentAction(formData: FormData) {
+// Shape returned to ContentEditor's useFormState: a failure keeps the form
+// (and what was typed in it) on screen with a translated message; success
+// redirects to the new item and never returns.
+export type CreateContentState = { ok: true } | { ok: false; error: string };
+
+export async function createContentAction(_prev: CreateContentState | undefined, formData: FormData): Promise<CreateContentState> {
   const s = await requireSession();
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  const tc = await getTranslations({ locale: s.locale, namespace: 'content' });
   const { getCandidateProfile } = await import('@/lib/candidate');
   const [campaign, profile] = await Promise.all([
     getCampaign(s.campaignId),
     getCandidateProfile(s.campaignId),
   ]);
-  if (!campaign) throw new Error('Campaign not found');
+  if (!campaign) return { ok: false, error: t('campaignNotFound') };
+  const title = String(formData.get('title') ?? '').trim();
+  const body = String(formData.get('body') ?? '').trim();
+  if (!body) return { ok: false, error: t('contentBodyRequired') };
   const rawType = String(formData.get('type') ?? '');
   const type: ContentType = isContentType(rawType) ? rawType : 'reel';
   const rawLocale = String(formData.get('locale') ?? '');
@@ -252,25 +281,31 @@ export async function createContentAction(formData: FormData) {
       ? profile!.contentLocale
       : DEFAULT_LOCALE;
   const id = uid();
-  await throwOnError(
-    adminDb.from('content_items').insert({
-      id,
-      campaign_id: s.campaignId,
-      type,
-      title: String(formData.get('title') || 'Untitled'),
-      body: String(formData.get('body') || ''),
-      status: 'draft',
+  try {
+    await throwOnError(
+      adminDb.from('content_items').insert({
+        id,
+        campaign_id: s.campaignId,
+        type,
+        title: title || tc('untitled'),
+        body,
+        status: 'draft',
       // Reels always go through avatar-video generation, so the published
       // artifact is AI-generated regardless of who wrote the script — the
       // "Write it myself" toggle only covers script authorship and must not
       // suppress the disclosure gate for video content types.
-      is_ai_generated: VIDEO_CONTENT_TYPES.includes(type) || formData.get('isAiGenerated') === 'on',
-      target_jurisdictions: campaign.jurisdictions,
-      created_by: s.userId,
-      locale,
-    }),
-    'content_items.create',
-  );
+        is_ai_generated: VIDEO_CONTENT_TYPES.includes(type) || formData.get('isAiGenerated') === 'on',
+        target_jurisdictions: campaign.jurisdictions,
+        created_by: s.userId,
+        locale,
+      }),
+      'content_items.create',
+    );
+  } catch (e) {
+    console.error('[createContentAction] insert failed', e);
+    return { ok: false, error: t('saveFailed') };
+  }
+  revalidatePath('/content'); revalidatePath('/dashboard');
   redirect(`/content/${id}`);
 }
 
@@ -278,13 +313,14 @@ export type DraftResult = { ok: true; title: string; text: string; locale: Local
 
 export async function generateDraftAction(instruction: string, type: string, locale?: string): Promise<DraftResult> {
   const s = await requireSession();
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
   const { getCandidateProfile } = await import('@/lib/candidate');
 
   const [campaign, profile] = await Promise.all([
     getCampaign(s.campaignId),
     getCandidateProfile(s.campaignId),
   ]);
-  if (!campaign) throw new Error('Campaign not found');
+  if (!campaign) return { ok: false, error: t('campaignNotFound') };
 
   // The caller (ContentEditor) always passes its selected language, but a
   // missing/corrupted/unsupported value falls back to the campaign's own
@@ -318,31 +354,50 @@ export async function submitAction(id: string): Promise<Result> {
   const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
   if (!(await requireOwnedItem(id, s.campaignId))) return { ok: false as const, error: t('contentNotFound') };
   const r = await guard(() => lifecycle.submitForReview(id, s.userId));
-  revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
+  revalidateContent(id);
   return r;
 }
 
+// Approve / reject from the review step. Both are approver-only decisions.
+// The wizard shows a draft and an in_review item on the same step, so a
+// rejection of a draft passes through in_review first (as approveTextAction
+// does) — the FSM only allows in_review → rejected, and the audit trail
+// stays complete.
 export async function decideAction(id: string, decision: 'approve' | 'reject', note: string): Promise<Result> {
   const s = await requireSession();
   const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
-  if (decision === 'approve' && !can(s.role, 'approve')) return { ok: false, error: t('permissionDenied') };
-  if (!(await requireOwnedItem(id, s.campaignId))) return { ok: false as const, error: t('contentNotFound') };
+  if (!can(s.role, 'approve')) return { ok: false, error: t('permissionDenied') };
+  const item = await requireOwnedItem(id, s.campaignId);
+  if (!item) return { ok: false as const, error: t('contentNotFound') };
+  const trimmedNote = note.trim() || undefined;
+  if (decision === 'reject' && item.status === 'draft') {
+    const submitResult = await guard(() => lifecycle.submitForReview(id, s.userId));
+    if (!submitResult.ok) return submitResult;
+  }
   const r = await guard(() =>
     decision === 'approve'
-      ? lifecycle.approve(id, s.userId, note)
-      : lifecycle.reject(id, s.userId, note));
-  revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
+      ? lifecycle.approve(id, s.userId, trimmedNote)
+      : lifecycle.reject(id, s.userId, trimmedNote));
+  revalidateContent(id);
   return r;
 }
 
-export async function scheduleAction(id: string): Promise<Result> {
+// Rejected → draft so the author can fix it and send it back for review.
+export async function reviseAction(id: string): Promise<Result> {
   const s = await requireSession();
   const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
-  if (!can(s.role, 'schedule')) return { ok: false, error: t('permissionDenied') };
   if (!(await requireOwnedItem(id, s.campaignId))) return { ok: false as const, error: t('contentNotFound') };
-  const r = await guard(() => lifecycle.schedule(id, s.userId));
-  revalidatePath(`/content/${id}`); revalidatePath('/');
+  const r = await guard(() => lifecycle.revise(id, s.userId));
+  revalidateContent(id);
   return r;
+}
+
+// Every content status change shows up on the list and the dashboard tiles
+// too, so revalidate all three together.
+function revalidateContent(id: string): void {
+  revalidatePath(`/content/${id}`);
+  revalidatePath('/content');
+  revalidatePath('/dashboard');
 }
 
 export async function publishAction(id: string, platforms: Platform[]): Promise<Result> {
@@ -356,8 +411,9 @@ export async function publishAction(id: string, platforms: Platform[]): Promise<
   // why (Ayrshare's own HTTP 400 for this gives no usable message).
   const blocked = platformsMissingRequiredMedia(platforms, !!item.mediaUrl);
   if (blocked.length > 0) {
-    return { ok: false, error: t('mediaRequiredForPlatforms', { platforms: blocked.join(', ') }) };
+    return { ok: false, error: t('mediaRequiredForPlatforms', { platforms: await networkNames(s.locale, blocked) }) };
   }
+  if (platforms.length === 0) return { ok: false, error: t('noPlatformsSelected') };
   const channels = await requireConnectedChannels(s.campaignId, platforms);
   if ('missing' in channels) {
     return { ok: false, error: t('channelsNotConnected', { platforms: await networkNames(s.locale, channels.missing) }) };
@@ -377,8 +433,9 @@ export async function publishAction(id: string, platforms: Platform[]): Promise<
   });
   const failed = results.filter(r => r.status === 'failed');
   if (failed.length === results.length) {
-    const details = failed.map(f => `${f.platform} (${f.error ?? t('unknownReason')})`).join(', ');
-    return { ok: false, error: t('publishingFailed', { details }) };
+    // Provider error text is logged, not shown: it's Ayrshare's wording, not ours.
+    console.error('[publishAction] all platforms failed', { id, failed });
+    return { ok: false, error: t('publishingFailed', { details: await networkNames(s.locale, failed.map(f => f.platform)) }) };
   }
   const r = await guard(() => lifecycle.markPublished(id, s.userId));
   // Capture per-platform post ids the same way the cron publish path does —
@@ -392,23 +449,37 @@ export async function publishAction(id: string, platforms: Platform[]): Promise<
   if (r.ok && Object.keys(postIds).length > 0) {
     await adminDb.from('content_items').update({ ayrshare_post_ids: postIds }).eq('id', id);
   }
-  revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
-  if (r.ok && failed.length) return { ok: false, error: t('publishedButFailedOn', { platforms: failed.map(f => f.platform).join(', ') }) };
+  revalidateContent(id);
+  if (r.ok && failed.length) {
+    console.error('[publishAction] some platforms failed', { id, failed });
+    return { ok: false, error: t('publishedButFailedOn', { platforms: await networkNames(s.locale, failed.map(f => f.platform)) }) };
+  }
   return r;
 }
 
-export async function openMyBillingPortalAction(): Promise<void> {
+// Used with `useFormState` on /billing, so it takes (prevState, formData) and
+// returns a Result the form can show; on success it redirects to the Stripe
+// portal (redirect() throws, so nothing is returned on that path).
+export async function openMyBillingPortalAction(_prev?: Result | null, _formData?: FormData): Promise<Result> {
   const s = await requireSession();
-  if (!can(s.role, 'edit_settings')) return;
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.billing' });
+  if (!can(s.role, 'edit_settings')) return { ok: false, error: t('permissionDenied') };
   const { stripe } = await import('@/lib/stripe');
-  if (!stripe) return;
+  if (!stripe) return { ok: false, error: t('billingNotConfigured') };
   const campaign = await getCampaign(s.campaignId);
-  if (!campaign?.stripeCustomerId) return;
-  const session = await stripe.billingPortal.sessions.create({
-    customer: campaign.stripeCustomerId,
-    return_url: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/settings`,
-  });
-  redirect(session.url);
+  if (!campaign?.stripeCustomerId) return { ok: false, error: t('noBillingAccount') };
+  let url: string;
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: campaign.stripeCustomerId,
+      return_url: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/billing`,
+    });
+    url = session.url;
+  } catch (e) {
+    console.error('[billing] openMyBillingPortalAction failed', e);
+    return { ok: false, error: t('portalFailed') };
+  }
+  redirect(url);
 }
 
 // ── Video generation ──────────────────────────────────────────────────────────
@@ -508,40 +579,6 @@ export async function getVideoStatusAction(videoId: string): Promise<{ status: s
   return result;
 }
 
-// ── Voice synthesis ───────────────────────────────────────────────────────────
-
-export async function synthesizeVoiceAction(text: string): Promise<Result & { audioUrl?: string }> {
-  const s = await requireSession();
-  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
-  const { getCandidateProfile } = await import('@/lib/candidate');
-  const [campaign, profile] = await Promise.all([
-    getCampaign(s.campaignId),
-    getCandidateProfile(s.campaignId),
-  ]);
-  if (!campaign) return { ok: false, error: t('campaignNotFound') };
-  // Use the campaign's configured voice; never fall back to a global/stock
-  // voice that could be another tenant's cloned voice (INT-6). Refuse (and
-  // don't bill) when none is set.
-  const voiceId = profile?.elevenLabsVoiceId ?? undefined;
-  if (!voiceId) {
-    return { ok: false, error: t('noVoiceConfigured') };
-  }
-  try {
-    await billingGate.check(s.campaignId);
-    const plan = campaign.planId ? await getBillingPlan(campaign.planId) : null;
-    const periodStart = videoPeriodStart();
-    await quotaGate.checkAndIncrement(s.campaignId, 'video', periodStart, plan?.videoLimitDaily ?? null);
-    // As in generateVideoAction: a failed ElevenLabs call must not cost the
-    // caller the quota slot it consumed.
-    const { audioUrl } = await withQuotaRelease(s.campaignId, 'video', periodStart, () =>
-      voiceProvider.synthesize({ text, voiceId }));
-    return { ok: true, audioUrl };
-  } catch (e) {
-    if (e instanceof QuotaExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
-    throw e;
-  }
-}
-
 // ── Wizard actions ────────────────────────────────────────────────────────────
 
 export async function saveBodyAction(id: string, body: string): Promise<Result> {
@@ -556,8 +593,11 @@ export async function saveBodyAction(id: string, body: string): Promise<Result> 
   const { error } = await adminDb.from('content_items')
     .update({ body, updated_at: new Date().toISOString() })
     .eq('id', id);
-  if (error) return { ok: false, error: t('saveFailed') };
-  revalidatePath(`/content/${id}`);
+  if (error) {
+    console.error('[saveBodyAction] update failed', error);
+    return { ok: false, error: t('saveFailed') };
+  }
+  revalidateContent(id);
   return { ok: true };
 }
 
@@ -578,7 +618,7 @@ export async function approveTextAction(id: string): Promise<Result> {
 
   // Approve via the lifecycle so a valid transition is enforced and an approval
   // record is written. Scheduling never happens here — it goes through the
-  // gated confirmDisclosureAction/scheduleAction so the hard gate always runs.
+  // gated scheduleWithTimeAction so the hard gate always runs.
   const r = await guard(() => lifecycle.approve(id, s.userId));
   if (!r.ok) return r;
   // Video types still need the video-generation step, so send them back to
@@ -587,9 +627,12 @@ export async function approveTextAction(id: string): Promise<Result> {
     const { error } = await adminDb.from('content_items')
       .update({ status: 'in_review', updated_at: new Date().toISOString() })
       .eq('id', id);
-    if (error) return { ok: false, error: t('updateFailed') };
+    if (error) {
+      console.error('[approveTextAction] update failed', error);
+      return { ok: false, error: t('updateFailed') };
+    }
   }
-  revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
+  revalidateContent(id);
   return { ok: true };
 }
 
@@ -604,105 +647,18 @@ export async function confirmVideoAction(id: string, videoUrl: string): Promise<
   const { error } = await adminDb.from('content_items')
     .update({ media_url: videoUrl, updated_at: new Date().toISOString() })
     .eq('id', id);
-  if (error) return { ok: false, error: t('updateFailed') };
+  if (error) {
+    console.error('[confirmVideoAction] update failed', error);
+    return { ok: false, error: t('updateFailed') };
+  }
   await auditRepo.append({
     campaignId: item.campaignId, actorUserId: s.userId,
     action: 'confirm_video', entityType: 'content_item', entityId: id,
     details: { videoUrl },
   });
   const r = await guard(() => lifecycle.approve(id, s.userId));
-  revalidatePath(`/content/${id}`);
+  revalidateContent(id);
   return r;
-}
-
-export async function generateFromMonitoringAction(
-  monitoringResultId: string,
-  contentType: string,
-): Promise<Result & { contentId?: string }> {
-  const s = await requireSession();
-  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
-  if (!isContentType(contentType)) return { ok: false, error: t('unknownContentType') };
-  const { getCandidateProfile } = await import('@/lib/candidate');
-
-  const [campaign, profile] = await Promise.all([
-    getCampaign(s.campaignId),
-    getCandidateProfile(s.campaignId),
-  ]);
-  if (!campaign) return { ok: false, error: t('campaignNotFound') };
-
-  const { data: result } = await adminDb
-    .from('monitoring_results')
-    .select('*')
-    .eq('id', monitoringResultId)
-    .eq('campaign_id', s.campaignId)
-    .single();
-  if (!result) return { ok: false, error: t('monitoringResultNotFound') };
-
-  try {
-    await billingGate.check(s.campaignId);
-    const plan = campaign.planId ? await getBillingPlan(campaign.planId) : null;
-    const periodStart = contentPeriodStart(campaign.currentPeriodEnd);
-    await quotaGate.checkAndIncrement(s.campaignId, 'content', periodStart, plan?.contentLimitMonthly ?? null);
-
-    const instruction =
-      `Respond to this ${result.source} post${result.opponent ? ` from ${result.opponent}` : ''} on behalf of a political campaign.\n\n` +
-      `Source: ${result.source}\n` +
-      `Excerpt: "${result.excerpt}"\n` +
-      (result.url ? `Original post/article: ${result.url}\n` : '') +
-      `\nWrite a ${contentType.replace('_', ' ')} that responds specifically to the excerpt above — reference its actual claims or content rather than writing something generic. ` +
-      `If the excerpt is too thin to respond to specifically (e.g. it's only engagement stats with no real quoted text or caption), say so plainly instead of inventing details that aren't there. ` +
-      `Be factual, on-message, and persuasive.`;
-
-    // A rebuttal should speak the same language the opponent's post did —
-    // it's addressed to the same audience the opponent just spoke to — not
-    // whatever the campaign's content default happens to be. But that only
-    // makes sense when there's real excerpt text to detect a language
-    // from; a thin result (engagement stats only, no real text) falls back
-    // to the campaign's own default instead of asking the model to guess.
-    const excerptText = String(result.excerpt ?? '').trim();
-    const out = await withQuotaRelease(s.campaignId, 'content', periodStart, () =>
-      contentGenerator.draft(
-        excerptText
-          ? { instruction, type: contentType, candidateProfile: profile ?? undefined, matchLanguageOf: excerptText }
-          : {
-              instruction,
-              type: contentType,
-              candidateProfile: profile ?? undefined,
-              locale: isSupportedLocale(profile?.contentLocale) ? profile!.contentLocale : DEFAULT_LOCALE,
-            },
-      ));
-
-    const id = uid();
-    await throwOnError(
-      adminDb.from('content_items').insert({
-        id,
-        campaign_id: s.campaignId,
-        type: contentType,
-        title: out.title,
-        body: out.text,
-        status: 'draft',
-        is_ai_generated: true,
-        target_jurisdictions: campaign.jurisdictions,
-        created_by: s.userId,
-        locale: out.locale,
-      }),
-      'content_items.from_monitoring',
-    );
-
-    await auditRepo.append({
-      campaignId: s.campaignId,
-      actorUserId: s.userId,
-      action: 'generate_from_monitoring',
-      entityType: 'content_item',
-      entityId: id,
-      details: { monitoringResultId, contentType },
-    });
-
-    return { ok: true, contentId: id };
-  } catch (e) {
-    if (e instanceof QuotaExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };
-    throw e;
-  }
 }
 
 export async function confirmDisclosureAction(id: string, disclosureText?: string): Promise<Result> {
@@ -711,6 +667,9 @@ export async function confirmDisclosureAction(id: string, disclosureText?: strin
   if (!can(s.role, 'schedule')) return { ok: false, error: t('permissionDenied') };
   const item = await requireOwnedItem(id, s.campaignId);
   if (!item) return { ok: false as const, error: t('contentNotFound') };
+  // The disclosure step only exists for an approved item; attaching a
+  // disclosure to anything else would let it skip the review.
+  if (item.status !== 'approved') return { ok: false, error: t('disclosureRequiresApproval') };
   const campaign = await getCampaign(s.campaignId);
   const required = disclosureEngine.requiredFor(item.isAiGenerated, campaign?.defaultDisclosureText ?? null);
   if (required) {
@@ -718,31 +677,56 @@ export async function confirmDisclosureAction(id: string, disclosureText?: strin
     // text (not the campaign default) is what actually gets attached.
     const text = (disclosureText ?? required.disclosureText).trim();
     if (!text) return { ok: false, error: t('disclosureTextEmpty') };
+    // A double submit must not attach the disclosure twice.
+    const existing = await disclosureRepo.listFor(id);
+    if (existing.length > 0) { revalidateContent(id); return { ok: true }; }
     await disclosureRepo.add({
       contentItemId: id,
       campaignId: s.campaignId,
       disclosureText: text,
       placement: required.placement,
     });
+    await auditRepo.append({
+      campaignId: item.campaignId, actorUserId: s.userId,
+      action: 'confirm_disclosure', entityType: 'content_item', entityId: id,
+      details: { placement: required.placement },
+    });
   }
-  // Route through the hard gate — enforces approval-on-record + disclosure-for-AI + valid transition.
-  const r = await guard(() => lifecycle.schedule(id, s.userId));
-  revalidatePath(`/content/${id}`); revalidatePath('/dashboard');
-  return r;
+  // The item stays `approved`: it only becomes `scheduled` once a real time
+  // and platforms are picked (scheduleWithTimeAction), so a scheduled item
+  // always has a scheduled_at for the publish cron to act on.
+  revalidateContent(id);
+  return { ok: true };
 }
 
 export async function dismissMonitoringAction(id: string): Promise<Result> {
+  return setMonitoringDismissed(id, new Date().toISOString());
+}
+
+// Undo for a dismissal (the toast's "Undo" button) — brings the item back.
+export async function restoreMonitoringAction(id: string): Promise<Result> {
+  return setMonitoringDismissed(id, null);
+}
+
+async function setMonitoringDismissed(id: string, dismissedAt: string | null): Promise<Result> {
   const s = await requireSession();
   const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
   const campaignId = tenantId(s);
   if (!campaignId) return { ok: false, error: t('noCampaignInSession') };
-  return guard(async () => {
-    await adminDb.from('monitoring_results')
-      .update({ dismissed_at: new Date().toISOString() })
-      .eq('id', id)
-      .eq('campaign_id', campaignId);
-    revalidatePath('/monitoring');
-  });
+  try {
+    await throwOnError(
+      adminDb.from('monitoring_results')
+        .update({ dismissed_at: dismissedAt })
+        .eq('id', id)
+        .eq('campaign_id', campaignId),
+      'monitoring_results.dismiss',
+    );
+  } catch (e) {
+    console.error('[monitoring] dismiss/restore failed', e);
+    return { ok: false, error: t('monitoringUpdateFailed') };
+  }
+  revalidatePath('/monitoring');
+  return { ok: true };
 }
 
 export async function saveVideoSettingsAction(data: {
@@ -760,32 +744,8 @@ export async function saveVideoSettingsAction(data: {
     const { upsertCandidateProfile } = await import('@/lib/candidate');
     await upsertCandidateProfile(s.campaignId, data);
     revalidatePath('/settings');
+    revalidatePath('/avatars');
   });
-}
-
-export async function uploadBackgroundAction(formData: FormData): Promise<Result & { url?: string }> {
-  return guard(async () => {
-    const s = await requireSession();
-    const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
-    if (!can(s.role, 'edit_settings')) throw new GateError(t('permissionDenied'));
-    const file = formData.get('file') as File | null;
-    if (!file || !file.size) throw new GateError(t('noFileProvided'));
-    if (file.size > 10 * 1024 * 1024) throw new GateError(t('backgroundFileTooLarge'));
-    if (!file.type.startsWith('image/')) throw new GateError(t('backgroundOnlyImageFiles'));
-
-    const bytes = await file.arrayBuffer();
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
-    const filename = `backgrounds/${s.campaignId}/${Date.now()}.${ext}`;
-
-    const { error } = await adminDb.storage.from('media').upload(filename, Buffer.from(bytes), {
-      contentType: file.type,
-      upsert: false,
-    });
-    if (error) throw new GateError(error.message);
-
-    const { data } = adminDb.storage.from('media').getPublicUrl(filename);
-    return { url: data.publicUrl };
-  }) as Promise<Result & { url?: string }>;
 }
 
 export async function scheduleWithTimeAction(
@@ -812,8 +772,9 @@ export async function scheduleWithTimeAction(
     // this before the schedule gate, with an error that explains why.
     const blocked = platformsMissingRequiredMedia(platforms, !!item.mediaUrl);
     if (blocked.length > 0) {
-      throw new GateError(t('mediaRequiredForPlatforms', { platforms: blocked.join(', ') }));
+      throw new GateError(t('mediaRequiredForPlatforms', { platforms: await networkNames(s.locale, blocked) }));
     }
+    if (platforms.length === 0) throw new GateError(t('noPlatformsSelected'));
 
     const channels = await requireConnectedChannels(s.campaignId, platforms);
     if ('missing' in channels) {
@@ -821,7 +782,8 @@ export async function scheduleWithTimeAction(
     }
 
     // Hard gate: enforces human approval, and disclosure-on-file for AI content,
-    // before status can move to 'scheduled' — same check scheduleAction uses.
+    // before status can move to 'scheduled'. Also the reschedule path
+    // (scheduled → scheduled), which re-runs the same gate.
     await lifecycle.schedule(id, s.userId);
 
     await throwOnError(
@@ -839,14 +801,39 @@ export async function scheduleWithTimeAction(
     await auditRepo.append({
       campaignId: s.campaignId,
       actorUserId: s.userId,
-      action: 'schedule_with_time',
+      action: item.status === 'scheduled' ? 'reschedule' : 'schedule_with_time',
       entityType: 'content_item',
       entityId: id,
-      details: { scheduledAt, timezone, platforms },
+      details: { scheduledAt: scheduledUtc.toISOString(), timezone, platforms },
     });
 
-    revalidatePath(`/content/${id}`);
+    revalidateContent(id);
   });
+}
+
+// Takes a scheduled item off the calendar: back to `approved`, scheduled_at
+// cleared. The approval and disclosure stay on record, so it can be
+// rescheduled or published right away.
+export async function unscheduleAction(id: string): Promise<Result> {
+  const s = await requireSession();
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
+  if (!can(s.role, 'schedule')) return { ok: false, error: t('permissionDenied') };
+  const item = await requireOwnedItem(id, s.campaignId);
+  if (!item) return { ok: false as const, error: t('contentNotFound') };
+  if (item.status !== 'scheduled') return { ok: false, error: t('notScheduled') };
+  // Lifecycle first (valid transition + audit entry), then clear the time so
+  // the publish cron can never pick up an unscheduled row.
+  const r = await guard(() => lifecycle.unschedule(id, s.userId));
+  if (!r.ok) return r;
+  const { error } = await adminDb.from('content_items')
+    .update({ scheduled_at: null, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) {
+    console.error('[unscheduleAction] clearing scheduled_at failed', error);
+    return { ok: false, error: t('updateFailed') };
+  }
+  revalidateContent(id);
+  return { ok: true };
 }
 
 // ── Avatar creation ───────────────────────────────────────────────────────────
@@ -896,7 +883,10 @@ export async function beginAvatarUploadAction(
     const ext = files[i].name.split('.').pop()?.toLowerCase() ?? 'jpg';
     const path = `avatars/${s.campaignId}/${avatarId}/${i}.${ext}`;
     const { data, error } = await adminDb.storage.from('media').createSignedUploadUrl(path);
-    if (error) return { ok: false, error: error.message };
+    if (error) {
+      console.error('[avatars] createSignedUploadUrl failed', error);
+      return { ok: false, error: t('storageError') };
+    }
     uploads.push({ path, token: data.token });
   }
 
@@ -925,7 +915,10 @@ export async function finalizeAvatarAction(
   const sourcePhotoUrls: string[] = [];
   for (const path of paths) {
     const { data, error } = await adminDb.storage.from('media').download(path);
-    if (error || !data) return { ok: false, error: error?.message ?? t('uploadedPhotoNotFound') };
+    if (error || !data) {
+      if (error) console.error('[avatars] photo download failed', error);
+      return { ok: false, error: t('uploadedPhotoNotFound') };
+    }
     buffers.push(Buffer.from(await data.arrayBuffer()));
     contentTypes.push(data.type);
     sourcePhotoUrls.push(adminDb.storage.from('media').getPublicUrl(path).data.publicUrl);
@@ -957,28 +950,45 @@ export async function finalizeAvatarAction(
     }
     await updateAvatarStatus(avatarId, 'training', { heygenGroupId: groupId, heygenLookId: baseLookId });
   } catch (e) {
-    createError = e instanceof Error ? e.message : String(e);
+    // Raw provider text stays in the logs; the user (and the stored status
+    // line) get a translated, actionable message.
+    console.error(`[avatars] photo avatar creation failed for ${avatarId}`, e);
+    createError = t('avatarCreationFailed');
     await updateAvatarStatus(avatarId, 'failed', { errorMessage: createError });
   }
 
   revalidatePath('/avatars');
   // Report the failure instead of returning ok:true for a failed creation (INT-14).
-  if (createError) return { ok: false, error: t('avatarCreationFailed', { details: createError }) };
+  if (createError) return { ok: false, error: createError };
   return { ok: true, avatarId };
 }
 
-export async function checkAvatarStatusAction(avatarId: string): Promise<Result> {
+// Returns the avatar's (possibly updated) status so the client can poll this
+// without re-rendering the whole page on every tick — it only refreshes the
+// route once the status actually changes.
+export type AvatarStatusResult = Result & { status?: AvatarStatus; errorMessage?: string | null };
+
+export async function checkAvatarStatusAction(avatarId: string): Promise<AvatarStatusResult> {
   const s = await requireSession();
   const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
   const { getAvatar, updateAvatarStatus } = await import('@/lib/avatars');
   const avatar = await getAvatar(avatarId);
   if (!avatar || avatar.campaignId !== s.campaignId) return { ok: false, error: t('avatarNotFound') };
-  if ((avatar.status !== 'training' && avatar.status !== 'pending_consent') || !avatar.heygenGroupId) return { ok: true };
+  if ((avatar.status !== 'training' && avatar.status !== 'pending_consent') || !avatar.heygenGroupId) {
+    return { ok: true, status: avatar.status, errorMessage: avatar.errorMessage };
+  }
 
+  let next: AvatarStatus = avatar.status;
+  let errorMessage: string | null = avatar.errorMessage ?? null;
   const { status, error, consentStatus } = await photoAvatarProvider.getAvatarGroupStatus(avatar.heygenGroupId);
   if (status === 'failed') {
-    await updateAvatarStatus(avatarId, 'failed', { errorMessage: error?.message ?? 'Avatar training failed.' });
+    // Log HeyGen's wording for diagnosis; show the user a translated message.
+    console.error(`[avatars] training failed for ${avatarId}`, error);
+    next = 'failed';
+    errorMessage = t('avatarTrainingFailed');
+    await updateAvatarStatus(avatarId, 'failed', { errorMessage });
   } else if (status === 'completed') {
+    next = 'ready';
     await updateAvatarStatus(avatarId, 'ready');
   } else if (status === 'pending_consent') {
     // Still waiting on the candidate to complete HeyGen's hosted consent
@@ -986,10 +996,11 @@ export async function checkAvatarStatusAction(avatarId: string): Promise<Result>
     await updateAvatarStatus(avatarId, 'pending_consent', { consentStatus });
   } else if (avatar.status === 'pending_consent' && status === 'processing') {
     // Consent was approved since the last poll — HeyGen has started training.
+    next = 'training';
     await updateAvatarStatus(avatarId, 'training', { consentStatus });
   }
-  revalidatePath('/avatars');
-  return { ok: true };
+  if (next !== avatar.status) revalidatePath('/avatars');
+  return { ok: true, status: next, errorMessage };
 }
 
 const MAX_TRAINING_VIDEO_BYTES = 500 * 1024 * 1024;
@@ -1023,7 +1034,10 @@ export async function beginVideoAvatarUploadAction(
   const ext = file.name.split('.').pop()?.toLowerCase() ?? 'mp4';
   const path = `avatars/${s.campaignId}/${avatarId}/training.${ext}`;
   const { data, error } = await adminDb.storage.from('media').createSignedUploadUrl(path);
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    console.error('[avatars] createSignedUploadUrl failed', error);
+    return { ok: false, error: t('storageError') };
+  }
 
   return { ok: true, avatarId, path, token: data.token };
 }
@@ -1044,7 +1058,10 @@ export async function finalizeVideoAvatarAction(
   const trimmedName = name.trim() || 'Avatar';
 
   const { data, error: downloadError } = await adminDb.storage.from('media').download(path);
-  if (downloadError || !data) return { ok: false, error: downloadError?.message ?? t('uploadedVideoNotFound') };
+  if (downloadError || !data) {
+    if (downloadError) console.error('[avatars] training video download failed', downloadError);
+    return { ok: false, error: t('uploadedVideoNotFound') };
+  }
   const buffer = Buffer.from(await data.arrayBuffer());
   const contentType = data.type;
 
@@ -1070,18 +1087,17 @@ export async function finalizeVideoAvatarAction(
     const { consentUrl, consentStatus } = await photoAvatarProvider.requestConsent({ groupId, rerouteUrl });
     await updateAvatarStatus(avatarId, 'pending_consent', { heygenGroupId: groupId, heygenLookId: lookId, consentUrl, consentStatus });
   } catch (e) {
-    const accessDenied = e instanceof HeyGenAccessDeniedError;
-    createError = accessDenied
+    // Access-denied gets its own specific message; everything else is logged
+    // raw and reported with a translated, actionable message.
+    console.error(`[avatars] video avatar creation failed for ${avatarId}`, e);
+    createError = e instanceof HeyGenAccessDeniedError
       ? t('digitalTwinNotEnabled')
-      : e instanceof Error ? e.message : String(e);
+      : t('videoAvatarCreationFailed');
     await updateAvatarStatus(avatarId, 'failed', { errorMessage: createError });
-    // The access-denied message is already complete and user-facing — don't
-    // wrap it with the generic "creation failed" prefix below.
-    if (accessDenied) { revalidatePath('/avatars'); return { ok: false, error: createError }; }
   }
 
   revalidatePath('/avatars');
-  if (createError) return { ok: false, error: t('videoAvatarCreationFailed', { details: createError }) };
+  if (createError) return { ok: false, error: createError };
   return { ok: true, avatarId };
 }
 
@@ -1173,7 +1189,10 @@ export async function beginVoiceCloneUploadAction(
   const ext = file.name.split('.').pop()?.toLowerCase() ?? 'mp3';
   const path = `voices/${s.campaignId}/${attemptId}/sample.${ext}`;
   const { data, error } = await adminDb.storage.from('media').createSignedUploadUrl(path);
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    console.error('[voice] createSignedUploadUrl failed', error);
+    return { ok: false, error: t('storageError') };
+  }
 
   return { ok: true, path, token: data.token };
 }
@@ -1190,7 +1209,10 @@ export async function finalizeVoiceCloneAction(name: string, path: string): Prom
   const trimmedName = name.trim() || 'My voice';
 
   const { data, error: downloadError } = await adminDb.storage.from('media').download(path);
-  if (downloadError || !data) return { ok: false, error: downloadError?.message ?? t('uploadedAudioNotFound') };
+  if (downloadError || !data) {
+    if (downloadError) console.error('[voice] sample download failed', downloadError);
+    return { ok: false, error: t('uploadedAudioNotFound') };
+  }
   const buffer = Buffer.from(await data.arrayBuffer());
   // Strip any codec parameter (e.g. a browser-recorded file's
   // "audio/webm;codecs=opus") before handing it to HeyGen's asset-upload
@@ -1218,10 +1240,11 @@ export async function finalizeVoiceCloneAction(name: string, path: string): Prom
     const result = await photoAvatarProvider.cloneVoice({ name: trimmedName, assetId });
     voiceCloneId = result.voiceCloneId;
   } catch (e) {
+    // Raw provider text stays in the logs; the stored status line and the
+    // returned error are translated.
+    console.error(`[voice] clone failed for campaign ${s.campaignId}`, e);
     cloneLimitHit = e instanceof HeyGenVoiceCloneLimitError;
-    cloneError = cloneLimitHit
-      ? t('voiceCloneCapacity')
-      : e instanceof Error ? e.message : String(e);
+    cloneError = cloneLimitHit ? t('voiceCloneCapacity') : t('voiceCloningFailed');
   }
 
   // Best-effort cleanup of the raw uploaded sample regardless of outcome —
@@ -1249,11 +1272,7 @@ export async function finalizeVoiceCloneAction(name: string, path: string): Prom
       });
 
   revalidatePath('/avatars');
-  // The clone-limit message is already complete and user-facing — don't wrap
-  // it with the generic "Voice cloning failed:" prefix below (mirrors the
-  // accessDenied handling in finalizeVideoAvatarAction).
-  if (cloneLimitHit) return { ok: false, error: cloneError as string };
-  if (cloneError) return { ok: false, error: t('voiceCloningFailed', { details: cloneError }) };
+  if (cloneError) return { ok: false, error: cloneError };
 
   // upsertCandidateProfile silently swallows Supabase write errors platform-wide
   // (shared helper used by many unrelated flows — out of scope to change here).
@@ -1267,23 +1286,33 @@ export async function finalizeVoiceCloneAction(name: string, path: string): Prom
   return { ok: true };
 }
 
-export async function checkVoiceCloneStatusAction(): Promise<Result> {
+// Returns the clone's (possibly updated) status so the client only refreshes
+// the route when it actually changes, instead of on every poll tick.
+export type VoiceCloneStatusResult = Result & { status?: 'training' | 'ready' | 'failed' | null; errorMessage?: string | null };
+
+export async function checkVoiceCloneStatusAction(): Promise<VoiceCloneStatusResult> {
   const s = await requireSession();
+  const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
   const { getCandidateProfile, upsertCandidateProfile } = await import('@/lib/candidate');
   const profile = await getCandidateProfile(s.campaignId);
-  if (profile?.selfVoiceCloneStatus !== 'training' || !profile.selfVoiceCloneId) return { ok: true };
+  if (profile?.selfVoiceCloneStatus !== 'training' || !profile.selfVoiceCloneId) {
+    return { ok: true, status: profile?.selfVoiceCloneStatus ?? null, errorMessage: profile?.selfVoiceCloneError ?? null };
+  }
 
   const { status } = await photoAvatarProvider.getVoiceCloneStatus(profile.selfVoiceCloneId);
   if (status === 'ready') {
     await upsertCandidateProfile(s.campaignId, { selfVoiceCloneStatus: 'ready' });
-  } else if (status === 'failed') {
-    await upsertCandidateProfile(s.campaignId, { selfVoiceCloneStatus: 'failed', selfVoiceCloneError: 'HeyGen reported the voice clone failed.' });
+    revalidatePath('/avatars');
+    return { ok: true, status: 'ready', errorMessage: null };
   }
-  revalidatePath('/avatars');
-  return { ok: true };
+  if (status === 'failed') {
+    const errorMessage = t('voiceCloneFailed');
+    await upsertCandidateProfile(s.campaignId, { selfVoiceCloneStatus: 'failed', selfVoiceCloneError: errorMessage });
+    revalidatePath('/avatars');
+    return { ok: true, status: 'failed', errorMessage };
+  }
+  return { ok: true, status: 'training', errorMessage: null };
 }
-
-const VOICE_PREVIEW_TEXT = 'Hello, this is a preview of your cloned voice.';
 
 export async function previewVoiceCloneAction(): Promise<Result & { audioUrl?: string }> {
   const s = await requireSession();
@@ -1302,14 +1331,17 @@ export async function previewVoiceCloneAction(): Promise<Result & { audioUrl?: s
     throw e;
   }
 
+  // The sample sentence is spoken in the user's language, not always English.
+  const tVoice = await getTranslations({ locale: s.locale, namespace: 'voice' });
   try {
     const { audioUrl } = await photoAvatarProvider.synthesizeSpeech({
       voiceId: profile.selfVoiceCloneId,
-      text: VOICE_PREVIEW_TEXT,
+      text: tVoice('previewText'),
     });
     return { ok: true, audioUrl };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    console.error(`[voice] preview synthesis failed for campaign ${s.campaignId}`, e);
+    return { ok: false, error: t('voicePreviewFailed') };
   }
 }
 
@@ -1351,7 +1383,8 @@ export async function generatePromptLookAction(avatarId: string, name: string, p
     }
   } catch (e) {
     if (e instanceof BillingBlocked) return { ok: false, error: e.message };
-    return { ok: false, error: e instanceof Error ? e.message : t('generateLookFailed') };
+    console.error(`[avatars] look generation failed for ${avatarId}`, e);
+    return { ok: false, error: t('generateLookFailed') };
   }
   revalidatePath('/avatars');
   return { ok: true };

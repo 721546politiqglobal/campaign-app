@@ -3,25 +3,40 @@ import { AppShellSkeleton } from '@/components/AppShellSkeleton';
 export default function BillingLoading() {
   return (
     <AppShellSkeleton>
-      <div className="pagehead">
-        <div>
-          <div className="skeleton" style={{ width: 100, height: 10, marginBottom: 8 }} />
-          <div className="skeleton" style={{ width: 110, height: 26 }} />
+      <div className="page-header">
+        <div className="page-header-main">
+          <div className="skeleton acct-skel-eyebrow" />
+          <div className="skeleton acct-skel-title" />
+          <div className="skeleton acct-skel-text" />
         </div>
+        <div className="page-header-actions"><div className="skeleton acct-skel-btn" /></div>
       </div>
 
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '22px 24px', borderBottom: '1px solid var(--border)' }}>
-          <div>
-            <div className="skeleton" style={{ width: 150, height: 20, marginBottom: 10 }} />
-            <div className="skeleton" style={{ width: 220, height: 12 }} />
+      <div className="stack">
+        <div className="card card-sectioned">
+          <div className="card-body billing-plan">
+            <div className="billing-plan-main">
+              <div className="skeleton acct-skel-eyebrow" />
+              <div className="skeleton acct-skel-title" />
+              <div className="skeleton acct-skel-text" />
+            </div>
+            <div className="skeleton acct-skel-btn" />
           </div>
-          <div className="skeleton" style={{ width: 130, height: 36, borderRadius: 7 }} />
         </div>
-        <div style={{ padding: '22px 24px' }}>
-          <div className="skeleton" style={{ width: 160, height: 11, marginBottom: 16 }} />
-          <div className="skeleton" style={{ width: 200, height: 26, marginBottom: 16 }} />
-          <div className="skeleton" style={{ width: '100%', height: 8, borderRadius: 999 }} />
+
+        <div className="card card-sectioned">
+          <div className="card-header"><div className="skeleton acct-skel-heading" /></div>
+          <div className="card-body billing-meters">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="billing-meter">
+                <div className="billing-meter-head">
+                  <div className="skeleton acct-skel-text-sm" />
+                  <div className="skeleton acct-skel-text-xs" />
+                </div>
+                <div className="skeleton acct-skel-bar" />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </AppShellSkeleton>

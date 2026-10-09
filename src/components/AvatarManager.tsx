@@ -1,19 +1,31 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useFormatter, useTranslations } from 'next-intl';
 import {
   beginAvatarUploadAction, finalizeAvatarAction, checkAvatarStatusAction, setActiveAvatarAction, deleteAvatarAction,
   generatePromptLookAction, beginVideoAvatarUploadAction, finalizeVideoAvatarAction,
 } from '@/app/actions';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import { useToast } from '@/components/Toast';
-import type { Avatar } from '@/domain/types';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
+import { Dialog } from '@/components/ui/Dialog';
+import { Field } from '@/components/ui/Field';
+import { Badge, type BadgeTone } from '@/components/ui/Badge';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { AvatarsIcon, ImageIcon, VideoIcon, CopyIcon, TrashIcon, SparklesIcon, XIcon } from '@/components/icons';
+import type { Avatar, AvatarStatus } from '@/domain/types';
 
 const MIN_PHOTOS = 4;
 const MAX_PHOTOS = 10;
 const POLL_MS = 5000;
+
+const STATUS_TONE: Record<AvatarStatus, BadgeTone> = {
+  pending_consent: 'warn', training: 'info', ready: 'ok', failed: 'bad',
+};
+
+type StatusOverride = { status: AvatarStatus; errorMessage: string | null };
 
 export function AvatarManager({
   avatars,
@@ -26,7 +38,17 @@ export function AvatarManager({
 }) {
   const router = useRouter();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const t = useTranslations('avatarManager');
+  const format = useFormatter();
+
+  // Status updates learned from polling, layered over the server list so a
+  // tick never re-renders the whole route; the route refreshes once per change.
+  const [overrides, setOverrides] = useState<Record<string, StatusOverride>>({});
+  const rows = useMemo(
+    () => avatars.map(a => (overrides[a.id] ? { ...a, ...overrides[a.id] } : a)),
+    [avatars, overrides],
+  );
 
   const [modalOpen, setModalOpen] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -50,7 +72,11 @@ export function AvatarManager({
   const [lookPrompt, setLookPrompt] = useState('');
   const [generatingLook, setGeneratingLook] = useState(false);
 
-  const pollableIds = avatars.filter(a => a.status === 'training' || a.status === 'pending_consent').map(a => a.id).join(',');
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const pollableIds = rows.filter(a => a.status === 'training' || a.status === 'pending_consent').map(a => a.id).join(',');
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
 
   useEffect(() => {
     let cancelled = false;
@@ -58,18 +84,36 @@ export function AvatarManager({
     async function pollOnce() {
       const ids = pollableIds ? pollableIds.split(',') : [];
       if (ids.length === 0) return;
-      await Promise.all(ids.map(id => checkAvatarStatusAction(id)));
-      if (!cancelled) router.refresh();
+      let changed = false;
+      const results = await Promise.allSettled(ids.map(id => checkAvatarStatusAction(id)));
+      if (cancelled) return;
+      results.forEach((r, i) => {
+        if (r.status !== 'fulfilled' || !r.value.ok || !r.value.status) {
+          if (r.status === 'rejected') console.error('[avatars] status poll failed', r.reason);
+          return;
+        }
+        const id = ids[i];
+        const current = rowsRef.current.find(a => a.id === id);
+        if (current && current.status !== r.value.status) {
+          changed = true;
+          setOverrides(prev => ({ ...prev, [id]: { status: r.value.status!, errorMessage: r.value.errorMessage ?? null } }));
+        }
+      });
+      // One route refresh per real change (picks up consent URLs, look ids…).
+      if (changed) router.refresh();
     }
 
     // One-shot check on mount even if nothing is currently "training" locally,
     // so status catches up if the user navigated away and back.
-    pollOnce();
+    void pollOnce();
 
     if (!pollableIds) return;
-    const interval = setInterval(pollOnce, POLL_MS);
+    const interval = setInterval(() => { void pollOnce(); }, POLL_MS);
     return () => { cancelled = true; clearInterval(interval); };
   }, [pollableIds, router]);
+
+  // Server data caught up with what polling learned — drop the overrides.
+  useEffect(() => { setOverrides({}); }, [avatars]);
 
   useEffect(() => {
     const urls = files.map(f => URL.createObjectURL(f));
@@ -118,45 +162,47 @@ export function AvatarManager({
   }
 
   async function handleVideoSubmit() {
-    if (!videoFile) return;
+    if (!videoFile || videoSubmitting) return;
     setVideoSubmitting(true);
+    try {
+      const begin = await beginVideoAvatarUploadAction(videoConsent, {
+        name: videoFile.name, type: videoFile.type, size: videoFile.size,
+      });
+      if (!begin.ok) { toast(begin.error, 'error'); return; }
+      if (!begin.path || !begin.token || !begin.avatarId) { toast(t('errors.createVideoAvatarFailed'), 'error'); return; }
 
-    const begin = await beginVideoAvatarUploadAction(videoConsent, {
-      name: videoFile.name, type: videoFile.type, size: videoFile.size,
-    });
-    if (!begin.ok) {
-      setVideoSubmitting(false);
-      toast(begin.error, 'error');
-      return;
-    }
-    if (!begin.path || !begin.token || !begin.avatarId) {
-      setVideoSubmitting(false);
-      toast(t('errors.createVideoAvatarFailed'), 'error');
-      return;
-    }
+      const { error: uploadError } = await supabaseBrowser.storage.from('media')
+        .uploadToSignedUrl(begin.path, begin.token, videoFile);
+      if (uploadError) {
+        console.error('[avatars] video upload failed', uploadError);
+        toast(t('toast.uploadFailed'), 'error');
+        return;
+      }
 
-    const { error: uploadError } = await supabaseBrowser.storage.from('media')
-      .uploadToSignedUrl(begin.path, begin.token, videoFile);
-    if (uploadError) {
+      const result = await finalizeVideoAvatarAction(begin.avatarId, videoName, begin.path);
+      if (result.ok) {
+        toast(t('toast.videoAvatarCreationStarted'));
+        resetVideoModal();
+        router.refresh();
+      } else {
+        toast(result.error ?? t('errors.createVideoAvatarFailed'), 'error');
+      }
+    } catch (e) {
+      console.error('[avatars] video avatar submit failed', e);
+      toast(t('errors.generic'), 'error');
+    } finally {
       setVideoSubmitting(false);
-      toast(t('toast.uploadFailed', { message: uploadError.message }), 'error');
-      return;
-    }
-
-    const result = await finalizeVideoAvatarAction(begin.avatarId, videoName, begin.path);
-    setVideoSubmitting(false);
-    if (result.ok) {
-      toast(t('toast.videoAvatarCreationStarted'));
-      resetVideoModal();
-      router.refresh();
-    } else {
-      toast(result.error ?? t('errors.createVideoAvatarFailed'), 'error');
     }
   }
 
   async function handleCopyConsentLink(url: string) {
-    await navigator.clipboard.writeText(url);
-    toast(t('toast.consentLinkCopied'));
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
+      await navigator.clipboard.writeText(url);
+      toast(t('toast.consentLinkCopied'));
+    } catch {
+      toast(t('toast.copyFailed', { url }), 'error');
+    }
   }
 
   function handleFilesChosen(chosen: FileList | null) {
@@ -165,52 +211,76 @@ export function AvatarManager({
   }
 
   async function handleSubmit() {
+    if (submitting) return;
     setSubmitting(true);
+    try {
+      const begin = await beginAvatarUploadAction(consent, files.map(f => ({ name: f.name, type: f.type, size: f.size })));
+      if (!begin.ok) { toast(begin.error, 'error'); return; }
+      if (!begin.uploads || !begin.avatarId) { toast(t('errors.createAvatarFailed'), 'error'); return; }
 
-    const begin = await beginAvatarUploadAction(consent, files.map(f => ({ name: f.name, type: f.type, size: f.size })));
-    if (!begin.ok) {
-      setSubmitting(false);
-      toast(begin.error, 'error');
-      return;
-    }
-    if (!begin.uploads || !begin.avatarId) {
-      setSubmitting(false);
-      toast(t('errors.createAvatarFailed'), 'error');
-      return;
-    }
-
-    const uploads = begin.uploads;
-    for (let i = 0; i < uploads.length; i++) {
-      const { error: uploadError } = await supabaseBrowser.storage.from('media')
-        .uploadToSignedUrl(uploads[i].path, uploads[i].token, files[i]);
-      if (uploadError) {
-        setSubmitting(false);
-        toast(t('toast.uploadFailed', { message: uploadError.message }), 'error');
-        return;
+      const uploads = begin.uploads;
+      for (let i = 0; i < uploads.length; i++) {
+        const { error: uploadError } = await supabaseBrowser.storage.from('media')
+          .uploadToSignedUrl(uploads[i].path, uploads[i].token, files[i]);
+        if (uploadError) {
+          console.error('[avatars] photo upload failed', uploadError);
+          toast(t('toast.uploadFailed'), 'error');
+          return;
+        }
       }
-    }
 
-    const result = await finalizeAvatarAction(begin.avatarId, name, uploads.map(u => u.path));
-    setSubmitting(false);
-    if (result.ok) {
-      toast(t('toast.avatarCreationStarted'));
-      resetModal();
-      router.refresh();
-    } else {
-      toast(result.error ?? t('errors.createAvatarFailed'), 'error');
+      const result = await finalizeAvatarAction(begin.avatarId, name, uploads.map(u => u.path));
+      if (result.ok) {
+        toast(t('toast.avatarCreationStarted'));
+        resetModal();
+        router.refresh();
+      } else {
+        toast(result.error ?? t('errors.createAvatarFailed'), 'error');
+      }
+    } catch (e) {
+      console.error('[avatars] avatar submit failed', e);
+      toast(t('errors.generic'), 'error');
+    } finally {
+      setSubmitting(false);
     }
   }
 
   async function handleSetActive(id: string) {
-    const result = await setActiveAvatarAction(id);
-    if (result.ok) { toast(t('toast.activeAvatarUpdated')); router.refresh(); }
-    else toast(result.error ?? t('errors.setActiveFailed'), 'error');
+    if (busyId) return;
+    setBusyId(id);
+    try {
+      const result = await setActiveAvatarAction(id);
+      if (result.ok) { toast(t('toast.activeAvatarUpdated')); router.refresh(); }
+      else toast(result.error ?? t('errors.setActiveFailed'), 'error');
+    } catch (e) {
+      console.error('[avatars] set active failed', e);
+      toast(t('errors.generic'), 'error');
+    } finally {
+      setBusyId(null);
+    }
   }
 
-  async function handleDelete(id: string) {
-    const result = await deleteAvatarAction(id);
-    if (result.ok) { toast(t('toast.avatarDeleted')); router.refresh(); }
-    else toast(result.error ?? t('errors.deleteFailed'), 'error');
+  async function handleDelete(avatar: Avatar) {
+    if (busyId) return;
+    const ok = await confirm({
+      title: t('deleteConfirm.title'),
+      description: t('deleteConfirm.description', { name: avatar.name }),
+      confirmLabel: t('deleteConfirm.confirm'),
+      cancelLabel: t('actions.cancel'),
+      tone: 'danger',
+    });
+    if (!ok) return;
+    setBusyId(avatar.id);
+    try {
+      const result = await deleteAvatarAction(avatar.id);
+      if (result.ok) { toast(t('toast.avatarDeleted')); router.refresh(); }
+      else toast(result.error ?? t('errors.deleteFailed'), 'error');
+    } catch (e) {
+      console.error('[avatars] delete failed', e);
+      toast(t('errors.generic'), 'error');
+    } finally {
+      setBusyId(null);
+    }
   }
 
   function resetLookModal() {
@@ -220,247 +290,278 @@ export function AvatarManager({
   }
 
   async function handleGenerateLook() {
-    if (!lookModalAvatarId) return;
+    if (!lookModalAvatarId || generatingLook) return;
     setGeneratingLook(true);
-    const result = await generatePromptLookAction(lookModalAvatarId, lookName, lookPrompt);
-    setGeneratingLook(false);
-    if (result.ok) {
-      toast(t('toast.lookGenerated'));
-      resetLookModal();
-      router.refresh();
-    } else {
-      toast(result.error ?? t('errors.generateLookFailed'), 'error');
+    try {
+      const result = await generatePromptLookAction(lookModalAvatarId, lookName, lookPrompt);
+      if (result.ok) {
+        toast(t('toast.lookGenerated'));
+        resetLookModal();
+        router.refresh();
+      } else {
+        toast(result.error ?? t('errors.generateLookFailed'), 'error');
+      }
+    } catch (e) {
+      console.error('[avatars] generate look failed', e);
+      toast(t('errors.generic'), 'error');
+    } finally {
+      setGeneratingLook(false);
     }
   }
 
+  const createButtons = canManage && (
+    <>
+      <button type="button" className="btn btn-sm" onClick={() => setModalOpen(true)}>
+        <ImageIcon size={14} />{t('fromPhotosButton')}
+      </button>
+      <button type="button" className="btn btn-sm" onClick={() => setVideoModalOpen(true)}>
+        <VideoIcon size={14} />{t('fromVideoButton')}
+      </button>
+    </>
+  );
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div className="eyebrow">{t('avatarCount', { count: avatars.length })}</div>
-        {canManage && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setModalOpen(true)}>
-              {t('fromPhotosButton')}
-            </button>
-            <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setVideoModalOpen(true)}>
-              {t('fromVideoButton')}
-            </button>
+    <div className="stack">
+      {rows.length > 0 && (
+        <div className="row-between av-head">
+          <span className="eyebrow">{t('avatarCount', { count: rows.length })}</span>
+          {canManage && <div className="btnrow">{createButtons}</div>}
+        </div>
+      )}
+
+      {rows.length === 0 && (
+        <EmptyState
+          plain
+          icon="avatars"
+          title={t('emptyState.title')}
+          description={canManage ? t('emptyState.canManage') : t('emptyState.readOnly')}
+          action={createButtons || undefined}
+        />
+      )}
+
+      {rows.length > 0 && (
+        <ul className="av-list">
+          {rows.map(a => {
+            const busy = busyId === a.id;
+            return (
+              <li key={a.id} className="av-row" aria-busy={busy}>
+                {a.sourcePhotoUrls[0] ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={a.sourcePhotoUrls[0]} alt="" className="av-thumb" />
+                ) : (
+                  <div className="av-thumb av-thumb-empty" aria-hidden="true"><AvatarsIcon size={20} /></div>
+                )}
+                <div className="av-row-text">
+                  <div className="av-row-title">
+                    <span className="av-name">{a.name}</span>
+                    {a.id === activeAvatarId && <Badge tone="accent" size="sm">{t('activeBadge')}</Badge>}
+                  </div>
+                  <div className="av-row-meta">
+                    <Badge tone={STATUS_TONE[a.status]} size="sm" dot>
+                      {a.status === 'pending_consent' && t('status.pendingConsent')}
+                      {a.status === 'training' && t('status.training')}
+                      {a.status === 'ready' && t('status.ready')}
+                      {a.status === 'failed' && t('status.failed', { message: a.errorMessage ?? t('status.unknownError') })}
+                    </Badge>
+                    <span className="subtle text-xs">
+                      {t('createdOn', { date: format.dateTime(new Date(a.createdAt), { dateStyle: 'medium' }) })}
+                    </span>
+                  </div>
+                </div>
+                {canManage && (
+                  <div className="av-row-actions">
+                    {a.status === 'pending_consent' && a.consentUrl && (
+                      <button type="button" className="btn btn-sm" onClick={() => handleCopyConsentLink(a.consentUrl!)}>
+                        <CopyIcon size={14} />{t('actions.copyConsentLink')}
+                      </button>
+                    )}
+                    {a.status === 'ready' && a.id !== activeAvatarId && (
+                      <button type="button" className="btn btn-sm" disabled={!!busyId} aria-busy={busy} onClick={() => handleSetActive(a.id)}>
+                        {t('actions.setActive')}
+                      </button>
+                    )}
+                    {a.status === 'ready' && a.heygenLookId && (
+                      <button type="button" className="btn btn-sm" disabled={!!busyId} onClick={() => setLookModalAvatarId(a.id)}>
+                        <SparklesIcon size={14} />{t('actions.generateLook')}
+                      </button>
+                    )}
+                    <button type="button" className="btn btn-danger-soft btn-sm btn-icon" disabled={!!busyId}
+                      aria-label={t('actions.deleteNamed', { name: a.name })} title={t('actions.delete')}
+                      onClick={() => handleDelete(a)}>
+                      <TrashIcon size={14} />
+                    </button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {/* ── Photo avatar wizard ─────────────────────────────────────────── */}
+      <Dialog
+        open={modalOpen}
+        onClose={resetModal}
+        title={t('steps.photoDialogTitle')}
+        description={step === 1 ? t('steps.consentLabel') : step === 2 ? t('steps.photosLabel') : t('steps.nameLabel')}
+        size="md"
+        closeOnBackdrop={!submitting}
+        footer={
+          step === 1 ? (
+            <>
+              <button type="button" className="btn" onClick={resetModal}>{t('actions.cancel')}</button>
+              <button type="button" className="btn btn-primary" disabled={!consent} onClick={() => setStep(2)}>{t('actions.next')}</button>
+            </>
+          ) : step === 2 ? (
+            <>
+              <button type="button" className="btn" onClick={() => setStep(1)}>{t('actions.back')}</button>
+              <button type="button" className="btn btn-primary" disabled={files.length < MIN_PHOTOS} onClick={() => setStep(3)}>{t('actions.next')}</button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="btn" disabled={submitting} onClick={() => setStep(2)}>{t('actions.back')}</button>
+              <button type="button" className="btn btn-primary" disabled={submitting || !name.trim()} aria-busy={submitting} onClick={handleSubmit}>
+                {submitting ? t('steps.creating') : t('steps.createAvatar')}
+              </button>
+            </>
+          )
+        }
+      >
+        {step === 1 && (
+          <div className="stack">
+            <h3 className="av-step-title">{t('steps.confirmPermissionTitle')}</h3>
+            <label className="checkrow av-consent">
+              <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
+              <span>{t('steps.photoConsentText')}</span>
+            </label>
           </div>
         )}
-      </div>
-
-      {avatars.length === 0 && (
-        <p className="muted" style={{ fontSize: 13, marginBottom: 20 }}>
-          {canManage
-            ? t('emptyState.canManage')
-            : t('emptyState.readOnly')}
-        </p>
-      )}
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-        {avatars.map(a => (
-          <div key={a.id} style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '12px 14px', border: '1px solid var(--line)', borderRadius: 10,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-              {a.sourcePhotoUrls[0] ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={a.sourcePhotoUrls[0]} alt=""
-                  style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover', flexShrink: 0, background: 'var(--bg-hover)' }} />
-              ) : (
-                <div style={{ width: 44, height: 44, borderRadius: 8, background: 'var(--bg-elevated)', display: 'grid', placeItems: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
+        {step === 2 && (
+          <div className="stack">
+            <h3 className="av-step-title">{t('steps.uploadPhotosTitle')}</h3>
+            <Field label={t('steps.photoInputLabel')} hint={t('steps.uploadPhotosInstructions', { min: MIN_PHOTOS, max: MAX_PHOTOS })}>
+              {(p) => <input {...p} type="file" accept="image/*" multiple onChange={e => handleFilesChosen(e.target.files)} />}
+            </Field>
+            {files.length > 0 && (
+              <ul className="av-photo-grid" aria-label={t('steps.photoInputLabel')}>
+                {files.map((f, i) => (
+                  <li key={`${f.name}-${i}`} className="av-photo">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={previewUrls[i]} alt="" />
+                    <button type="button" className="av-photo-remove" aria-label={t('steps.removePhoto', { number: i + 1 })}
+                      onClick={() => setFiles(files.filter((_, j) => j !== i))}>
+                      <XIcon size={12} strokeWidth={2.2} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="subtle text-xs num">{t('steps.photosAddedCount', { count: files.length, max: MAX_PHOTOS })}</p>
+          </div>
+        )}
+        {step === 3 && (
+          <div className="stack">
+            <h3 className="av-step-title">{t('steps.nameAvatarTitle')}</h3>
+            <Field label={t('steps.avatarNameLabel')} hint={t('steps.photoNameHint')}>
+              {(p) => (
+                <input {...p} className="input" placeholder={t('steps.photoNamePlaceholder')} value={name}
+                  onChange={e => setName(e.target.value)} maxLength={60} autoFocus />
               )}
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
-                  {a.id === activeAvatarId && (
-                    <span className="pill published">{t('activeBadge')}</span>
-                  )}
-                </div>
-                <div className="muted" style={{ fontSize: 12, marginTop: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{
-                    width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                    background: a.status === 'ready' ? 'var(--ok)' : a.status === 'failed' ? 'var(--bad)' : 'var(--warn)',
-                    boxShadow: `0 0 6px ${a.status === 'ready' ? 'var(--ok)' : a.status === 'failed' ? 'var(--bad)' : 'var(--warn)'}`,
-                  }} />
-                  <span>
-                    {a.status === 'pending_consent' && t('status.pendingConsent')}
-                    {a.status === 'training' && t('status.training')}
-                    {a.status === 'ready' && t('status.ready')}
-                    {a.status === 'failed' && t('status.failed', { message: a.errorMessage ?? t('status.unknownError') })}
-                    <span className="mono" style={{ color: 'var(--text-3)' }}>{t('createdOn', { date: new Date(a.createdAt).toLocaleDateString('en-US') })}</span>
-                  </span>
-                </div>
-              </div>
-            </div>
-            {canManage && (
-              <div style={{ display: 'flex', gap: 8 }}>
-                {a.status === 'pending_consent' && a.consentUrl && (
-                  <button className="btn" style={{ fontSize: 12 }} onClick={() => handleCopyConsentLink(a.consentUrl!)}>
-                    {t('actions.copyConsentLink')}
-                  </button>
-                )}
-                {a.status === 'ready' && a.id !== activeAvatarId && (
-                  <button className="btn" style={{ fontSize: 12 }} onClick={() => handleSetActive(a.id)}>
-                    {t('actions.setActive')}
-                  </button>
-                )}
-                {a.status === 'ready' && a.heygenLookId && (
-                  <button className="btn" style={{ fontSize: 12 }} onClick={() => setLookModalAvatarId(a.id)}>
-                    {t('actions.generateLook')}
-                  </button>
-                )}
-                <button className="admin-delete-btn" onClick={() => handleDelete(a.id)}>{t('actions.delete')}</button>
-              </div>
-            )}
+            </Field>
           </div>
-        ))}
-      </div>
+        )}
+      </Dialog>
 
-      {modalOpen && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            {step === 1 && (
-              <>
-                <div className="modal-step">{t('steps.consentLabel')}</div>
-                <h3 style={{ marginBottom: 14, fontSize: 16 }}>{t('steps.confirmPermissionTitle')}</h3>
-                <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, lineHeight: 1.5 }}>
-                  <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
-                  {t('steps.photoConsentText')}
-                </label>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={resetModal}>{t('actions.cancel')}</button>
-                  <button className="btn primary" disabled={!consent} onClick={() => setStep(2)}>{t('actions.next')}</button>
-                </div>
-              </>
-            )}
-            {step === 2 && (
-              <>
-                <div className="modal-step">{t('steps.photosLabel')}</div>
-                <h3 style={{ marginBottom: 12, fontSize: 16 }}>{t('steps.uploadPhotosTitle')}</h3>
-                <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-                  {t('steps.uploadPhotosInstructions', { min: MIN_PHOTOS, max: MAX_PHOTOS })}
-                </p>
-                <input type="file" accept="image/*" multiple onChange={e => handleFilesChosen(e.target.files)} />
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-                  {files.map((f, i) => (
-                    <div key={i} style={{ position: 'relative' }}>
-                      <img src={previewUrls[i]} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6 }} />
-                      <button type="button" onClick={() => setFiles(files.filter((_, j) => j !== i))}
-                        style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: 'var(--bad)', color: '#fff', fontSize: 11, cursor: 'pointer' }}>
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>{t('steps.photosAddedCount', { count: files.length, max: MAX_PHOTOS })}</p>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={() => setStep(1)}>{t('actions.back')}</button>
-                  <button className="btn primary" disabled={files.length < MIN_PHOTOS} onClick={() => setStep(3)}>{t('actions.next')}</button>
-                </div>
-              </>
-            )}
-            {step === 3 && (
-              <>
-                <div className="modal-step">{t('steps.nameLabel')}</div>
-                <h3 style={{ marginBottom: 12, fontSize: 16 }}>{t('steps.nameAvatarTitle')}</h3>
-                <input className="input" placeholder={t('steps.photoNamePlaceholder')} value={name}
-                  onChange={e => setName(e.target.value)} maxLength={60} />
-                <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
-                  {t('steps.photoNameHint')}
-                </p>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={() => setStep(2)}>{t('actions.back')}</button>
-                  <button className="btn primary" disabled={submitting || !name.trim()} onClick={handleSubmit}>
-                    {submitting ? t('steps.creating') : t('steps.createAvatar')}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {videoModalOpen && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            {videoStep === 1 && (
-              <>
-                <div className="modal-step">{t('steps.consentLabel')}</div>
-                <h3 style={{ marginBottom: 14, fontSize: 16 }}>{t('steps.confirmPermissionTitle')}</h3>
-                <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, lineHeight: 1.5 }}>
-                  <input type="checkbox" checked={videoConsent} onChange={e => setVideoConsent(e.target.checked)} />
-                  {t('steps.videoConsentText')}
-                </label>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={resetVideoModal}>{t('actions.cancel')}</button>
-                  <button className="btn primary" disabled={!videoConsent} onClick={() => setVideoStep(2)}>{t('actions.next')}</button>
-                </div>
-              </>
-            )}
-            {videoStep === 2 && (
-              <>
-                <div className="modal-step">{t('steps.videoLabel')}</div>
-                <h3 style={{ marginBottom: 12, fontSize: 16 }}>{t('steps.uploadVideoTitle')}</h3>
-                <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-                  {t('steps.uploadVideoInstructions')}
-                </p>
-                <input type="file" accept="video/mp4,video/quicktime" onChange={e => handleVideoFileChosen(e.target.files)} />
-                {videoFile && (
-                  <video src={videoPreviewUrl ?? undefined} controls style={{ width: '100%', marginTop: 12, borderRadius: 8, maxHeight: 200 }} />
-                )}
-                {videoDurationWarning && (
-                  <p className="muted" style={{ fontSize: 12, marginTop: 8, color: 'var(--warn)' }}>{videoDurationWarning}</p>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={() => setVideoStep(1)}>{t('actions.back')}</button>
-                  <button className="btn primary" disabled={!videoFile} onClick={() => setVideoStep(3)}>{t('actions.next')}</button>
-                </div>
-              </>
-            )}
-            {videoStep === 3 && (
-              <>
-                <div className="modal-step">{t('steps.nameLabel')}</div>
-                <h3 style={{ marginBottom: 12, fontSize: 16 }}>{t('steps.nameAvatarTitle')}</h3>
-                <input className="input" placeholder={t('steps.videoNamePlaceholder')} value={videoName}
-                  onChange={e => setVideoName(e.target.value)} maxLength={60} />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                  <button className="btn" onClick={() => setVideoStep(2)}>{t('actions.back')}</button>
-                  <button className="btn primary" disabled={videoSubmitting || !videoName.trim()} onClick={handleVideoSubmit}>
-                    {videoSubmitting ? t('steps.creating') : t('steps.createVideoAvatar')}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {lookModalAvatarId && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <div className="modal-step">{t('lookModal.heading')}</div>
-            <h3 style={{ marginBottom: 12, fontSize: 16 }}>{t('lookModal.title')}</h3>
-            <p className="muted" style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>
-              {t('lookModal.description')}
-            </p>
-            <label className="field-label">{t('lookModal.nameLabel')}</label>
-            <input className="input" placeholder={t('lookModal.namePlaceholder')} value={lookName}
-              onChange={e => setLookName(e.target.value)} style={{ marginBottom: 12 }} />
-            <label className="field-label">{t('lookModal.promptLabel')}</label>
-            <textarea className="input" style={{ minHeight: 80 }}
-              placeholder={t('lookModal.promptPlaceholder')}
-              value={lookPrompt} onChange={e => setLookPrompt(e.target.value)} />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-              <button className="btn" onClick={resetLookModal}>{t('actions.cancel')}</button>
-              <button className="btn primary" disabled={generatingLook || !lookPrompt.trim()} onClick={handleGenerateLook}>
-                {generatingLook ? t('lookModal.generating') : t('actions.generateLook')}
+      {/* ── Video avatar wizard ─────────────────────────────────────────── */}
+      <Dialog
+        open={videoModalOpen}
+        onClose={resetVideoModal}
+        title={t('steps.videoDialogTitle')}
+        description={videoStep === 1 ? t('steps.consentLabel') : videoStep === 2 ? t('steps.videoLabel') : t('steps.nameLabel')}
+        size="md"
+        closeOnBackdrop={!videoSubmitting}
+        footer={
+          videoStep === 1 ? (
+            <>
+              <button type="button" className="btn" onClick={resetVideoModal}>{t('actions.cancel')}</button>
+              <button type="button" className="btn btn-primary" disabled={!videoConsent} onClick={() => setVideoStep(2)}>{t('actions.next')}</button>
+            </>
+          ) : videoStep === 2 ? (
+            <>
+              <button type="button" className="btn" onClick={() => setVideoStep(1)}>{t('actions.back')}</button>
+              <button type="button" className="btn btn-primary" disabled={!videoFile} onClick={() => setVideoStep(3)}>{t('actions.next')}</button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="btn" disabled={videoSubmitting} onClick={() => setVideoStep(2)}>{t('actions.back')}</button>
+              <button type="button" className="btn btn-primary" disabled={videoSubmitting || !videoName.trim()} aria-busy={videoSubmitting} onClick={handleVideoSubmit}>
+                {videoSubmitting ? t('steps.creating') : t('steps.createVideoAvatar')}
               </button>
-            </div>
+            </>
+          )
+        }
+      >
+        {videoStep === 1 && (
+          <div className="stack">
+            <h3 className="av-step-title">{t('steps.confirmPermissionTitle')}</h3>
+            <label className="checkrow av-consent">
+              <input type="checkbox" checked={videoConsent} onChange={e => setVideoConsent(e.target.checked)} />
+              <span>{t('steps.videoConsentText')}</span>
+            </label>
           </div>
-        </div>
-      )}
+        )}
+        {videoStep === 2 && (
+          <div className="stack">
+            <h3 className="av-step-title">{t('steps.uploadVideoTitle')}</h3>
+            <Field label={t('steps.videoInputLabel')} hint={t('steps.uploadVideoInstructions')}>
+              {(p) => <input {...p} type="file" accept="video/mp4,video/quicktime" onChange={e => handleVideoFileChosen(e.target.files)} />}
+            </Field>
+            {videoFile && videoPreviewUrl && (
+              <video src={videoPreviewUrl} controls className="av-video-preview" />
+            )}
+            {videoDurationWarning && <p className="av-warn text-xs" role="status">{videoDurationWarning}</p>}
+          </div>
+        )}
+        {videoStep === 3 && (
+          <div className="stack">
+            <h3 className="av-step-title">{t('steps.nameAvatarTitle')}</h3>
+            <Field label={t('steps.avatarNameLabel')}>
+              {(p) => (
+                <input {...p} className="input" placeholder={t('steps.videoNamePlaceholder')} value={videoName}
+                  onChange={e => setVideoName(e.target.value)} maxLength={60} autoFocus />
+              )}
+            </Field>
+          </div>
+        )}
+      </Dialog>
+
+      {/* ── Generate look ───────────────────────────────────────────────── */}
+      <Dialog
+        open={!!lookModalAvatarId}
+        onClose={resetLookModal}
+        title={t('lookModal.title')}
+        description={t('lookModal.description')}
+        size="md"
+        closeOnBackdrop={!generatingLook}
+        footer={
+          <>
+            <button type="button" className="btn" disabled={generatingLook} onClick={resetLookModal}>{t('actions.cancel')}</button>
+            <button type="button" className="btn btn-primary" disabled={generatingLook || !lookPrompt.trim()} aria-busy={generatingLook} onClick={handleGenerateLook}>
+              {generatingLook ? t('lookModal.generating') : t('actions.generateLook')}
+            </button>
+          </>
+        }
+      >
+        <Field label={t('lookModal.nameLabel')}>
+          {(p) => <input {...p} className="input" placeholder={t('lookModal.namePlaceholder')} value={lookName} onChange={e => setLookName(e.target.value)} maxLength={60} />}
+        </Field>
+        <Field label={t('lookModal.promptLabel')} required>
+          {(p) => (
+            <textarea {...p} className="input av-prompt" placeholder={t('lookModal.promptPlaceholder')}
+              value={lookPrompt} onChange={e => setLookPrompt(e.target.value)} required />
+          )}
+        </Field>
+      </Dialog>
     </div>
   );
 }

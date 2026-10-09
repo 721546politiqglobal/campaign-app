@@ -1,30 +1,26 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { joinAction } from '@/app/actions';
 import { adminDb } from '@/lib/supabase';
 import { getLocale } from '@/lib/locale';
+import { getTheme } from '@/lib/theme';
 import { PreAuthLanguageToggle } from '@/components/PreAuthLanguageToggle';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { Logo } from '@/components/Logo';
+import { AlertIcon } from '@/components/icons';
+import { JoinForm } from './JoinForm';
+
+const ROLE_KEYS = ['owner', 'manager', 'approver', 'staff', 'super_admin'] as const;
 
 export default async function JoinPage({
   searchParams,
 }: {
-  searchParams: { code?: string; error?: string };
+  searchParams: { code?: string };
 }) {
-  const t = await getTranslations('join');
-  const ERROR_MSG: Record<string, string> = {
-    fields:   t('errors.allFieldsRequired'),
-    password: t('errors.passwordTooShort'),
-    invalid:  t('errors.inviteInvalid'),
-    used:     t('errors.inviteUsed'),
-    expired:  t('errors.inviteExpired'),
-    email:    t('errors.emailExists'),
-  };
-
+  const [t, tc] = await Promise.all([getTranslations('join'), getTranslations('common')]);
   const code = searchParams.code ?? '';
-  const errorMsg = searchParams.error ? (ERROR_MSG[searchParams.error] ?? t('errors.somethingWentWrong')) : null;
 
-  // Fetch invite to show context (campaign name, role)
-  let inviteContext: { campaignName: string; role: string } | null = null;
+  // Fetch the invite to show context (campaign name, role) above the form.
+  let inviteContext: { campaignName: string; roleLabel: string } | null = null;
   if (code) {
     const { data: inv } = await adminDb
       .from('invite_codes')
@@ -37,121 +33,56 @@ export default async function JoinPage({
         .select('name')
         .eq('id', inv.campaign_id)
         .single();
-      inviteContext = { campaignName: camp?.name ?? '', role: inv.role };
+      const role = String(inv.role);
+      const roleLabel = (ROLE_KEYS as readonly string[]).includes(role) ? tc(`roles.${role as (typeof ROLE_KEYS)[number]}`) : role;
+      inviteContext = { campaignName: camp?.name ?? '', roleLabel };
     }
   }
+  const inviteBroken = !!code && !inviteContext;
 
   return (
-    <div className="login-wrap">
-      <div className="login-card">
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <Link href="/" className="login-logo">
-            <img src="/politiq-logo.png" alt="PolitIQ" className="login-logo-img" />
+    <div className="auth-wrap">
+      <div className="auth-card">
+        <div className="auth-head">
+          <Link href="/" className="auth-logo" aria-label="PolitIQ">
+            <Logo className="auth-logo-img" />
           </Link>
-          <PreAuthLanguageToggle currentLocale={getLocale()} />
+          <div className="preauth-controls">
+            <ThemeToggle current={getTheme()} size="sm" />
+            <PreAuthLanguageToggle currentLocale={getLocale()} />
+          </div>
         </div>
 
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={{
-            fontSize: 20, fontWeight: 800, letterSpacing: '-0.025em',
-            color: 'var(--text)', margin: '0 0 6px', textTransform: 'none',
-          }}>
-            {t('heading')}
-          </h2>
-          {inviteContext ? (
-            <p style={{ fontSize: 13.5, color: 'var(--text-2)', lineHeight: 1.6, margin: 0 }}>
-              {t.rich('invitedTo', {
-                campaignName: inviteContext.campaignName,
-                role: inviteContext.role,
-                name: (chunks) => <strong style={{ color: 'var(--text)' }}>{chunks}</strong>,
-                roleTag: (chunks) => <strong style={{ color: 'var(--accent)' }}>{chunks}</strong>,
-              })}
-            </p>
-          ) : (
-            <p style={{ fontSize: 13.5, color: 'var(--text-2)', lineHeight: 1.6, margin: 0 }}>
-              {t('createAccountIntro')}
-            </p>
-          )}
+        <div className="auth-intro">
+          <h1 className="auth-title">{t('heading')}</h1>
+          <p className="auth-sub">
+            {inviteContext
+              ? t.rich('invitedTo', {
+                  campaignName: inviteContext.campaignName,
+                  role: inviteContext.roleLabel,
+                  name: (chunks) => <strong className="auth-strong">{chunks}</strong>,
+                  roleTag: (chunks) => <strong className="auth-accent">{chunks}</strong>,
+                })
+              : t('createAccountIntro')}
+          </p>
         </div>
 
-        <div className="login-divider" />
-
-        {/* Show invalid/expired state without a form */}
-        {code && !inviteContext && !searchParams.error ? (
-          <div style={{
-            fontSize: 13.5, color: 'var(--bad)', background: 'var(--bad-dim)',
-            border: '1px solid var(--bad-border)', borderRadius: 'var(--r)',
-            padding: '12px 14px', lineHeight: 1.5,
-          }}>
-            {t('invalidOrUsedNotice')}
+        {inviteBroken ? (
+          <div className="alert alert-bad" role="alert">
+            <AlertIcon className="icon" size={16} />
+            <div className="alert-body">
+              <div className="alert-title">{t('invalidOrUsedNotice')}</div>
+              <div className="alert-text">{t('askForNewInvite')}</div>
+            </div>
           </div>
         ) : (
-          <form action={joinAction} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <label className="field">
-              <span className="cap">{t('inviteCodeLabel')}</span>
-              <input
-                name="code"
-                required
-                defaultValue={code}
-                placeholder={t('inviteCodePlaceholder')}
-                style={{ fontFamily: 'ui-monospace, monospace', letterSpacing: '0.02em' }}
-              />
-            </label>
-
-            <label className="field">
-              <span className="cap">{t('fullNameLabel')}</span>
-              <input
-                name="name"
-                required
-                autoComplete="name"
-                placeholder={t('fullNamePlaceholder')}
-              />
-            </label>
-
-            <label className="field">
-              <span className="cap">{t('emailLabel')}</span>
-              <input
-                type="email"
-                name="email"
-                required
-                autoComplete="email"
-                placeholder={t('emailPlaceholder')}
-              />
-            </label>
-
-            <label className="field">
-              <span className="cap">{t('passwordLabel')}</span>
-              <input
-                type="password"
-                name="password"
-                required
-                autoComplete="new-password"
-                placeholder={t('passwordPlaceholder')}
-              />
-            </label>
-
-            {errorMsg && (
-              <div style={{
-                fontSize: 13, color: 'var(--bad)', background: 'var(--bad-dim)',
-                border: '1px solid var(--bad-border)', borderRadius: 'var(--r)',
-                padding: '9px 12px', fontWeight: 500,
-              }}>
-                {errorMsg}
-              </div>
-            )}
-
-            <button className="btn primary" style={{ width: '100%', justifyContent: 'center', marginTop: 4 }}>
-              {t('createAccountButton')}
-            </button>
-          </form>
+          <JoinForm code={code} />
         )}
 
-        <div style={{ textAlign: 'center', marginTop: 20 }}>
-          <Link href="/login" style={{ fontSize: 13, color: 'var(--text-3)' }}>
-            {t('alreadyHaveAccount')}{' '}
-            <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{t('signInLink')}</span>
-          </Link>
-        </div>
+        <p className="auth-alt">
+          {t('alreadyHaveAccount')}{' '}
+          <Link href="/login" className="link">{t('signInLink')}</Link>
+        </p>
       </div>
     </div>
   );

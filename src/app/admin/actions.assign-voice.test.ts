@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
-vi.mock('@/lib/session', () => ({ requireAdmin: vi.fn(() => Promise.resolve({ userId: 'sa-1', role: 'super_admin', campaignId: null })) }));
+vi.mock('@/lib/session', () => ({ requireAdmin: vi.fn(() => Promise.resolve({ userId: 'sa-1', role: 'super_admin', campaignId: null, locale: 'en' })) }));
 
 const getCandidateProfile = vi.fn();
 const upsertCandidateProfile = vi.fn(() => Promise.resolve());
@@ -22,35 +22,43 @@ describe('assignVoiceAction', () => {
   it('assigns the voice when a candidate profile already exists and consent is given', async () => {
     getCandidateProfile.mockResolvedValue({ campaignId: 'c-1', fullName: 'Cand' });
     const { assignVoiceAction } = await import('./actions');
-    await assignVoiceAction(fd());
+    const r = await assignVoiceAction(fd());
+    expect(r).toEqual({ ok: true });
     expect(upsertCandidateProfile).toHaveBeenCalledWith('c-1', { heygenVoiceId: 'voice-abc123' });
   });
 
-  it('does nothing when campaignId is blank', async () => {
+  it('reports a missing campaignId', async () => {
     getCandidateProfile.mockResolvedValue({ campaignId: 'c-1' });
     const { assignVoiceAction } = await import('./actions');
-    await assignVoiceAction(fd({ campaignId: '' }));
+    const r = await assignVoiceAction(fd({ campaignId: '' }));
+    expect(r.ok).toBe(false);
     expect(upsertCandidateProfile).not.toHaveBeenCalled();
   });
 
-  it('does nothing when heygen_voice_id is blank', async () => {
+  it('reports a blank heygen_voice_id', async () => {
     getCandidateProfile.mockResolvedValue({ campaignId: 'c-1' });
     const { assignVoiceAction } = await import('./actions');
-    await assignVoiceAction(fd({ heygen_voice_id: '' }));
+    const r = await assignVoiceAction(fd({ heygen_voice_id: '' }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/voice ID/i);
     expect(upsertCandidateProfile).not.toHaveBeenCalled();
   });
 
-  it('does nothing when consent is not given', async () => {
+  it('refuses without consent', async () => {
     getCandidateProfile.mockResolvedValue({ campaignId: 'c-1' });
     const { assignVoiceAction } = await import('./actions');
-    await assignVoiceAction(fd({ consent: 'off' }));
+    const r = await assignVoiceAction(fd({ consent: 'off' }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/consent/i);
     expect(upsertCandidateProfile).not.toHaveBeenCalled();
   });
 
-  it('does nothing when no candidate profile exists yet for the campaign', async () => {
+  it('explains when no candidate profile exists yet instead of silently doing nothing', async () => {
     getCandidateProfile.mockResolvedValue(null);
     const { assignVoiceAction } = await import('./actions');
-    await assignVoiceAction(fd());
+    const r = await assignVoiceAction(fd());
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/setup/i);
     expect(upsertCandidateProfile).not.toHaveBeenCalled();
   });
 });

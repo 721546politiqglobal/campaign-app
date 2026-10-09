@@ -42,6 +42,11 @@ export interface ContentItem {
   mediaUrl?: string | null;
   videoJobId?: string | null;
   videoStatus?: 'processing' | 'completed' | 'failed' | null;
+  // Scheduling (migration 005): the UTC instant, the IANA zone it was picked
+  // in, and the networks it goes out to. Only meaningful while `scheduled`.
+  scheduledAt?: string | null;
+  timezone?: string | null;
+  platforms?: Platform[];
   locale: Locale;
   createdBy: string;
   createdAt: string;

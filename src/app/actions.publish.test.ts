@@ -89,7 +89,7 @@ describe('publishAction does not mark published when everything fails', () => {
     const { publishAction } = await import('./actions');
     const r = await publishAction('x', ['instagram', 'tiktok', 'facebook'] as any);
     expect(r.ok).toBe(false);
-    expect(r).toMatchObject({ error: expect.stringContaining('instagram') });
+    expect(r).toMatchObject({ error: expect.stringContaining('Instagram') });
     expect(publish).not.toHaveBeenCalled();
     expect(lifecycle.markPublished).not.toHaveBeenCalled();
   });

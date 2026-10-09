@@ -6,6 +6,7 @@ import { combineDisclosureText } from '@/domain/disclosure';
 import type { Platform } from '@/domain/types';
 import { getCampaignSocialProfile, type CampaignSocialProfile } from '@/lib/channels';
 import { unconnectedPlatforms } from '@/domain/channels';
+import { isAuthorizedCron } from '../cron-auth';
 
 // Up to 50 sequential publishes, each an external Ayrshare call.
 export const maxDuration = 300;
@@ -15,9 +16,7 @@ export const maxDuration = 300;
 const STALE_CLAIM_MS = 15 * 60 * 1000;
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  const auth = req.headers.get('authorization');
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!isAuthorizedCron(req.headers.get('authorization'), process.env.CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -35,6 +34,9 @@ export async function GET(req: NextRequest) {
     .eq('status', 'scheduled')
     .not('scheduled_at', 'is', null)
     .lte('scheduled_at', new Date().toISOString())
+    // Oldest due first: when more than 50 are due, the most overdue posts go
+    // out this run rather than whichever rows the planner returned first.
+    .order('scheduled_at', { ascending: true })
     .limit(50);
 
   if (!dueItems?.length) {

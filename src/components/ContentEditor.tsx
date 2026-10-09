@@ -1,11 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
+import { useFormState } from 'react-dom';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { createContentAction, generateDraftAction } from '@/app/actions';
-import type { ContentType } from '@/domain/types';
+import { createContentAction, generateDraftAction, type CreateContentState } from '@/app/actions';
+import { isContentType, type ContentType } from '@/domain/types';
 import type { Locale } from '@/lib/locale';
+import { Field } from '@/components/ui/Field';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
+import { SubmitButton } from '@/components/SubmitButton';
+import { Icon } from '@/components/icons';
 
 // Order the picker offers, not the enum's declaration order.
 const TYPE_OPTIONS: readonly ContentType[] = [
@@ -16,11 +21,17 @@ const BRIEF_SUGGESTION_KEYS = [
   'townHall', 'opponentAttack', 'healthcarePlan', 'thankVolunteers', 'pushBackClaim',
 ] as const;
 
+const INITIAL_STATE: CreateContentState = { ok: true };
+
 export function ContentEditor({ defaultLocale }: { defaultLocale: Locale }) {
   const t = useTranslations('content');
   const tc = useTranslations('common');
+  const confirm = useConfirm();
   const searchParams = useSearchParams();
-  const [type, setType]               = useState((searchParams.get('type') as string) || 'reel');
+  const id = useId();
+  // Monitoring's "respond to this" link lands here as ?brief=…&type=social_post.
+  const requestedType = searchParams.get('type') ?? '';
+  const [type, setType]               = useState<ContentType>(isContentType(requestedType) ? requestedType : 'reel');
   const [locale, setLocale]           = useState<Locale>(defaultLocale);
   const [savedLocale, setSavedLocale] = useState<Locale>(defaultLocale);
   const [instruction, setInstruction] = useState(searchParams.get('brief') || '');
@@ -30,12 +41,25 @@ export function ContentEditor({ defaultLocale }: { defaultLocale: Locale }) {
   const [busy, setBusy]               = useState(false);
   const [error, setError]             = useState('');
   const [generated, setGenerated]     = useState(false);
+  // What the last generation produced — regenerating over edits asks first.
+  const [snapshot, setSnapshot]       = useState<{ title: string; body: string } | null>(null);
+  const [rawSaveState, saveAction]    = useFormState(createContentAction, INITIAL_STATE);
+  // `undefined` while the redirect() to the new item is followed (see lib/form-state.ts).
+  const saveState = rawSaveState ?? INITIAL_STATE;
 
-  const TYPES = TYPE_OPTIONS.map(v => [v, t(`types.${v}`)] as const);
-  const BRIEF_SUGGESTIONS = BRIEF_SUGGESTION_KEYS.map(key => t(`editor.briefSuggestions.${key}`));
+  const dirty = snapshot !== null && (title !== snapshot.title || body !== snapshot.body);
 
   async function generate() {
     if (!instruction.trim()) { setError(t('editor.describeFirst')); return; }
+    if (dirty) {
+      const ok = await confirm({
+        title: t('editor.regenerateConfirm.title'),
+        description: t('editor.regenerateConfirm.description'),
+        confirmLabel: t('editor.regenerateConfirm.confirm'),
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
     setBusy(true); setError('');
     try {
       const out = await generateDraftAction(instruction, type, locale);
@@ -43,7 +67,9 @@ export function ContentEditor({ defaultLocale }: { defaultLocale: Locale }) {
       // real reason (which limit, and what to do about it) — show it verbatim
       // rather than guessing on the user's behalf.
       if (!out.ok) { setError(out.error); return; }
-      setTitle(out.title); setBody(out.text); setSavedLocale(out.locale); setIsAi(true); setGenerated(true);
+      setTitle(out.title); setBody(out.text); setSavedLocale(out.locale);
+      setSnapshot({ title: out.title, body: out.text });
+      setIsAi(true); setGenerated(true);
     } catch {
       // Only unexpected exceptions land here (Next.js redacts their messages in
       // production), so a generic fallback is all that's available.
@@ -51,94 +77,126 @@ export function ContentEditor({ defaultLocale }: { defaultLocale: Locale }) {
     } finally { setBusy(false); }
   }
 
+  function writeMyself() {
+    setIsAi(false); setGenerated(true); setSavedLocale(locale); setSnapshot(null);
+  }
+
   return (
-    <form action={createContentAction}>
+    <form action={saveAction} className="editor-layout">
       <input type="hidden" name="isAiGenerated" value={isAi ? 'on' : 'off'} />
       <input type="hidden" name="locale" value={savedLocale} />
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <h2>{t('editor.brief')}</h2>
-        <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-          {TYPES.map(([v, l]) => (
-            <label key={v} style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              padding: '6px 12px', borderRadius: 20, cursor: 'pointer', fontSize: 13,
-              border: `1.5px solid ${type === v ? 'var(--accent)' : 'var(--line)'}`,
-              background: type === v ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent',
-              color: type === v ? 'var(--accent)' : 'var(--text-2)',
-            }}>
-              <input type="radio" name="type" value={v} checked={type === v}
-                onChange={() => setType(v)} style={{ display: 'none' }} />
-              {l}
-            </label>
-          ))}
-        </div>
-        <label className="field-label">{t('editor.language')}</label>
-        <select
-          className="input"
-          value={locale}
-          onChange={e => setLocale(e.target.value as Locale)}
-          style={{ marginBottom: 14, maxWidth: 220 }}
-        >
-          <option value="en">{tc('languageEnglish')}</option>
-          <option value="es">{tc('languageSpanish')}</option>
-        </select>
-        <label className="field-label">{t('editor.whatShouldThisSay')}</label>
-        <textarea
-          value={instruction}
-          onChange={e => setInstruction(e.target.value)}
-          placeholder={t('editor.instructionPlaceholder')}
-          className="input"
-          style={{ minHeight: 80, marginBottom: 10 }}
-        />
-        {!instruction && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-            {BRIEF_SUGGESTIONS.map(s => (
-              <button key={s} type="button" className="btn"
-                style={{ fontSize: 12, padding: '4px 10px' }}
-                onClick={() => setInstruction(s)}>
-                {s}
-              </button>
+      <section className="card" aria-labelledby={`${id}-brief`}>
+        <h2 id={`${id}-brief`}>{t('editor.brief')}</h2>
+
+        <fieldset className="field editor-types">
+          <legend className="field-label">{t('editor.typeLabel')}</legend>
+          <div className="btnrow" role="radiogroup" aria-label={t('editor.typeLabel')}>
+            {TYPE_OPTIONS.map(v => (
+              <label key={v} className={`chip${type === v ? ' on' : ''}`}>
+                <input
+                  type="radio"
+                  name="type"
+                  value={v}
+                  checked={type === v}
+                  onChange={() => setType(v)}
+                />
+                {t(`types.${v}`)}
+              </label>
             ))}
           </div>
+        </fieldset>
+
+        <div className="field-row">
+          <Field label={t('editor.language')}>
+            {p => (
+              <select {...p} value={locale} onChange={e => setLocale(e.target.value as Locale)}>
+                <option value="en">{tc('languageEnglish')}</option>
+                <option value="es">{tc('languageSpanish')}</option>
+              </select>
+            )}
+          </Field>
+        </div>
+
+        <Field label={t('editor.whatShouldThisSay')} error={error || undefined}>
+          {p => (
+            <textarea
+              {...p}
+              value={instruction}
+              onChange={e => { setInstruction(e.target.value); if (error) setError(''); }}
+              placeholder={t('editor.instructionPlaceholder')}
+              className="editor-instruction"
+            />
+          )}
+        </Field>
+
+        {!instruction && (
+          <div className="editor-suggestions">
+            <span className="field-hint">{t('editor.suggestionsLabel')}</span>
+            <div className="btnrow">
+              {BRIEF_SUGGESTION_KEYS.map(key => {
+                const text = t(`editor.briefSuggestions.${key}`);
+                return (
+                  <button key={key} type="button" className="btn btn-sm" onClick={() => setInstruction(text)}>
+                    {text}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         )}
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button type="button" className="btn primary" onClick={generate} disabled={busy} style={{ minWidth: 170 }}>
-            {busy ? t('editor.writingDraft') : generated ? t('editor.regenerate') : t('editor.generateWithAi')}
-          </button>
+
+        <div className="form-actions editor-actions">
           {!generated && (
-            <button type="button" className="btn" style={{ fontSize: 13 }}
-              onClick={() => { setIsAi(false); setGenerated(true); setSavedLocale(locale); }}>
+            <button type="button" className="btn" onClick={writeMyself} disabled={busy}>
               {t('editor.writeItMyself')}
             </button>
           )}
+          <button type="button" className="btn btn-primary" onClick={generate} disabled={busy} aria-busy={busy}>
+            {!busy && <Icon name="sparkles" size={16} />}
+            {busy ? t('editor.writingDraft') : generated ? t('editor.regenerate') : t('editor.generateWithAi')}
+          </button>
         </div>
-        {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
-      </div>
+      </section>
 
       {generated && (
-        <div className="card">
-          <h2>{t('editor.draft')}</h2>
-          <label className="field-label">{t('titleLabel')}</label>
-          <input type="text" name="title" className="input" value={title}
-            onChange={e => setTitle(e.target.value)} required style={{ marginBottom: 12 }} />
-          <label className="field-label">{t('editor.bodyLabel')}</label>
-          <textarea name="body" className="input" value={body}
-            onChange={e => setBody(e.target.value)} required style={{ minHeight: 180 }} />
-          <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center' }}>
-            <button type="submit" className="btn primary">{t('editor.saveDraft')}</button>
-            {type === 'reel' ? (
-              <span className="muted" style={{ fontSize: 13 }}>
-                {t('editor.reelsDisclosureNote')}
-              </span>
-            ) : (
-              <label className="checkrow" style={{ fontSize: 13 }}>
-                <input type="checkbox" checked={isAi} onChange={e => setIsAi(e.target.checked)} />
-                {t('editor.aiGeneratedDisclosure')}
-              </label>
+        <section className="card" aria-labelledby={`${id}-draft`}>
+          <h2 id={`${id}-draft`}>{t('editor.draft')}</h2>
+          <p className="field-hint editor-draft-hint">{t('editor.draftHint')}</p>
+          <Field label={t('titleLabel')} required>
+            {p => (
+              <input {...p} type="text" name="title" value={title} onChange={e => setTitle(e.target.value)} required maxLength={200} />
             )}
+          </Field>
+          <Field label={t('editor.bodyLabel')} required>
+            {p => (
+              <textarea {...p} name="body" value={body} onChange={e => setBody(e.target.value)} required className="editor-body" />
+            )}
+          </Field>
+
+          {type === 'reel' ? (
+            <p className="field-hint">{t('editor.reelsDisclosureNote')}</p>
+          ) : (
+            <label className="checkrow text-sm">
+              <input type="checkbox" checked={isAi} onChange={e => setIsAi(e.target.checked)} />
+              {t('editor.aiGeneratedDisclosure')}
+            </label>
+          )}
+
+          {!saveState.ok && (
+            <div className="alert alert-bad" role="alert">
+              <span className="icon"><Icon name="error" size={16} /></span>
+              <div className="alert-body"><div className="alert-text">{saveState.error}</div></div>
+            </div>
+          )}
+
+          <div className="form-actions">
+            <SubmitButton pendingText={t('editor.savingDraft')} disabled={busy}>
+              {t('editor.saveDraft')}
+              <Icon name="arrow-right" size={16} />
+            </SubmitButton>
           </div>
-        </div>
+        </section>
       )}
     </form>
   );

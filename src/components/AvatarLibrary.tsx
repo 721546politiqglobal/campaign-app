@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { saveVideoSettingsAction } from '@/app/actions';
 import { useToast } from '@/components/Toast';
+import { AvatarsIcon, CheckIcon, ExternalIcon, RefreshIcon, AlertIcon } from '@/components/icons';
 
 interface HeyGenAvatar {
   avatar_id: string;
@@ -12,146 +13,177 @@ interface HeyGenAvatar {
   preview_video_url?: string;
 }
 
-const ASPECT_RATIOS = [
-  { id: '16:9' as const, label: '16:9', subKey: 'aspectRatioSub169' },
-  { id: '9:16' as const, label: '9:16', subKey: 'aspectRatioSub916' },
-  { id: '1:1'  as const, label: '1:1',  subKey: 'aspectRatioSub11' },
+type AspectRatio = '16:9' | '9:16' | '1:1';
+const ASPECT_RATIOS: { id: AspectRatio; subKey: 'aspectRatioSub169' | 'aspectRatioSub916' | 'aspectRatioSub11' }[] = [
+  { id: '16:9', subKey: 'aspectRatioSub169' },
+  { id: '9:16', subKey: 'aspectRatioSub916' },
+  { id: '1:1',  subKey: 'aspectRatioSub11' },
 ];
+function isAspectRatio(v: unknown): v is AspectRatio {
+  return v === '16:9' || v === '9:16' || v === '1:1';
+}
 
+type LooksState =
+  | { status: 'idle' | 'loading' | 'error'; looks: HeyGenAvatar[] }
+  | { status: 'ready'; looks: HeyGenAvatar[] };
+
+/**
+ * Video settings: the avatar look (only when an avatar group exists) and the
+ * aspect ratio, which is always reachable — the content wizard sends new
+ * users here to set it before any avatar has finished training.
+ */
 export function AvatarLibrary({
   baseAvatarId,
   currentAvatarId,
   currentAspectRatio,
+  canManage,
 }: {
-  baseAvatarId: string;
+  baseAvatarId: string | null;
   currentAvatarId?: string | null;
   currentAspectRatio?: string;
+  canManage: boolean;
 }) {
   const t = useTranslations('avatars');
   const { toast } = useToast();
 
-  const [looks, setLooks]     = useState<HeyGenAvatar[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving]   = useState(false);
+  const [looksState, setLooksState] = useState<LooksState>({ status: 'idle', looks: [] });
+  const [saving, setSaving] = useState(false);
 
   const [selectedLookId, setSelectedLookId] = useState(currentAvatarId ?? '');
-  const [selectedRatio,  setSelectedRatio]  = useState<'16:9' | '9:16' | '1:1'>(
-    (currentAspectRatio as '16:9' | '9:16' | '1:1') ?? '16:9'
-  );
+  const [selectedRatio, setSelectedRatio] = useState<AspectRatio>(isAspectRatio(currentAspectRatio) ? currentAspectRatio : '16:9');
 
-  useEffect(() => {
-    setLoading(true);
-    fetch(`/api/heygen/avatars?baseId=${encodeURIComponent(baseAvatarId)}`)
-      .then(r => r.json())
-      .then(d => setLooks(d.avatars ?? []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+  const loadLooks = useCallback(async () => {
+    if (!baseAvatarId) { setLooksState({ status: 'idle', looks: [] }); return; }
+    setLooksState(prev => ({ status: 'loading', looks: prev.looks }));
+    try {
+      const r = await fetch(`/api/heygen/avatars?baseId=${encodeURIComponent(baseAvatarId)}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      setLooksState({ status: 'ready', looks: Array.isArray(d.avatars) ? d.avatars : [] });
+    } catch (e) {
+      // A failed fetch used to render as "no looks yet" — show it as an error instead.
+      console.error('[avatars] looks fetch failed', e);
+      setLooksState({ status: 'error', looks: [] });
+    }
   }, [baseAvatarId]);
 
+  useEffect(() => { void loadLooks(); }, [loadLooks]);
+
+  const looks = looksState.looks;
+
   async function handleSave() {
-    const selected = looks.find(l => l.avatar_id === selectedLookId) ?? looks[0];
+    if (saving) return;
     setSaving(true);
-    const result = await saveVideoSettingsAction({
-      heygenAvatarId:   selected?.avatar_id ?? null,
-      videoAspectRatio: selectedRatio,
-    });
-    setSaving(false);
-    if (result.ok) toast(t('videoSettingsSaved'));
-    else toast(result.error ?? t('saveFailed'), 'error');
+    try {
+      // Only touch the look when the list actually loaded — otherwise saving
+      // the aspect ratio would silently clear the configured look.
+      const selected = looksState.status === 'ready' && looks.length > 0
+        ? (looks.find(l => l.avatar_id === selectedLookId) ?? looks[0])
+        : null;
+      const result = await saveVideoSettingsAction({
+        ...(selected ? { heygenAvatarId: selected.avatar_id } : {}),
+        videoAspectRatio: selectedRatio,
+      });
+      if (result.ok) toast(t('videoSettingsSaved'));
+      else toast(result.error ?? t('saveFailed'), 'error');
+    } catch (e) {
+      console.error('[avatars] save video settings failed', e);
+      toast(t('saveFailed'), 'error');
+    } finally {
+      setSaving(false);
+    }
   }
 
-  return (
-    <div>
-      {/* ── Avatar looks grid ─────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 24 }}>
-        <div className="eyebrow" style={{ marginBottom: 10 }}>{t('yourAvatar')}</div>
-        <p className="muted" style={{ fontSize: 12, marginBottom: 14 }}>
-          {t('looksDescription')}
-        </p>
+  const selectedSub = ASPECT_RATIOS.find(r => r.id === selectedRatio)?.subKey;
 
-        {loading && (
-          <div style={{ display: 'flex', gap: 12 }}>
-            {[1, 2, 3].map(i => (
-              <div key={i} className="skeleton" style={{ width: 140, height: 190, borderRadius: 10, flexShrink: 0 }} />
-            ))}
+  return (
+    <div className="stack">
+      {/* ── Avatar looks ────────────────────────────────────────────────── */}
+      <section className="stack av-section" aria-labelledby="av-looks-heading">
+        <div>
+          <h3 id="av-looks-heading" className="av-section-title">{t('yourAvatar')}</h3>
+          <p className="muted text-sm">{t('looksDescription')}</p>
+        </div>
+
+        {!baseAvatarId && <p className="subtle text-sm">{t('noActiveAvatar')}</p>}
+
+        {baseAvatarId && looksState.status === 'loading' && (
+          <div className="av-looks" aria-busy="true">
+            {[1, 2, 3].map(i => <div key={i} className="skeleton av-look-skeleton" />)}
           </div>
         )}
 
-        {!loading && looks.length === 0 && (
-          <p className="muted" style={{ fontSize: 13 }}>
-            {t('noLooksYet')}
-          </p>
+        {baseAvatarId && looksState.status === 'error' && (
+          <div className="alert alert-bad" role="alert">
+            <AlertIcon size={16} />
+            <div className="alert-body">
+              <div className="alert-text">{t('looksLoadFailed')}</div>
+              <div className="alert-actions">
+                <button type="button" className="btn btn-sm" onClick={() => { void loadLooks(); }}>
+                  <RefreshIcon size={14} />{t('retry')}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
-        {!loading && looks.length > 0 && (
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {baseAvatarId && looksState.status === 'ready' && looks.length === 0 && (
+          <p className="subtle text-sm">{t('noLooksYet')}</p>
+        )}
+
+        {baseAvatarId && looksState.status === 'ready' && looks.length > 0 && (
+          <div className="av-looks" role="radiogroup" aria-label={t('yourAvatar')}>
             {looks.map((look, i) => {
               const isSelected = selectedLookId === look.avatar_id || (!selectedLookId && i === 0);
+              const label = look.avatar_name || t('lookFallbackName', { number: i + 1 });
               return (
-                <button key={`${look.avatar_id}-${i}`} type="button"
-                  onClick={() => setSelectedLookId(look.avatar_id)}
-                  style={{
-                    padding: 0, borderRadius: 12, overflow: 'hidden', cursor: 'pointer',
-                    border: `3px solid ${isSelected ? 'var(--accent)' : 'var(--line)'}`,
-                    background: 'var(--bg-hover)', position: 'relative', textAlign: 'left',
-                    width: 140, flexShrink: 0, color: 'var(--text)',
-                    boxShadow: isSelected ? '0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent)' : 'none',
-                    transition: 'border-color 0.15s, box-shadow 0.15s',
-                  }}>
-                  {look.preview_image_url ? (
-                    <img src={look.preview_image_url} alt={look.avatar_name}
-                      style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', display: 'block' }} />
-                  ) : (
-                    <div style={{ width: '100%', aspectRatio: '3/4', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>
-                      👤
-                    </div>
-                  )}
-                  {isSelected && (
-                    <div style={{
-                      position: 'absolute', top: 8, right: 8, width: 24, height: 24,
-                      background: 'var(--accent)', borderRadius: '50%', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 700,
-                    }}>✓</div>
-                  )}
-                  <div style={{ padding: '8px 10px 10px', fontSize: 12, fontWeight: 600 }}>
-                    {look.avatar_name || t('lookFallbackName', { number: i + 1 })}
-                    {look.preview_video_url && (
-                      <a href={look.preview_video_url} target="_blank" rel="noreferrer"
-                        style={{ display: 'block', fontSize: 11, color: 'var(--accent)', marginTop: 2, textDecoration: 'none' }}>
-                        {t('previewLink')}
-                      </a>
+                <div key={`${look.avatar_id}-${i}`} className={`av-look${isSelected ? ' is-selected' : ''}`}>
+                  <button type="button" role="radio" aria-checked={isSelected} className="av-look-btn"
+                    disabled={!canManage} onClick={() => setSelectedLookId(look.avatar_id)}>
+                    {look.preview_image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={look.preview_image_url} alt="" className="av-look-img" />
+                    ) : (
+                      <div className="av-look-img av-look-empty" aria-hidden="true"><AvatarsIcon size={28} /></div>
                     )}
-                  </div>
-                </button>
+                    {isSelected && <span className="av-look-check" aria-hidden="true"><CheckIcon size={13} strokeWidth={2.5} /></span>}
+                    <span className="av-look-name">{label}</span>
+                  </button>
+                  {look.preview_video_url && (
+                    <a href={look.preview_video_url} target="_blank" rel="noreferrer" className="av-look-preview link text-xs">
+                      {t('previewLink')}<ExternalIcon size={12} />
+                    </a>
+                  )}
+                </div>
               );
             })}
           </div>
         )}
-      </div>
+      </section>
 
-      {/* ── Video format ──────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 24 }}>
-        <div className="eyebrow" style={{ marginBottom: 8 }}>{t('videoFormat')}</div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {ASPECT_RATIOS.map(r => (
-            <button key={r.id} type="button" onClick={() => setSelectedRatio(r.id)}
-              style={{
-                padding: '10px 16px', borderRadius: 8, border: '1.5px solid',
-                borderColor: selectedRatio === r.id ? 'var(--accent)' : 'var(--line)',
-                background: selectedRatio === r.id ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent',
-                cursor: 'pointer', textAlign: 'center',
-              }}>
-              <div style={{ fontWeight: 700, fontSize: 13, color: selectedRatio === r.id ? 'var(--accent)' : 'var(--text)' }}>{r.label}</div>
-              <div className="muted" style={{ fontSize: 11 }}>{t(r.subKey)}</div>
-            </button>
-          ))}
+      {/* ── Video format ────────────────────────────────────────────────── */}
+      <section className="stack av-section" aria-labelledby="av-format-heading">
+        <h3 id="av-format-heading" className="av-section-title">{t('videoFormat')}</h3>
+        <div>
+          <div className="segmented" role="radiogroup" aria-labelledby="av-format-heading">
+            {ASPECT_RATIOS.map(r => (
+              <button key={r.id} type="button" role="radio" aria-checked={selectedRatio === r.id}
+                disabled={!canManage} onClick={() => setSelectedRatio(r.id)}>
+                {r.id}
+              </button>
+            ))}
+          </div>
+          {selectedSub && <span className="field-hint">{t(selectedSub)}</span>}
         </div>
-      </div>
+      </section>
 
-      {/* ── Save ──────────────────────────────────────────────────────────── */}
-      <button className="btn primary" disabled={saving} onClick={handleSave}>
-        {saving ? t('saving') : t('saveVideoSettings')}
-      </button>
+      {canManage && (
+        <div className="form-actions av-form-actions">
+          <button type="button" className="btn btn-primary" disabled={saving} aria-busy={saving} onClick={handleSave}>
+            {saving ? t('saving') : t('saveVideoSettings')}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

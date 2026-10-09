@@ -7,18 +7,23 @@ import { stripe } from '@/lib/stripe';
 import { adminDb } from '@/lib/supabase';
 import { getCampaign, getBillingPlan } from '@/lib/data';
 import { can } from '@/lib/permissions';
+import type { ActionFormState } from '@/lib/form-state';
 
-export async function startCheckoutAction(planId: string): Promise<void> {
+// Bound per plan (`startCheckoutAction.bind(null, plan.id)`) and driven by
+// `useFormState` on /pricing: every refusal comes back as a translated
+// `{ ok: false, error }` the card renders inline; success redirects to Stripe
+// Checkout. Raw Stripe errors are logged, never shown.
+export async function startCheckoutAction(planId: string, _prev: ActionFormState, _formData: FormData): Promise<ActionFormState> {
   const s = await requireSession();
   const t = await getTranslations({ locale: s.locale, namespace: 'errors.pricing' });
   // Server actions are directly callable — the button being hidden in the UI is
   // not a permission check. Only roles that can manage billing may subscribe.
-  if (!can(s.role, 'edit_settings')) return;
-  if (!stripe) return;
+  if (!can(s.role, 'edit_settings')) return { ok: false, error: t('permissionDenied') };
+  if (!stripe) return { ok: false, error: t('stripeNotConfigured') };
 
   const [campaign, plan] = await Promise.all([getCampaign(s.campaignId), getBillingPlan(planId)]);
-  if (!campaign) return;
-  if (!plan) return;
+  if (!campaign) return { ok: false, error: t('campaignNotFound') };
+  if (!plan) return { ok: false, error: t('planNotFound') };
 
   // Never open a second Checkout for a campaign that already has a live
   // subscription — that would create a duplicate Stripe subscription (and
@@ -37,17 +42,21 @@ export async function startCheckoutAction(planId: string): Promise<void> {
       line_items: [{ price: plan.stripeFlatPriceId, quantity: 1 }],
       // Land back on /pricing, not /dashboard: /pricing is not wrapped in
       // AppFrame, so it renders immediately (no race with the webhook that sets
-      // plan_id) and shows the "Payment received — activating your plan" banner.
+      // plan_id) and shows the "Payment received — activating your plan" state,
+      // which polls until the webhook lands.
       success_url: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/pricing?checkout=success`,
       cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/pricing?checkout=canceled`,
     });
   } catch (e) {
     // A bad/unsynced Stripe price id or a wrong-mode API key surfaces here as
-    // a StripeInvalidRequestError — without this catch it was an unhandled
-    // 500 instead of the "Couldn't change plan" banner the page already has.
-    redirect(`/pricing?error=${encodeURIComponent(e instanceof Error ? e.message : t('couldNotStartCheckout'))}`);
+    // a StripeInvalidRequestError. Log the real reason; show a friendly one.
+    console.error('startCheckoutAction: Stripe checkout session failed', e);
+    return { ok: false, error: t('couldNotStartCheckout') };
   }
-  if (!session.url) return;
+  if (!session.url) {
+    console.error('startCheckoutAction: Stripe returned a checkout session without a url', session.id);
+    return { ok: false, error: t('couldNotStartCheckout') };
+  }
   redirect(session.url);
 }
 
@@ -69,14 +78,16 @@ export async function changePlanAction(planId: string): Promise<{ ok: boolean; e
 
     await stripe.subscriptions.update(campaign.stripeSubscriptionId, {
       items: [{ id: currentItemId, price: plan.stripeFlatPriceId }],
+      // The UI confirms this with the user first: the difference for the rest
+      // of the current period is invoiced immediately.
       proration_behavior: 'always_invoice',
     });
   } catch (e) {
     // A bad/unsynced Stripe price id, a canceled subscription, or a wrong-mode
-    // API key surfaces here as a Stripe error — without this catch it was an
-    // unhandled 500 instead of the "Couldn't change plan" banner the page
-    // already has.
-    return { ok: false, error: e instanceof Error ? e.message : t('couldNotChangePlan') };
+    // API key surfaces here as a Stripe error. Log the real reason; show a
+    // friendly, translated one.
+    console.error('changePlanAction: Stripe subscription update failed', e);
+    return { ok: false, error: t('couldNotChangePlan') };
   }
 
   // The Stripe subscription's price is updated above, but nothing else in the

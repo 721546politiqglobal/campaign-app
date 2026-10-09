@@ -39,6 +39,7 @@ function fd(id: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(console, 'error').mockImplementation(() => {});
   campaignsCountResult.mockResolvedValue({ count: 0, error: null });
   planMaybeSingle.mockResolvedValue({ data: { id: 'plan-test', stripe_product_id: 'prod_test', stripe_flat_price_id: 'price_test' } });
   pricesUpdate.mockResolvedValue({});
@@ -79,6 +80,16 @@ describe('deleteBillingPlanAction', () => {
     expect(planDeleteEq).toHaveBeenCalledWith('id', 'plan-test');
     expect(pricesUpdate).toHaveBeenCalledWith('price_test', { active: false });
     expect(productsUpdate).toHaveBeenCalledWith('prod_test', { active: false });
+  });
+
+  it('treats a failed in-use count as an error instead of "nobody is on this plan" (#19)', async () => {
+    campaignsCountResult.mockResolvedValue({ count: null, error: { message: 'count failed' } });
+    const { deleteBillingPlanAction } = await import('./actions');
+    const r = await deleteBillingPlanAction(fd('plan-test'));
+    expect(r.ok).toBe(false);
+    expect(r.error).not.toMatch(/count failed/);
+    expect(planDelete).not.toHaveBeenCalled();
+    expect(pricesUpdate).not.toHaveBeenCalled();
   });
 
   it('returns an error when the plan does not exist', async () => {

@@ -35,7 +35,7 @@ function fd(over: Record<string, string> = {}) {
   return f;
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => { vi.clearAllMocks(); vi.spyOn(console, 'error').mockImplementation(() => {}); });
 
 describe('upsertBillingPlanAction', () => {
   it('creates a new plan: Stripe product + price with the chosen interval, then upserts the row', async () => {
@@ -181,7 +181,10 @@ describe('upsertBillingPlanAction', () => {
     const { upsertBillingPlanAction } = await import('./actions');
     const r = await upsertBillingPlanAction(fd({ id: 'plan-starter', priceDollars: '59' }));
     expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/db unavailable/);
+    // Raw DB text is logged server-side, never shown to the admin.
+    expect(r.error).not.toMatch(/db unavailable/);
+    expect(r.error).toMatch(/could not save plan/i);
+    expect(console.error).toHaveBeenCalled();
     expect(pricesUpdate).not.toHaveBeenCalled();
   });
 
@@ -231,7 +234,8 @@ describe('upsertBillingPlanAction', () => {
     const { upsertBillingPlanAction } = await import('./actions');
     const r = await upsertBillingPlanAction(fd());
     expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/No such product/);
+    expect(r.error).not.toMatch(/No such product/);
+    expect(r.error).toMatch(/could not save plan/i);
     expect(upsert).not.toHaveBeenCalled();
   });
 
@@ -242,7 +246,8 @@ describe('upsertBillingPlanAction', () => {
     const { upsertBillingPlanAction } = await import('./actions');
     const r = await upsertBillingPlanAction(fd({ id: 'plan-starter' }));
     expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/lookup failed/);
+    expect(r.error).not.toMatch(/lookup failed/);
+    expect(r.error).toMatch(/could not save plan/i);
     expect(productsCreate).not.toHaveBeenCalled();
     expect(pricesCreate).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();

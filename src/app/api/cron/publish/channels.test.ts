@@ -8,7 +8,7 @@ function fakeDb() {
   const calls: Call[] = [];
   function chain(call: Call): any {
     const c: any = {};
-    for (const m of ['eq', 'not', 'lte', 'lt', 'limit', 'select', 'in']) {
+    for (const m of ['eq', 'not', 'lte', 'lt', 'order', 'limit', 'select', 'in']) {
       c[m] = (...args: unknown[]) => { call.filters.push([m, ...args]); return c; };
     }
     c.then = (resolve: (v: unknown) => void) => {

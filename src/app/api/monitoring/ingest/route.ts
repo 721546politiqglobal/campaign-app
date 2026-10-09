@@ -4,27 +4,48 @@ import { scoreCredibility, categorizeSource, isRelevant } from '@/lib/credibilit
 import { monitoringBearerOk } from '@/lib/monitoring-auth';
 import { uid } from '@/lib/store';
 
+// Field limits. Excerpts are truncated (the feed only ever shows a clamp of
+// them); everything else is rejected so a misconfigured workflow fails loudly.
+// (Not exported: Next.js only allows handler exports from a route module.)
+const MAX_SOURCE_LEN = 200;
+const MAX_OPPONENT_LEN = 200;
+const MAX_URL_LEN = 2048;
+const MAX_EXCERPT_LEN = 1000;
+const MAX_CAMPAIGN_ID_LEN = 64;
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function str(v: unknown): string | null {
+  return typeof v === 'string' ? v.trim() : null;
+}
+
 export async function POST(req: NextRequest) {
   if (!monitoringBearerOk(req.headers.get('authorization'))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  let body: {
-    campaign_id?: string;
-    source?: string;
-    opponent?: string | null;
-    excerpt?: string;
-    url?: string;
-    relevance_terms?: string[];
-  };
-
+  let body: Record<string, unknown>;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
+  if (!body || typeof body !== 'object') {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
 
-  const { campaign_id, source, opponent, excerpt, url } = body;
+  const campaign_id = str(body.campaign_id);
+  const source = str(body.source);
+  const excerpt = str(body.excerpt);
+  const url = str(body.url);
+  const opponent = str(body.opponent);
 
   if (!campaign_id || !source || !excerpt || !url) {
     return NextResponse.json(
@@ -32,10 +53,39 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
+  if (campaign_id.length > MAX_CAMPAIGN_ID_LEN) {
+    return NextResponse.json({ error: 'Invalid campaign_id' }, { status: 400 });
+  }
+  if (source.length > MAX_SOURCE_LEN) {
+    return NextResponse.json({ error: `source must be at most ${MAX_SOURCE_LEN} characters` }, { status: 400 });
+  }
+  if (opponent && opponent.length > MAX_OPPONENT_LEN) {
+    return NextResponse.json({ error: `opponent must be at most ${MAX_OPPONENT_LEN} characters` }, { status: 400 });
+  }
+  if (url.length > MAX_URL_LEN || !isHttpUrl(url)) {
+    return NextResponse.json({ error: 'url must be an http(s) URL' }, { status: 400 });
+  }
+
+  // An unknown campaign_id used to surface as a raw foreign-key error from
+  // Postgres (and a 500). Check it up front and answer with a clean 404.
+  const { data: campaign, error: campaignError } = await adminDb
+    .from('campaigns')
+    .select('id')
+    .eq('id', campaign_id)
+    .maybeSingle();
+  if (campaignError) {
+    console.error('[monitoring/ingest] campaign lookup failed', campaignError);
+    return NextResponse.json({ error: 'Could not verify campaign' }, { status: 500 });
+  }
+  if (!campaign) {
+    return NextResponse.json({ error: 'Unknown campaign_id' }, { status: 404 });
+  }
 
   // Drop clearly off-topic items before they pollute the feed (UX-5). With no
   // terms configured this keeps everything, so nothing is silently blackholed.
-  const terms = Array.isArray(body.relevance_terms) ? body.relevance_terms : [];
+  const terms = Array.isArray(body.relevance_terms)
+    ? (body.relevance_terms as unknown[]).filter((t): t is string => typeof t === 'string')
+    : [];
   if (!isRelevant(`${excerpt} ${source} ${opponent ?? ''}`, terms)) {
     return NextResponse.json({ ok: true, skipped: true, reason: 'off_topic' });
   }
@@ -51,7 +101,7 @@ export async function POST(req: NextRequest) {
         campaign_id,
         source,
         opponent: opponent || null,
-        excerpt: String(excerpt).substring(0, 1000),
+        excerpt: excerpt.substring(0, MAX_EXCERPT_LEN),
         url,
         credibility: scoreCredibility(url),
         category: categorizeSource(url, source),
@@ -61,7 +111,7 @@ export async function POST(req: NextRequest) {
 
   if (upsertError) {
     console.error('[monitoring/ingest]', upsertError);
-    return NextResponse.json({ error: upsertError.message }, { status: 500 });
+    return NextResponse.json({ error: 'Could not save monitoring result' }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });

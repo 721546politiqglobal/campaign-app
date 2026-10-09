@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ExternalIcon, LockIcon } from '@/components/icons';
 import { ChannelIcon } from '@/components/ChannelIcons';
 import {
   startChannelLinkAction, refreshChannelsAction, disconnectChannelAction, completeMockLinkAction,
@@ -51,19 +54,16 @@ export function ChannelsManager({
 }) {
   const t = useTranslations('channels');
   const { toast } = useToast();
+  const confirm = useConfirm();
   const router = useRouter();
   const [accounts, setAccounts] = useState<SocialAccount[]>(initialAccounts);
   const [busy, setBusy] = useState<Busy>(null);
   const [waiting, setWaiting] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [popupDone, setPopupDone] = useState(false);
-  const [confirming, setConfirming] = useState<Platform | null>(null);
   const accountsRef = useRef(accounts);
   accountsRef.current = accounts;
   const lastTrigger = useRef<HTMLButtonElement | null>(null);
-  const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
-  const disconnectBtns = useRef<Partial<Record<Platform, HTMLButtonElement | null>>>({});
-  const prevConfirming = useRef<Platform | null>(null);
   const mountedRef = useRef(true);
   // At most one link watch and one finish poll exist at a time, and none may
   // outlive the page: each is torn down through these refs.
@@ -86,12 +86,6 @@ export function ChannelsManager({
     return () => { mountedRef.current = false; cancelFinish(); endLinkWatch(); };
   }, [cancelFinish, endLinkWatch]);
 
-  // Move focus into the inline confirm; hand it back to the card's Disconnect button on cancel.
-  useEffect(() => {
-    if (confirming) cancelBtnRef.current?.focus();
-    else if (prevConfirming.current) disconnectBtns.current[prevConfirming.current]?.focus();
-    prevConfirming.current = confirming;
-  }, [confirming]);
   const networkName = (p: Platform) => t(`networks.${p}.name`);
 
   // After linking, re-read every few seconds until the new account shows up —
@@ -246,7 +240,16 @@ export function ChannelsManager({
   }
 
   async function disconnect(platform: Platform) {
-    setConfirming(null);
+    const name = networkName(platform);
+    // ConfirmDialog returns focus to the Disconnect button that opened it.
+    const ok = await confirm({
+      title: t('disconnectNetwork', { network: name }),
+      description: t('disconnectConfirm', { network: name }),
+      confirmLabel: t('disconnect'),
+      cancelLabel: t('cancel'),
+      tone: 'danger',
+    });
+    if (!ok || !mountedRef.current) return;
     setBusy({ kind: 'disconnecting', platform });
     try {
       const r = await disconnectChannelAction(platform);
@@ -273,33 +276,33 @@ export function ChannelsManager({
 
   return (
     <>
-      <div className="pagehead">
-        <div>
-          <span className="eyebrow">{eyebrow}</span>
-          <h1>{t('title')}</h1>
-          <p className="muted" style={{ margin: '6px 0 0', fontSize: 13 }}>{t('subtitle')}</p>
-        </div>
-        <div className="actions channels-head-meta">
-          <div className="channels-progress" aria-live="polite">
-            <span>{t('progress', { connected: connectedCount, total })}</span>
-            <div className="channels-progress-bar" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={connectedCount}>
-              <span style={{ width: `${(connectedCount / total) * 100}%` }} />
+      <PageHeader
+        eyebrow={eyebrow}
+        title={t('title')}
+        description={t('subtitle')}
+        actions={
+          <div className="channels-head-meta">
+            <div className="channels-progress" aria-live="polite">
+              <span className="num">{t('progress', { connected: connectedCount, total })}</span>
+              <div className="channels-progress-bar" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={connectedCount}>
+                <span style={{ width: `${(connectedCount / total) * 100}%` }} />
+              </div>
             </div>
+            {canManage && (
+              <button type="button" className="btn btn-primary" disabled={!!busy || waiting} aria-busy={linking}
+                onClick={e => connect(e.currentTarget)}>
+                {linking ? t('connecting') : t('connectAccounts')}
+              </button>
+            )}
           </div>
-          {canManage && (
-            <button type="button" className="btn primary" disabled={!!busy || waiting}
-              onClick={e => connect(e.currentTarget)}>
-              {linking ? t('connecting') : t('connectAccounts')}
-            </button>
-          )}
-        </div>
-      </div>
+        }
+      />
 
       {waiting && (
         <div className="channels-banner" role="status">
           <span className="spinner" aria-hidden />
           <span>{t('waiting')}</span>
-          <button type="button" className="btn" onClick={() => { endLinkWatch(); finishLink(); }}>{t('waitingCancel')}</button>
+          <button type="button" className="btn btn-sm" onClick={() => { endLinkWatch(); finishLink(); }}>{t('waitingCancel')}</button>
         </div>
       )}
 
@@ -352,29 +355,24 @@ export function ChannelsManager({
                     {a.handle && <span>{a.handle}</span>}
                   </div>
                   {a.profileUrl && (
-                    <a href={a.profileUrl} target="_blank" rel="noopener noreferrer">{t('viewProfile')} ↗</a>
+                    <a href={a.profileUrl} target="_blank" rel="noopener noreferrer">
+                      {t('viewProfile')}<ExternalIcon size={12} />
+                    </a>
                   )}
                 </div>
               )}
 
-              {canManage && confirming === p ? (
-                <div className="channel-confirm" role="alertdialog" aria-label={t('disconnectNetwork', { network: name })}>
-                  <p>{t('disconnectConfirm', { network: name })}</p>
-                  <div>
-                    <button type="button" className="btn" ref={cancelBtnRef} onClick={() => setConfirming(null)}>{t('cancel')}</button>
-                    <button type="button" className="btn danger" onClick={() => disconnect(p)}>{t('disconnect')}</button>
-                  </div>
-                </div>
-              ) : canManage ? (
+              {canManage ? (
                 <div className="channel-actions">
                   {connected && (
-                    <button type="button" className="btn" disabled={!!busy || finishing} ref={el => { disconnectBtns.current[p] = el; }}
-                      aria-label={t('disconnectNetwork', { network: name })} onClick={() => setConfirming(p)}>
+                    <button type="button" className="btn" disabled={!!busy || finishing}
+                      aria-busy={busy?.kind === 'disconnecting' && busy.platform === p}
+                      aria-label={t('disconnectNetwork', { network: name })} onClick={() => disconnect(p)}>
                       {t('disconnect')}
                     </button>
                   )}
                   {needsReconnect && (
-                    <button type="button" className="btn primary" disabled={!!busy || waiting}
+                    <button type="button" className="btn btn-primary" disabled={!!busy || waiting}
                       aria-label={t('reconnectNetwork', { network: name })} onClick={e => connect(e.currentTarget)}>
                       {t('reconnect')}
                     </button>
@@ -393,10 +391,7 @@ export function ChannelsManager({
       </div>
 
       <div className="channels-trust">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-          <rect x="3" y="7" width="10" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
-          <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" strokeWidth="1.4"/>
-        </svg>
+        <LockIcon size={14} />
         <span>{t('trust')}{!canManage && <> <span className="channels-readonly">{t('readOnly')}</span></>}</span>
       </div>
     </>

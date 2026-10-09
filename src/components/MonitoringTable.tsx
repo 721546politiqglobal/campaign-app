@@ -1,10 +1,16 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useFormatter, useTranslations } from 'next-intl';
 import type { MonitoringResult } from '@/lib/data';
-import { dismissMonitoringAction } from '@/app/actions';
+import { dismissMonitoringAction, restoreMonitoringAction } from '@/app/actions';
+import { useToast } from '@/components/Toast';
+import { Badge, type BadgeTone } from '@/components/ui/Badge';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Field } from '@/components/ui/Field';
+import { ExternalIcon, SparklesIcon } from '@/components/icons';
+import { excerptForBrief } from '@/app/monitoring/validation';
 
 // Sources are free text (the manual-add form lets a user type anything), so
 // only the exact strings our own integrations write get their own tab —
@@ -18,6 +24,12 @@ function platformOf(source: string): Platform {
 }
 
 type Filter = 'all' | Platform;
+const FILTER_KEYS: Filter[] = ['all', 'twitter', 'instagram', 'youtube', 'facebook', 'news'];
+const ALL_OPPONENTS = '__all__';
+const CRED_TONE: Record<MonitoringResult['credibility'], BadgeTone> = { high: 'ok', medium: 'neutral', low: 'bad' };
+const CATEGORY_KEY: Record<MonitoringResult['category'], string> = {
+  news: 'news', social: 'social', blog: 'blog', press_release: 'pressRelease',
+};
 
 function detectTrending(results: MonitoringResult[]): Set<string> {
   const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
@@ -39,12 +51,39 @@ function detectTrending(results: MonitoringResult[]): Set<string> {
   return trendingIds;
 }
 
+// The `?brief=&type=` contract /content/new understands: the editor is
+// pre-filled with the excerpt as its instruction.
+function rebuttalHref(brief: string): string {
+  const params = new URLSearchParams({ brief, type: 'social_post' });
+  return `/content/new?${params.toString()}`;
+}
+
 export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
   const t = useTranslations('monitoring');
-  const router = useRouter();
+  const format = useFormatter();
+  const { toast } = useToast();
+  const [items, setItems] = useState<MonitoringResult[]>(results);
   const [filter, setFilter] = useState<Filter>('all');
+  const [opponent, setOpponent] = useState<string>(ALL_OPPONENTS);
   const [dismissing, setDismissing] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // The server list is the source of truth whenever the route re-renders
+  // (manual add, navigation); optimistic edits live in between.
+  useEffect(() => { setItems(results); }, [results]);
+
+  const opponents = useMemo(
+    () => Array.from(new Set(items.map(r => r.opponent).filter((o): o is string => !!o))).sort(),
+    [items],
+  );
+  const trendingIds = useMemo(() => detectTrending(items), [items]);
+
+  const filtered = items.filter(r =>
+    (filter === 'all' || platformOf(r.source) === filter) &&
+    (opponent === ALL_OPPONENTS || r.opponent === opponent),
+  );
+  const filtersActive = filter !== 'all' || opponent !== ALL_OPPONENTS;
+
   function toggleExpanded(id: string) {
     setExpanded(prev => {
       const next = new Set(prev);
@@ -53,106 +92,145 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
     });
   }
 
-  const trendingIds = detectTrending(results);
+  async function restore(item: MonitoringResult, index: number) {
+    try {
+      const r = await restoreMonitoringAction(item.id);
+      if (!r.ok) { toast(r.error, 'error'); return; }
+      setItems(prev => {
+        if (prev.some(p => p.id === item.id)) return prev;
+        const next = [...prev];
+        next.splice(Math.min(index, next.length), 0, item);
+        return next;
+      });
+      toast(t('restored'));
+    } catch (e) {
+      console.error('[monitoring] restore failed', e);
+      toast(t('genericError'), 'error');
+    }
+  }
 
-  const filtered = results.filter(r => filter === 'all' || platformOf(r.source) === filter);
+  async function handleDismiss(item: MonitoringResult) {
+    const index = items.findIndex(p => p.id === item.id);
+    setDismissing(item.id);
+    // Optimistic: drop it now, put it back if the server disagrees.
+    setItems(prev => prev.filter(p => p.id !== item.id));
+    try {
+      const r = await dismissMonitoringAction(item.id);
+      if (!r.ok) {
+        setItems(prev => { const next = [...prev]; next.splice(Math.min(index, next.length), 0, item); return next; });
+        toast(r.error, 'error');
+        return;
+      }
+      toast(t('dismissed'), 'info', { duration: 8000, action: { label: t('undo'), onClick: () => { void restore(item, index); } } });
+    } catch (e) {
+      console.error('[monitoring] dismiss failed', e);
+      setItems(prev => { const next = [...prev]; next.splice(Math.min(index, next.length), 0, item); return next; });
+      toast(t('genericError'), 'error');
+    } finally {
+      setDismissing(null);
+    }
+  }
 
-  const CATEGORY_LABEL: Record<string, string> = {
-    news: t('category.news'), social: t('category.social'), blog: t('category.blog'), press_release: t('category.pressRelease'),
-  };
-
-  function goToRebuttal(result: MonitoringResult) {
-    const brief = encodeURIComponent(
-      t('respondToStory', { source: result.source, excerpt: result.excerpt.slice(0, 200) })
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        icon="monitoring"
+        title={t('empty.title')}
+        description={t('empty.description')}
+        action={<Link href="/settings" className="btn">{t('empty.cta')}</Link>}
+      />
     );
-    router.push(`/content/new?brief=${brief}&type=social_post`);
   }
-
-  async function handleDismiss(id: string) {
-    setDismissing(id);
-    await dismissMonitoringAction(id);
-    setDismissing(null);
-    router.refresh();
-  }
-
-  const FILTERS: { key: Filter; label: string }[] = [
-    { key: 'all',       label: t('filters.all') },
-    { key: 'twitter',   label: t('filters.twitter') },
-    { key: 'instagram', label: t('filters.instagram') },
-    { key: 'youtube',   label: t('filters.youtube') },
-    { key: 'facebook',  label: t('filters.facebook') },
-    { key: 'news',      label: t('filters.news') },
-  ];
 
   return (
-    <div>
-      {/* Filter bar */}
-      <div className="btnrow" style={{ marginBottom: 20 }}>
-        {FILTERS.map(f => (
-          <button key={f.key} className={`btn${filter === f.key ? ' active' : ''}`}
-            onClick={() => setFilter(f.key)}>
-            {f.label}
-          </button>
-        ))}
+    <div className="stack">
+      <div className="mon-toolbar">
+        <div className="segmented segmented-sm" role="group" aria-label={t('filters.all')}>
+          {FILTER_KEYS.map(key => (
+            <button key={key} type="button" aria-pressed={filter === key} onClick={() => setFilter(key)}>
+              {t(`filters.${key}`)}
+            </button>
+          ))}
+        </div>
+        <div className="mon-toolbar-right">
+          {opponents.length > 0 && (
+            <Field label={t('opponentFilter')} className="mon-opponent-field">
+              {(p) => (
+                <select {...p} className="input input-sm" value={opponent} onChange={e => setOpponent(e.target.value)}>
+                  <option value={ALL_OPPONENTS}>{t('allOpponents')}</option>
+                  {opponents.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              )}
+            </Field>
+          )}
+          <span className="subtle text-sm num" aria-live="polite">{t('countLabel', { count: filtered.length })}</span>
+        </div>
       </div>
 
-      {/* Empty state */}
-      {filtered.length === 0 && (
-        <div className="card" style={{ textAlign: 'center', padding: 40 }}>
-          <p className="muted">{t('emptyState')}</p>
-        </div>
+      {filtered.length === 0 ? (
+        <EmptyState
+          icon="filter"
+          title={t('empty.filteredTitle')}
+          description={t('empty.filteredDescription')}
+          action={<button type="button" className="btn" onClick={() => { setFilter('all'); setOpponent(ALL_OPPONENTS); }}>{t('empty.clearFilters')}</button>}
+        />
+      ) : (
+        <ul className="mon-list">
+          {filtered.map(result => {
+            const isExpanded = expanded.has(result.id);
+            const brief = t('respondToStory', { source: result.source, excerpt: excerptForBrief(result.excerpt) });
+            return (
+              <li key={result.id} className="card mon-card">
+                <div className="mon-card-head">
+                  <div className="mon-card-meta">
+                    <span className="mon-source">{result.source}</span>
+                    {result.opponent && <span className="subtle text-xs">{result.opponent}</span>}
+                    <Badge tone="neutral" size="sm">{t(`category.${CATEGORY_KEY[result.category]}`)}</Badge>
+                    <Badge tone={CRED_TONE[result.credibility]} size="sm" dot>{t(`credibility.${result.credibility}`)}</Badge>
+                    {trendingIds.has(result.id) && <Badge tone="accent" size="sm">{t('trending')}</Badge>}
+                  </div>
+                  <time className="mon-time num" dateTime={result.capturedAt}>
+                    {format.dateTime(new Date(result.capturedAt), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                  </time>
+                </div>
+
+                <p className={`mon-excerpt${isExpanded ? '' : ' excerpt-clamp'}`}>{result.excerpt}</p>
+                {result.excerpt.length > 160 && (
+                  <button type="button" className="mon-more link" aria-expanded={isExpanded} onClick={() => toggleExpanded(result.id)}>
+                    {isExpanded ? t('showLess') : t('showMore')}
+                  </button>
+                )}
+
+                <div className="mon-card-actions">
+                  <Link href={rebuttalHref(brief)} className="btn btn-primary btn-sm">
+                    <SparklesIcon size={14} />
+                    {t('draftRebuttal')}
+                  </Link>
+                  {result.url && (
+                    <a href={result.url} target="_blank" rel="noopener noreferrer" className="btn btn-sm">
+                      {t('readArticle')}
+                      <ExternalIcon size={14} />
+                    </a>
+                  )}
+                  <button type="button" className="btn btn-ghost btn-sm mon-dismiss"
+                    disabled={dismissing === result.id} aria-busy={dismissing === result.id}
+                    onClick={() => handleDismiss(result)}>
+                    {dismissing === result.id ? t('dismissing') : t('dismiss')}
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       )}
 
-      {/* Results */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {filtered.map(result => {
-          const trending = trendingIds.has(result.id);
-          return (
-            <div key={result.id} className="card" style={{ padding: '16px 20px' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{result.source}</span>
-                  <span className="tag">{CATEGORY_LABEL[result.category] ?? result.category}</span>
-                  {trending && <span className="tag trending">{t('trending')}</span>}
-                </div>
-                <span className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap', color: 'var(--text-3)' }}>
-                  {new Date(result.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                </span>
-              </div>
-
-              <p className={expanded.has(result.id) ? undefined : 'excerpt-clamp'}
-                 style={{ fontSize: 14, lineHeight: 1.6, margin: '0 0 8px', color: 'var(--text)' }}>
-                {result.excerpt}
-              </p>
-              {result.excerpt.length > 160 && (
-                <button type="button" onClick={() => toggleExpanded(result.id)}
-                  style={{ background: 'none', border: 'none', padding: 0, marginBottom: 14,
-                           color: 'var(--accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                  {expanded.has(result.id) ? t('showLess') : t('showMore')}
-                </button>
-              )}
-
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button className="btn primary" style={{ fontSize: 12, padding: '6px 14px' }}
-                  onClick={() => goToRebuttal(result)}>
-                  {t('draftRebuttal')}
-                </button>
-                {result.url && (
-                  <a href={result.url} target="_blank" rel="noopener noreferrer"
-                    className="btn" style={{ fontSize: 12, padding: '6px 14px' }}>
-                    {t('readArticle')}
-                  </a>
-                )}
-                <button className="btn" style={{ fontSize: 12, padding: '6px 14px', marginLeft: 'auto', color: 'var(--text-3)' }}
-                  disabled={dismissing === result.id}
-                  onClick={() => handleDismiss(result.id)}>
-                  {dismissing === result.id ? t('dismissing') : t('dismiss')}
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      {filtersActive && filtered.length > 0 && items.length !== filtered.length && (
+        <div className="mon-filter-note subtle text-xs">
+          <button type="button" className="link mon-clear" onClick={() => { setFilter('all'); setOpponent(ALL_OPPONENTS); }}>
+            {t('empty.clearFilters')}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

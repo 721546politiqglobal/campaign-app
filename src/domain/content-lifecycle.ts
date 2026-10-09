@@ -7,13 +7,10 @@ const TRANSITIONS: Record<ContentStatus, ContentStatus[]> = {
   draft:     ['in_review', 'archived'],
   in_review: ['approved', 'rejected', 'draft'],
   approved:  ['scheduled', 'draft', 'published'],
-  // 'scheduled' includes itself: confirmDisclosureAction routes AI-generated
-  // content through schedule() as soon as its disclosure gate clears, then
-  // the wizard's own "Schedule for later" submit calls schedule() again once
-  // real platforms/time are picked — a second, idempotent pass through the
-  // same already-satisfied gate, not a new transition. Rejecting it here
-  // made every AI-generated item permanently unschedulable with a real date
-  // (verified live: "Can't move content from scheduled to scheduled").
+  // 'scheduled' includes itself so a scheduled item can be *rescheduled* to a
+  // new time: scheduleWithTimeAction runs schedule() again, which re-checks
+  // the same (already satisfied) approval + disclosure gate before the new
+  // scheduled_at is written. 'approved' is the unschedule path.
   scheduled: ['scheduled', 'publishing', 'published', 'approved'],
   publishing: ['published', 'approved'],
   published: ['archived'],
@@ -61,6 +58,32 @@ export class ContentLifecycle {
     await this.assertGate(item, 'schedule');
     await this.content.setStatus(itemId, 'scheduled');
     await this.log(item, actorUserId, 'schedule');
+  }
+
+  // Takes a scheduled item off the calendar. Only scheduled → approved: the
+  // approval and disclosure stay on record, so it can be rescheduled or
+  // published straight away without redoing the review.
+  async unschedule(itemId: string, actorUserId: string): Promise<void> {
+    const item = await this.require(itemId);
+    if (item.status !== 'scheduled') {
+      throw new GateError(`Can’t unschedule content that is ${item.status}.`);
+    }
+    this.assertTransition(item.status, 'approved');
+    await this.content.setStatus(itemId, 'approved');
+    await this.log(item, actorUserId, 'unschedule');
+  }
+
+  // Reopens rejected content for another pass: rejected → draft. The old
+  // rejection stays in the approval log; a fresh approval is required before
+  // it can be scheduled or published again.
+  async revise(itemId: string, actorUserId: string): Promise<void> {
+    const item = await this.require(itemId);
+    if (item.status !== 'rejected') {
+      throw new GateError(`Can’t revise content that is ${item.status}.`);
+    }
+    this.assertTransition(item.status, 'draft');
+    await this.content.setStatus(itemId, 'draft');
+    await this.log(item, actorUserId, 'revise');
   }
 
   // Same hard gate as schedule(), callable BEFORE the publisher runs: posting

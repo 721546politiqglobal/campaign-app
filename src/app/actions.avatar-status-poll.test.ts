@@ -86,14 +86,39 @@ describe('checkAvatarStatusAction — pending_consent handling', () => {
     expect(photoAvatarProvider.getAvatarGroupStatus).not.toHaveBeenCalled();
   });
 
-  it('marks a pending_consent row failed when HeyGen reports failed', async () => {
+  it('marks a pending_consent row failed with a translated message (raw HeyGen text is logged, not stored)', async () => {
     getAvatar.mockResolvedValue({ ...baseAvatar, status: 'pending_consent', consentStatus: 'pending' });
     photoAvatarProvider.getAvatarGroupStatus.mockResolvedValue({ status: 'failed', error: { code: 'x', message: 'bad footage' } });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { checkAvatarStatusAction } = await import('./actions');
 
-    await checkAvatarStatusAction('avatar-1');
+    const result = await checkAvatarStatusAction('avatar-1');
 
-    expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'failed', { errorMessage: 'bad footage' });
+    expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'failed', { errorMessage: expect.stringMatching(/training failed/i) });
+    expect(updateAvatarStatus).not.toHaveBeenCalledWith('avatar-1', 'failed', { errorMessage: 'bad footage' });
+    expect(consoleError).toHaveBeenCalled();
+    expect(result).toMatchObject({ ok: true, status: 'failed' });
+    consoleError.mockRestore();
+  });
+
+  it('returns the new status so the client can refresh only on change', async () => {
+    getAvatar.mockResolvedValue({ ...baseAvatar, status: 'training' });
+    photoAvatarProvider.getAvatarGroupStatus.mockResolvedValue({ status: 'completed', consentStatus: 'approved' });
+    const { checkAvatarStatusAction } = await import('./actions');
+
+    const result = await checkAvatarStatusAction('avatar-1');
+
+    expect(result).toMatchObject({ ok: true, status: 'ready' });
+  });
+
+  it('reports the current status without a provider call once the avatar is settled', async () => {
+    getAvatar.mockResolvedValue({ ...baseAvatar, status: 'ready' });
+    const { checkAvatarStatusAction } = await import('./actions');
+
+    const result = await checkAvatarStatusAction('avatar-1');
+
+    expect(result).toMatchObject({ ok: true, status: 'ready' });
+    expect(photoAvatarProvider.getAvatarGroupStatus).not.toHaveBeenCalled();
   });
 
   it('does nothing for a training row with no heygenGroupId yet', async () => {

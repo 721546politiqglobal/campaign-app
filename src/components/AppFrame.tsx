@@ -3,7 +3,10 @@ import { getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/session';
 import { getCampaign } from '@/lib/data';
 import { getCandidateProfile } from '@/lib/candidate';
-import { Sidebar } from './Sidebar';
+import { getTheme } from '@/lib/theme';
+import { logoutAction } from '@/app/actions';
+import { AppShell } from './AppShell';
+import { APP_NAV, resolveNav } from './nav';
 
 export async function AppFrame({ children }: { children: React.ReactNode }) {
   const s = await requireSession();
@@ -18,18 +21,17 @@ export async function AppFrame({ children }: { children: React.ReactNode }) {
     if (!campaign?.planId) redirect('/pricing');
   }
 
+  const nav = resolveNav(APP_NAV, k => t(`nav.${k}`), k => t(`navGroups.${k}`));
+
   return (
-    <div className="shell">
-      <Sidebar name={s.name} campaign={campaign?.name ?? ''} />
-      <div className="main">
-        <div className="topbar">
-          <span className="ws">{campaign?.name}</span>
-          <div className="right">
-            <span className="rolebadge">{t(`roles.${s.role}`)}</span>
-          </div>
-        </div>
-        <div className="content">{children}</div>
-      </div>
-    </div>
+    <AppShell
+      nav={nav}
+      theme={getTheme()}
+      campaignName={campaign?.name ?? ''}
+      user={{ name: s.name, roleLabel: t(`roles.${s.role}`) }}
+      signOutAction={logoutAction}
+    >
+      {children}
+    </AppShell>
   );
 }

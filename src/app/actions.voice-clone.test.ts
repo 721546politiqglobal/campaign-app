@@ -204,18 +204,22 @@ describe('finalizeVoiceCloneAction', () => {
     expect(photoAvatarProvider.cloneVoice).toHaveBeenCalled();
   });
 
-  it('marks status failed (never silently dropped) when cloneVoice throws', async () => {
+  it('marks status failed (never silently dropped) with a translated message when cloneVoice throws', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     photoAvatarProvider.uploadAsset.mockResolvedValue({ assetId: 'asset-1' });
-    photoAvatarProvider.cloneVoice.mockRejectedValue(new Error('HeyGen clone voice error: clone limit reached'));
+    photoAvatarProvider.cloneVoice.mockRejectedValue(new Error('HeyGen clone voice error: internal 500'));
     const { finalizeVoiceCloneAction } = await import('./actions');
 
     const result = await finalizeVoiceCloneAction('My voice', 'voices/c-1/voice-attempt-1/sample.mp3');
 
     expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).not.toMatch(/internal 500/);
     expect(upsertCandidateProfile).toHaveBeenCalledWith('c-1', expect.objectContaining({
       selfVoiceCloneStatus: 'failed',
-      selfVoiceCloneError: expect.stringMatching(/clone limit reached/),
+      selfVoiceCloneError: expect.stringMatching(/cloning failed/i),
     }));
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   it('surfaces a distinct capacity message when HeyGen reports the platform-wide clone limit', async () => {
@@ -286,27 +290,42 @@ describe('checkVoiceCloneStatusAction', () => {
     expect(photoAvatarProvider.getVoiceCloneStatus).not.toHaveBeenCalled();
   });
 
-  it('updates status to ready when HeyGen reports ready', async () => {
+  it('updates status to ready when HeyGen reports ready, and returns the new status', async () => {
     getCandidateProfile.mockResolvedValue({ selfVoiceCloneStatus: 'training', selfVoiceCloneId: 'clone-1' });
     photoAvatarProvider.getVoiceCloneStatus.mockResolvedValue({ status: 'ready' });
     const { checkVoiceCloneStatusAction } = await import('./actions');
 
-    await checkVoiceCloneStatusAction();
+    const result = await checkVoiceCloneStatusAction();
 
     expect(upsertCandidateProfile).toHaveBeenCalledWith('c-1', { selfVoiceCloneStatus: 'ready' });
+    expect(result).toMatchObject({ ok: true, status: 'ready' });
   });
 
-  it('updates status to failed when HeyGen reports failed', async () => {
+  it('reports "training" (no refresh needed) while HeyGen is still processing', async () => {
     getCandidateProfile.mockResolvedValue({ selfVoiceCloneStatus: 'training', selfVoiceCloneId: 'clone-1' });
-    photoAvatarProvider.getVoiceCloneStatus.mockResolvedValue({ status: 'failed' });
+    photoAvatarProvider.getVoiceCloneStatus.mockResolvedValue({ status: 'processing' });
     const { checkVoiceCloneStatusAction } = await import('./actions');
 
-    await checkVoiceCloneStatusAction();
+    const result = await checkVoiceCloneStatusAction();
+
+    expect(upsertCandidateProfile).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ ok: true, status: 'training' });
+  });
+
+  it('updates status to failed with a translated (not hardcoded English) message when HeyGen reports failed', async () => {
+    getCandidateProfile.mockResolvedValue({ selfVoiceCloneStatus: 'training', selfVoiceCloneId: 'clone-1' });
+    photoAvatarProvider.getVoiceCloneStatus.mockResolvedValue({ status: 'failed' });
+    const { requireSession } = await import('@/lib/session');
+    vi.mocked(requireSession).mockResolvedValueOnce({ ...session, locale: 'es' });
+    const { checkVoiceCloneStatusAction } = await import('./actions');
+
+    const result = await checkVoiceCloneStatusAction();
 
     expect(upsertCandidateProfile).toHaveBeenCalledWith('c-1', {
       selfVoiceCloneStatus: 'failed',
-      selfVoiceCloneError: 'HeyGen reported the voice clone failed.',
+      selfVoiceCloneError: 'La clonación de voz no se completó. Inténtalo de nuevo con una grabación más clara.',
     });
+    expect(result).toMatchObject({ ok: true, status: 'failed' });
   });
 });
 
@@ -365,7 +384,7 @@ describe('previewVoiceCloneAction', () => {
     expect(photoAvatarProvider.synthesizeSpeech).not.toHaveBeenCalled();
   });
 
-  it('on success, returns the audio URL using the fixed preview text and the self-clone voice id', async () => {
+  it('on success, returns the audio URL using the preview text in the caller\'s locale and the self-clone voice id', async () => {
     getCandidateProfile.mockResolvedValue({ selfVoiceCloneStatus: 'ready', selfVoiceCloneId: 'clone-1' });
     photoAvatarProvider.synthesizeSpeech.mockResolvedValue({ audioUrl: 'https://heygen.test/preview.mp3' });
     const { previewVoiceCloneAction } = await import('./actions');
@@ -380,7 +399,23 @@ describe('previewVoiceCloneAction', () => {
     });
   });
 
-  it('surfaces the provider error on failure', async () => {
+  it('speaks the preview in Spanish for a Spanish-locale session', async () => {
+    getCandidateProfile.mockResolvedValue({ selfVoiceCloneStatus: 'ready', selfVoiceCloneId: 'clone-1' });
+    photoAvatarProvider.synthesizeSpeech.mockResolvedValue({ audioUrl: 'https://heygen.test/preview.mp3' });
+    const { requireSession } = await import('@/lib/session');
+    vi.mocked(requireSession).mockResolvedValueOnce({ ...session, locale: 'es' });
+    const { previewVoiceCloneAction } = await import('./actions');
+
+    await previewVoiceCloneAction();
+
+    expect(photoAvatarProvider.synthesizeSpeech).toHaveBeenCalledWith({
+      voiceId: 'clone-1',
+      text: 'Hola, esta es una vista previa de tu voz clonada.',
+    });
+  });
+
+  it('returns a translated error (and logs the raw one) when the provider fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     getCandidateProfile.mockResolvedValue({ selfVoiceCloneStatus: 'ready', selfVoiceCloneId: 'clone-1' });
     photoAvatarProvider.synthesizeSpeech.mockRejectedValue(new Error('HeyGen synthesize speech error: invalid voice_id'));
     const { previewVoiceCloneAction } = await import('./actions');
@@ -388,6 +423,11 @@ describe('previewVoiceCloneAction', () => {
     const result = await previewVoiceCloneAction();
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/invalid voice_id/);
+    if (!result.ok) {
+      expect(result.error).not.toMatch(/invalid voice_id/);
+      expect(result.error).toMatch(/preview/i);
+    }
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });

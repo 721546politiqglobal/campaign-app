@@ -2,8 +2,9 @@
 // All functions use the admin client — server-side only.
 
 import { adminDb } from './supabase';
-import { ContentStatus, ContentType } from '@/domain/types';
+import { ContentStatus, ContentType, Platform } from '@/domain/types';
 import type { Locale } from '@/lib/locale';
+import { ACTIVE_SUBSCRIPTION_STATUSES, type CampaignStatusFilter } from '@/lib/campaign-filters';
 
 export interface Campaign {
   id: string; name: string; jurisdictions: string[]; tags: string[];
@@ -38,12 +39,6 @@ export async function getCampaign(campaignId: string): Promise<Campaign | null> 
   };
 }
 
-export async function getUser(userId: string): Promise<User | null> {
-  const { data } = await adminDb.from('users').select('*').eq('id', userId).single();
-  if (!data) return null;
-  return { id: data.id, name: data.name, role: data.role, campaignId: data.campaign_id, email: data.email ?? null };
-}
-
 export async function getUsers(campaignId: string): Promise<User[]> {
   const { data } = await adminDb.from('users').select('*').eq('campaign_id', campaignId);
   return (data ?? []).map(r => ({ id: r.id, name: r.name, role: r.role, campaignId: r.campaign_id, email: r.email ?? null }));
@@ -59,24 +54,6 @@ export async function getContentItems(campaignId: string, filter?: ContentStatus
 export async function getContentItem(id: string) {
   const { data } = await adminDb.from('content_items').select('*').eq('id', id).single();
   return data ? toItem(data) : null;
-}
-
-export async function getApprovals(campaignId: string) {
-  const { data } = await adminDb.from('approval_records').select('*').eq('campaign_id', campaignId);
-  return (data ?? []).map(r => ({
-    id: r.id, contentItemId: r.content_item_id, campaignId: r.campaign_id,
-    approverUserId: r.approver_user_id, decision: r.decision as 'approve' | 'reject',
-    note: r.note, createdAt: r.created_at,
-  }));
-}
-
-export async function getDisclosures(campaignId: string) {
-  const { data } = await adminDb.from('disclosure_records').select('*').eq('campaign_id', campaignId);
-  return (data ?? []).map(r => ({
-    id: r.id, contentItemId: r.content_item_id, campaignId: r.campaign_id,
-    jurisdiction: r.jurisdiction, disclosureText: r.disclosure_text,
-    placement: r.placement, appliedAt: r.applied_at,
-  }));
 }
 
 export async function getDisclosuresForItem(contentItemId: string) {
@@ -98,6 +75,26 @@ export async function getAuditEntries(entityId: string) {
   }));
 }
 
+export interface AuditEntry {
+  id: string; campaignId: string; actorUserId: string | null;
+  action: string; entityType: string; entityId: string | null;
+  details: Record<string, unknown> | null; createdAt: string;
+}
+
+// Latest activity for a whole campaign (admin campaign detail). Unlike
+// getAuditEntries, which is keyed on a single entity (a content item), this
+// matches on campaign_id so user joins, channel changes, cron runs and
+// impersonations all show up.
+export async function getCampaignAuditEntries(campaignId: string, limit = 10): Promise<AuditEntry[]> {
+  const { data } = await adminDb.from('audit_entries').select('*')
+    .eq('campaign_id', campaignId).order('created_at', { ascending: false }).limit(limit);
+  return (data ?? []).map(r => ({
+    id: r.id, campaignId: r.campaign_id, actorUserId: r.actor_user_id ?? null,
+    action: r.action, entityType: r.entity_type, entityId: r.entity_id ?? null,
+    details: r.details ?? null, createdAt: r.created_at,
+  }));
+}
+
 export async function getMonitoringResults(campaignId: string): Promise<MonitoringResult[]> {
   const { data } = await adminDb.from('monitoring_results').select('*')
     .eq('campaign_id', campaignId)
@@ -109,17 +106,6 @@ export async function getMonitoringResults(campaignId: string): Promise<Monitori
     credibility: (r.credibility as 'high' | 'medium' | 'low') ?? 'medium',
     category: (r.category as 'news' | 'social' | 'blog' | 'press_release') ?? 'news',
   }));
-}
-
-export async function getMonthlySpend(campaignId: string): Promise<number> {
-  // Window on the Stripe billing period (falling back to UTC month) so this
-  // matches the cap guard (reserve_usage) and both spend displays (BILL-11/UX-1).
-  const { billingPeriodStart } = await import('./billing-period');
-  const { data: camp } = await adminDb.from('campaigns').select('current_period_end').eq('id', campaignId).single();
-  const start = billingPeriodStart((camp?.current_period_end as string | null) ?? null);
-  const { data } = await adminDb.from('usage_events').select('cost_cents')
-    .eq('campaign_id', campaignId).neq('kind', '_reserved').gte('created_at', start.toISOString());
-  return (data ?? []).reduce((n, r) => n + (r.cost_cents as number), 0);
 }
 
 export async function getContentUsageThisPeriod(campaignId: string, currentPeriodEnd: string | null): Promise<number> {
@@ -144,24 +130,70 @@ export async function getAvatarCount(campaignId: string): Promise<number> {
 }
 
 // ── Admin-only data functions ─────────────────────────────────────────────────
+//
+// Lists are unbounded (users, content, audit, campaigns), so every list helper
+// here is server-side paginated: search via ilike, sort via order(), and
+// count: 'exact' with .range() — nothing loads the whole table into memory.
+
+export const ADMIN_PAGE_SIZE = 25;
+
+export interface AdminPage<T> {
+  rows: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+}
+
+export type SortDir = 'asc' | 'desc';
+
+export interface AdminListQuery {
+  q?: string;
+  page?: number;
+  pageSize?: number;
+  dir?: SortDir;
+}
+
+// Escape a user-typed search string for use inside an ilike pattern. `%` and
+// `_` are LIKE wildcards; commas/parens would break the `.or()` filter syntax.
+export function likePattern(q: string): string {
+  const escaped = q.replace(/[\\%_]/g, c => `\\${c}`).replace(/[,()]/g, ' ').trim();
+  return `%${escaped}%`;
+}
+
+function pageWindow(page: number | undefined, pageSize: number | undefined) {
+  const size = Math.min(100, Math.max(1, pageSize ?? ADMIN_PAGE_SIZE));
+  const p = Math.max(1, Math.floor(page ?? 1));
+  return { page: p, pageSize: size, from: (p - 1) * size, to: p * size - 1 };
+}
+
+function toPage<T>(rows: T[], count: number | null, page: number, pageSize: number): AdminPage<T> {
+  const total = count ?? rows.length;
+  return { rows, total, page, pageSize, pageCount: Math.max(1, Math.ceil(total / pageSize)) };
+}
 
 export interface CampaignWithStats extends Campaign {
   createdAt: string;
   userCount: number;
   contentCount: number;
   inReviewCount: number;
-  monthlySpendCents: number;
 }
 
 export interface UserWithCampaign extends User {
   campaignName: string | null;
   email: string | null;
+  createdAt: string | null;
 }
 
 export interface ContentItemWithCampaign {
   id: string; campaignId: string; campaignName: string;
   type: string; title: string; status: string;
   isAiGenerated: boolean; createdAt: string;
+}
+
+export interface AuditEntryWithNames extends AuditEntry {
+  campaignName: string;
+  actorName: string;
 }
 
 export interface BillingPlan {
@@ -201,122 +233,184 @@ export async function getBillingPlan(id: string): Promise<BillingPlan | null> {
   return data ? toBillingPlan(data) : null;
 }
 
-export async function getAllCampaigns(): Promise<CampaignWithStats[]> {
-  const { billingPeriodStart } = await import('./billing-period');
+function toCampaignWithStats(
+  camp: Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any
+  counts: { users: number; content: number; inReview: number },
+): CampaignWithStats {
+  return {
+    id: camp.id, name: camp.name, jurisdictions: camp.jurisdictions ?? [], tags: camp.tags ?? [],
+    defaultDisclosureText: camp.default_disclosure_text ?? null,
+    createdAt: camp.created_at,
+    planId: camp.plan_id ?? null,
+    stripeCustomerId: camp.stripe_customer_id ?? null,
+    stripeSubscriptionId: camp.stripe_subscription_id ?? null,
+    subscriptionStatus: camp.subscription_status ?? null,
+    gracePeriodEndsAt: camp.grace_period_ends_at ?? null,
+    currentPeriodEnd: camp.current_period_end ?? null,
+    userCount: counts.users, contentCount: counts.content, inReviewCount: counts.inReview,
+  };
+}
 
-  const [c, u, ci] = await Promise.all([
-    adminDb.from('campaigns').select('*').order('created_at', { ascending: false }),
-    adminDb.from('users').select('id, campaign_id'),
-    adminDb.from('content_items').select('id, campaign_id, status'),
+// Per-campaign member / content counts for one page of campaigns: two queries
+// scoped to the page's ids, never a full-table scan.
+async function countsForCampaigns(ids: string[]) {
+  const counts = new Map(ids.map(id => [id, { users: 0, content: 0, inReview: 0 }]));
+  if (ids.length === 0) return counts;
+  const [u, ci] = await Promise.all([
+    adminDb.from('users').select('campaign_id').in('campaign_id', ids).neq('role', 'super_admin'),
+    adminDb.from('content_items').select('campaign_id, status').in('campaign_id', ids),
   ]);
-  const campaigns = c.data ?? [];
-  const users = u.data ?? [];
-  const items = ci.data ?? [];
+  for (const row of u.data ?? []) {
+    const c = counts.get(row.campaign_id); if (c) c.users += 1;
+  }
+  for (const row of ci.data ?? []) {
+    const c = counts.get(row.campaign_id);
+    if (!c) continue;
+    c.content += 1;
+    if (row.status === 'in_review') c.inReview += 1;
+  }
+  return counts;
+}
 
-  // Each campaign's spend window is anchored on its own Stripe billing period
-  // (matching the cap guard and the campaign's own dashboard/billing page —
-  // see billing-period.ts), not a shared calendar month. Fetch the union of
-  // all windows in one query, then re-filter per campaign below.
-  const windowStarts = new Map(
-    campaigns.map(camp => [camp.id, billingPeriodStart((camp.current_period_end as string | null) ?? null)]),
-  );
-  const earliestStart = windowStarts.size > 0
-    ? new Date(Math.min(...Array.from(windowStarts.values(), d => d.getTime())))
-    : new Date(0);
+export type CampaignSort = 'created' | 'name';
 
-  const { data: usageData } = await adminDb.from('usage_events')
-    .select('campaign_id, cost_cents, created_at')
-    .neq('kind', '_reserved')
-    .gte('created_at', earliestStart.toISOString());
-  const spend = usageData ?? [];
+export interface AdminCampaignsQuery extends AdminListQuery {
+  status?: CampaignStatusFilter;
+  tag?: string;
+  sort?: CampaignSort;
+}
 
-  return campaigns.map(camp => {
-    const campaignStart = windowStarts.get(camp.id)!;
-    return {
-      id: camp.id, name: camp.name, jurisdictions: camp.jurisdictions, tags: camp.tags ?? [],
-      defaultDisclosureText: camp.default_disclosure_text ?? null,
-      createdAt: camp.created_at,
-      planId: camp.plan_id ?? null,
-      stripeCustomerId: camp.stripe_customer_id ?? null,
-      stripeSubscriptionId: camp.stripe_subscription_id ?? null,
-      subscriptionStatus: camp.subscription_status ?? null,
-      gracePeriodEndsAt: camp.grace_period_ends_at ?? null,
-      currentPeriodEnd: camp.current_period_end ?? null,
-      userCount: users.filter(u => u.campaign_id === camp.id).length,
-      contentCount: items.filter(i => i.campaign_id === camp.id).length,
-      inReviewCount: items.filter(i => i.campaign_id === camp.id && i.status === 'in_review').length,
-      monthlySpendCents: spend
-        .filter(e => e.campaign_id === camp.id && new Date(e.created_at as string) >= campaignStart)
-        .reduce((n, e) => n + (e.cost_cents as number), 0),
-    };
-  });
+export async function getAdminCampaignsPage(query: AdminCampaignsQuery = {}): Promise<AdminPage<CampaignWithStats>> {
+  const { page, pageSize, from, to } = pageWindow(query.page, query.pageSize);
+  let q = adminDb.from('campaigns').select('*', { count: 'exact' });
+  if (query.q) q = q.ilike('name', likePattern(query.q));
+  if (query.status === 'active') q = q.in('subscription_status', [...ACTIVE_SUBSCRIPTION_STATUSES]);
+  if (query.status === 'inactive') {
+    q = q.or(`subscription_status.is.null,subscription_status.not.in.(${ACTIVE_SUBSCRIPTION_STATUSES.join(',')})`);
+  }
+  if (query.tag) q = q.contains('tags', [query.tag]);
+  const sortCol = query.sort === 'name' ? 'name' : 'created_at';
+  const ascending = query.dir ? query.dir === 'asc' : sortCol === 'name';
+  const { data, count } = await q.order(sortCol, { ascending }).range(from, to);
+  const rows = data ?? [];
+  const counts = await countsForCampaigns(rows.map(c => c.id));
+  return toPage(rows.map(c => toCampaignWithStats(c, counts.get(c.id)!)), count, page, pageSize);
+}
+
+// Distinct tags across all campaigns (for the tag filter chips). Tags are a
+// small text[] per row, so this is cheap even with many campaigns.
+export async function getCampaignTags(): Promise<string[]> {
+  const { data } = await adminDb.from('campaigns').select('tags');
+  return [...new Set((data ?? []).flatMap(c => (c.tags as string[] | null) ?? []))].sort();
 }
 
 export async function getCampaignWithStats(id: string): Promise<CampaignWithStats | null> {
-  const all = await getAllCampaigns();
-  return all.find(c => c.id === id) ?? null;
+  const { data } = await adminDb.from('campaigns').select('*').eq('id', id).maybeSingle();
+  if (!data) return null;
+  const counts = await countsForCampaigns([id]);
+  return toCampaignWithStats(data, counts.get(id)!);
 }
 
-export async function getAllUsersAdmin(): Promise<UserWithCampaign[]> {
-  const [u, c] = await Promise.all([
-    adminDb.from('users').select('*').order('name'),
-    adminDb.from('campaigns').select('id, name'),
-  ]);
-  const campMap = Object.fromEntries((c.data ?? []).map(c => [c.id, c.name]));
-  return (u.data ?? []).map(r => ({
+export type UserSort = 'name' | 'email' | 'role' | 'created';
+
+export interface AdminUsersQuery extends AdminListQuery {
+  sort?: UserSort;
+}
+
+export async function getAdminUsersPage(query: AdminUsersQuery = {}): Promise<AdminPage<UserWithCampaign>> {
+  const { page, pageSize, from, to } = pageWindow(query.page, query.pageSize);
+  let q = adminDb.from('users').select('*', { count: 'exact' }).neq('role', 'super_admin');
+  if (query.q) {
+    const pattern = likePattern(query.q);
+    q = q.or(`name.ilike.${pattern},email.ilike.${pattern}`);
+  }
+  const sortCol = query.sort === 'email' ? 'email' : query.sort === 'role' ? 'role' : query.sort === 'created' ? 'created_at' : 'name';
+  const ascending = query.dir ? query.dir === 'asc' : sortCol !== 'created_at';
+  const { data, count } = await q.order(sortCol, { ascending }).range(from, to);
+  const rows = data ?? [];
+  const campaignIds = [...new Set(rows.map(r => r.campaign_id).filter(Boolean))] as string[];
+  const campMap = await campaignNames(campaignIds);
+  return toPage(rows.map(r => ({
     id: r.id, name: r.name, role: r.role,
-    campaignId: r.campaign_id, campaignName: campMap[r.campaign_id] ?? null,
+    campaignId: r.campaign_id, campaignName: r.campaign_id ? campMap[r.campaign_id] ?? null : null,
     email: (r.email as string | null) ?? null,
-  }));
+    createdAt: (r.created_at as string | null) ?? null,
+  })), count, page, pageSize);
 }
 
-export async function getAllContentAdmin(filter?: string): Promise<ContentItemWithCampaign[]> {
-  const [ci, c] = await Promise.all([
-    (() => {
-      let q = adminDb.from('content_items').select('*').order('created_at', { ascending: false });
-      if (filter) q = q.eq('status', filter);
-      return q;
-    })(),
-    adminDb.from('campaigns').select('id, name'),
-  ]);
-  const campMap = Object.fromEntries((c.data ?? []).map(c => [c.id, c.name]));
-  return (ci.data ?? []).map(r => ({
+async function campaignNames(ids: string[]): Promise<Record<string, string>> {
+  if (ids.length === 0) return {};
+  const { data } = await adminDb.from('campaigns').select('id, name').in('id', ids);
+  return Object.fromEntries((data ?? []).map(c => [c.id, c.name]));
+}
+
+export type ContentSort = 'created' | 'title' | 'status';
+
+export interface AdminContentQuery extends AdminListQuery {
+  status?: string;
+  campaignId?: string;
+  sort?: ContentSort;
+}
+
+export async function getAdminContentPage(query: AdminContentQuery = {}): Promise<AdminPage<ContentItemWithCampaign>> {
+  const { page, pageSize, from, to } = pageWindow(query.page, query.pageSize);
+  let q = adminDb.from('content_items').select('*', { count: 'exact' });
+  if (query.status) q = q.eq('status', query.status);
+  if (query.campaignId) q = q.eq('campaign_id', query.campaignId);
+  if (query.q) q = q.ilike('title', likePattern(query.q));
+  const sortCol = query.sort === 'title' ? 'title' : query.sort === 'status' ? 'status' : 'created_at';
+  const ascending = query.dir ? query.dir === 'asc' : sortCol !== 'created_at';
+  const { data, count } = await q.order(sortCol, { ascending }).range(from, to);
+  const rows = data ?? [];
+  const campMap = await campaignNames([...new Set(rows.map(r => r.campaign_id as string))]);
+  return toPage(rows.map(r => ({
     id: r.id, campaignId: r.campaign_id, campaignName: campMap[r.campaign_id] ?? r.campaign_id,
     type: r.type, title: r.title, status: r.status,
     isAiGenerated: r.is_ai_generated, createdAt: r.created_at,
-  }));
+  })), count, page, pageSize);
 }
 
-export async function getAllAuditEntries(limit = 100) {
-  const [ae, c, u] = await Promise.all([
-    adminDb.from('audit_entries').select('*').order('created_at', { ascending: false }).limit(limit),
-    adminDb.from('campaigns').select('id, name'),
-    adminDb.from('users').select('id, name'),
+export interface AdminAuditQuery extends AdminListQuery {
+  campaignId?: string;
+}
+
+export async function getAdminAuditPage(query: AdminAuditQuery = {}): Promise<AdminPage<AuditEntryWithNames>> {
+  const { page, pageSize, from, to } = pageWindow(query.page, query.pageSize);
+  let q = adminDb.from('audit_entries').select('*', { count: 'exact' });
+  if (query.campaignId) q = q.eq('campaign_id', query.campaignId);
+  if (query.q) {
+    const pattern = likePattern(query.q);
+    q = q.or(`action.ilike.${pattern},entity_type.ilike.${pattern},entity_id.ilike.${pattern}`);
+  }
+  const { data, count } = await q.order('created_at', { ascending: query.dir === 'asc' }).range(from, to);
+  const rows = data ?? [];
+  const campaignIds = [...new Set(rows.map(r => r.campaign_id as string))];
+  const actorIds = [...new Set(rows.map(r => r.actor_user_id as string | null).filter(Boolean))] as string[];
+  const [campMap, users] = await Promise.all([
+    campaignNames(campaignIds),
+    actorIds.length ? adminDb.from('users').select('id, name').in('id', actorIds) : Promise.resolve({ data: [] as { id: string; name: string }[] }),
   ]);
-  const campMap = Object.fromEntries((c.data ?? []).map(c => [c.id, c.name]));
-  const userMap = Object.fromEntries((u.data ?? []).map(u => [u.id, u.name]));
-  return (ae.data ?? []).map(r => ({
+  const userMap = Object.fromEntries((users.data ?? []).map(u => [u.id, u.name]));
+  return toPage(rows.map(r => ({
     id: r.id, campaignId: r.campaign_id, campaignName: campMap[r.campaign_id] ?? r.campaign_id,
-    actorUserId: r.actor_user_id, actorName: userMap[r.actor_user_id] ?? r.actor_user_id ?? 'system',
-    action: r.action, entityType: r.entity_type, entityId: r.entity_id,
-    details: r.details, createdAt: r.created_at,
-  }));
+    actorUserId: r.actor_user_id ?? null, actorName: userMap[r.actor_user_id] ?? r.actor_user_id ?? 'system',
+    action: r.action, entityType: r.entity_type, entityId: r.entity_id ?? null,
+    details: r.details ?? null, createdAt: r.created_at,
+  })), count, page, pageSize);
 }
 
 export async function getSystemStats() {
-  const [c, u, ci, ue] = await Promise.all([
-    adminDb.from('campaigns').select('id', { count: 'exact' }),
-    adminDb.from('users').select('id', { count: 'exact' }).neq('role', 'super_admin'),
-    adminDb.from('content_items').select('id, status', { count: 'exact' }),
-    adminDb.from('usage_events').select('cost_cents').neq('kind', '_reserved'),
+  const [c, u, ci, ir] = await Promise.all([
+    adminDb.from('campaigns').select('id', { count: 'exact', head: true }),
+    adminDb.from('users').select('id', { count: 'exact', head: true }).neq('role', 'super_admin'),
+    adminDb.from('content_items').select('id', { count: 'exact', head: true }),
+    adminDb.from('content_items').select('id', { count: 'exact', head: true }).eq('status', 'in_review'),
   ]);
-  const items = ci.data ?? [];
   return {
     campaignCount: c.count ?? 0,
     userCount: u.count ?? 0,
-    contentCount: items.length,
-    inReviewCount: items.filter(i => i.status === 'in_review').length,
-    totalSpendCents: (ue.data ?? []).reduce((n, e) => n + e.cost_cents, 0),
+    contentCount: ci.count ?? 0,
+    inReviewCount: ir.count ?? 0,
   };
 }
 
@@ -387,6 +481,11 @@ function toItem(r: Record<string, unknown>) {
     isAiGenerated: r.is_ai_generated as boolean,
     targetJurisdictions: r.target_jurisdictions as string[],
     mediaUrl: r.media_url as string | null,
+    videoJobId: (r.video_job_id as string | null) ?? null,
+    videoStatus: (r.video_status as 'processing' | 'completed' | 'failed' | null) ?? null,
+    scheduledAt: (r.scheduled_at as string | null) ?? null,
+    timezone: (r.timezone as string | null) ?? null,
+    platforms: (r.platforms as Platform[] | null) ?? [],
     locale: (r.locale as Locale) ?? 'en',
     createdBy: r.created_by as string,
     createdAt: r.created_at as string,
@@ -394,16 +493,40 @@ function toItem(r: Record<string, unknown>) {
   };
 }
 
-// Seat usage for a campaign: how many non-super_admin members it has vs the
-// seat_limit of its plan (null = unlimited). Enforced on add-user/invite so a
-// plan's paid seat count is meaningful (audit finding BILL-10).
-export async function getCampaignSeatUsage(campaignId: string): Promise<{ used: number; limit: number | null }> {
+// Seat usage for a campaign vs the seat_limit of its plan (null = unlimited).
+// Enforced on add-user/invite so a plan's paid seat count is meaningful (audit
+// finding BILL-10).
+//
+// `used` = current non-super_admin members + pending invites (unredeemed and
+// unexpired), so a batch of open invite links can't blow past the limit once
+// they are all redeemed. Members the admin pre-provisioned (a users row with
+// no password yet) redeem one of those pending invites to activate, so each
+// such member offsets one pending invite — otherwise "Add & invite" would
+// count the same seat twice until the person signs up.
+export interface SeatUsage {
+  used: number;
+  limit: number | null;
+  members: number;
+  pendingInvites: number;
+}
+
+export async function getCampaignSeatUsage(campaignId: string): Promise<SeatUsage> {
   const { data: camp } = await adminDb.from('campaigns').select('plan_id').eq('id', campaignId).single();
   let limit: number | null = null;
   if (camp?.plan_id) {
     const { data: plan } = await adminDb.from('billing_plans').select('seat_limit').eq('id', camp.plan_id).single();
     limit = (plan?.seat_limit as number | null) ?? null;
   }
-  const { data: users } = await adminDb.from('users').select('id').eq('campaign_id', campaignId).neq('role', 'super_admin');
-  return { used: users?.length ?? 0, limit };
+  const nowIso = new Date().toISOString();
+  const [members, unactivated, invites] = await Promise.all([
+    adminDb.from('users').select('id', { count: 'exact', head: true })
+      .eq('campaign_id', campaignId).neq('role', 'super_admin'),
+    adminDb.from('users').select('id', { count: 'exact', head: true })
+      .eq('campaign_id', campaignId).neq('role', 'super_admin').is('password_hash', null),
+    adminDb.from('invite_codes').select('code', { count: 'exact', head: true })
+      .eq('campaign_id', campaignId).is('used_at', null).gt('expires_at', nowIso),
+  ]);
+  const memberCount = members.count ?? 0;
+  const pendingInvites = Math.max(0, (invites.count ?? 0) - (unactivated.count ?? 0));
+  return { used: memberCount + pendingInvites, limit, members: memberCount, pendingInvites };
 }

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
+import { MailIcon, XIcon } from '@/components/icons';
+import { mailto } from '@/lib/contact';
 import type { Locale } from '@/lib/locale';
 
 type DemoVideoKey = 'commercial' | 'walkthrough';
@@ -59,6 +61,7 @@ export function DemoVideoModal({ open, onClose, locale }: { open: boolean; onClo
       ref={dialogRef}
       className="lp-demo-dialog"
       aria-labelledby="lp-demo-title"
+      aria-modal="true"
       onClose={handleClose}
       onClick={(e) => {
         // A click on the dialog element itself (not its content) is a click
@@ -69,13 +72,11 @@ export function DemoVideoModal({ open, onClose, locale }: { open: boolean; onClo
       <div className="lp-demo-panel">
         <div className="lp-demo-head">
           <h2 id="lp-demo-title" className="lp-demo-title">{t('title')}</h2>
-          <button type="button" className="lp-demo-close" onClick={handleClose} aria-label={t('close')}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-              <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
+          <button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={handleClose} aria-label={t('close')}>
+            <XIcon />
           </button>
         </div>
-        <div className="lp-demo-tabs" role="tablist" aria-label={t('tabsLabel')}>
+        <div className="segmented lp-demo-tabs" role="tablist" aria-label={t('tabsLabel')}>
           {videos.map(v => (
             <button
               key={v.key}
@@ -88,7 +89,7 @@ export function DemoVideoModal({ open, onClose, locale }: { open: boolean; onClo
               onClick={() => setActive(v.key)}
             >
               <span>{t(`videos.${v.key}`)}</span>
-              <span className="lp-demo-tab-duration">{v.duration}</span>
+              <span className="lp-demo-tab-duration num">{v.duration}</span>
             </button>
           ))}
         </div>
@@ -115,15 +116,11 @@ export function DemoVideoModal({ open, onClose, locale }: { open: boolean; onClo
         </div>
         <p className="lp-demo-sub">{t('subtitle')}</p>
         <div className="lp-demo-ctas">
-          <Link href="/login" className="lp-btn-primary">
-            {t('startCampaign')}
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-              <path d="M3 7H11M8 4L11 7L8 10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </Link>
-          <a href="mailto:ceo@ivac.org?subject=Politiq.global%20demo%20request" className="lp-btn-ghost">
+          <a href={mailto(t('requestDemo'))} className="btn btn-primary">
+            <MailIcon size={16} />
             {t('requestDemo')}
           </a>
+          <Link href="/login" className="btn">{t('signIn')}</Link>
         </div>
       </div>
     </dialog>

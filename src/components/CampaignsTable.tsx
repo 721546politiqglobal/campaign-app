@@ -1,122 +1,108 @@
-'use client';
-
-import { useState } from 'react';
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
-import type { CampaignWithStats } from '@/lib/data';
-import { filterCampaigns, isCampaignActive, type CampaignStatusFilter } from '@/lib/campaign-filters';
+import { getTranslations } from 'next-intl/server';
+import { Badge } from '@/components/ui/Badge';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Pagination } from '@/app/admin/_components/Pagination';
+import { SortLink, ariaSort } from '@/app/admin/_components/SortLink';
+import { adminFormat } from '@/app/admin/_components/format';
+import { isCampaignActive } from '@/lib/campaign-filters';
+import type { AdminPage, CampaignWithStats, CampaignSort } from '@/lib/data';
 
-function fmt(cents: number) {
-  return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+/**
+ * Paginated campaigns table (server component). Filtering, search, sort and
+ * pagination are all server-side — the caller passes the current page plus
+ * `hrefFor` builders so links preserve the rest of the query.
+ */
+export async function CampaignsTable({ page, sort, dir, filtered, hrefForPage, hrefForSort, newCampaignAction, compact }: {
+  page: AdminPage<CampaignWithStats>;
+  sort: CampaignSort;
+  dir: 'asc' | 'desc';
+  /** True when a search/filter is active (changes the empty state copy). */
+  filtered: boolean;
+  hrefForPage: (page: number) => string;
+  hrefForSort: (sort: string, dir: 'asc' | 'desc') => string;
+  /** CTA rendered in the "no campaigns yet" empty state. */
+  newCampaignAction?: React.ReactNode;
+  /** Hide the pager (used on the overview, which links to the full list). */
+  compact?: boolean;
+}) {
+  const t = await getTranslations('admin.campaignsTable');
+  const f = await adminFormat();
 
-export function CampaignsTable({ campaigns }: { campaigns: CampaignWithStats[] }) {
-  const t = useTranslations('admin.campaignsTable');
-  const [statusFilter, setStatusFilter] = useState<CampaignStatusFilter>('all');
-  const [tagFilter, setTagFilter] = useState<string[]>([]);
-
-  const STATUS_FILTERS: { key: CampaignStatusFilter; label: string }[] = [
-    { key: 'all', label: t('filterAll') },
-    { key: 'active', label: t('active') },
-    { key: 'inactive', label: t('inactive') },
-  ];
-
-  const allTags = [...new Set(campaigns.flatMap(c => c.tags))].sort();
-  const filtered = filterCampaigns(campaigns, statusFilter, tagFilter);
-
-  function toggleTag(tag: string) {
-    setTagFilter(prev => prev.includes(tag) ? prev.filter(existingTag => existingTag !== tag) : [...prev, tag]);
+  if (page.rows.length === 0) {
+    return (
+      <div className="card">
+        <EmptyState
+          icon="campaign"
+          title={filtered ? t('emptyFiltered') : t('emptyNone')}
+          description={filtered ? t('emptyFilteredDesc') : t('emptyNoneDesc')}
+          action={filtered ? undefined : newCampaignAction}
+        />
+      </div>
+    );
   }
 
   return (
-    <div>
-      <div className="btnrow" style={{ marginBottom: 12 }}>
-        {STATUS_FILTERS.map(f => (
-          <button key={f.key} className={`btn${statusFilter === f.key ? ' active' : ''}`}
-            onClick={() => setStatusFilter(f.key)}>
-            {f.label}
-          </button>
-        ))}
-      </div>
-
-      {allTags.length > 0 && (
-        <div className="btnrow" style={{ marginBottom: 20 }}>
-          {allTags.map(tag => (
-            <button key={tag} className={`btn${tagFilter.includes(tag) ? ' active' : ''}`}
-              onClick={() => toggleTag(tag)}>
-              {tag}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="card" style={{ padding: 0, marginBottom: 32 }}>
+    <div className="card card-sectioned">
+      <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>{t('colCampaign')}</th>
+              <th aria-sort={ariaSort(sort, 'name', dir)}>
+                <SortLink column="name" label={t('colCampaign')} sort={sort} dir={dir} hrefFor={hrefForSort} />
+              </th>
               <th>{t('colJurisdictions')}</th>
               <th>{t('colTags')}</th>
               <th>{t('colStatus')}</th>
-              <th>{t('colUsers')}</th>
-              <th>{t('colContent')}</th>
-              <th>{t('colSpend')}</th>
-              <th></th>
+              <th className="num">{t('colUsers')}</th>
+              <th className="num">{t('colContent')}</th>
+              <th aria-sort={ariaSort(sort, 'created', dir)}>
+                <SortLink column="created" label={t('colCreated')} sort={sort} dir={dir} defaultDir="desc" hrefFor={hrefForSort} />
+              </th>
+              <th><span className="sr-only">{t('manage')}</span></th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map(c => (
-              <tr key={c.id} className="row">
-                <td>
-                  <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: 13.5 }}>{c.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+            {page.rows.map(c => {
+              const active = isCampaignActive(c.subscriptionStatus);
+              return (
+                <tr key={c.id}>
+                  <td>
+                    <Link href={`/admin/campaigns/${c.id}`} className="row-link">{c.name}</Link>
                     {c.inReviewCount > 0 && (
-                      <span style={{ color: 'var(--warn)', fontWeight: 600 }}>
-                        {t('inReviewCount', { count: c.inReviewCount })} ·{' '}
-                      </span>
+                      <div className="admin-cell-sub">
+                        <span className="admin-warn-text">{t('inReviewCount', { count: c.inReviewCount })}</span>
+                      </div>
                     )}
-                    {t('totalCount', { count: c.contentCount })}
-                  </div>
-                </td>
-                <td>
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    {c.jurisdictions.map(j => (
-                      <span key={j} className="tag">{j}</span>
-                    ))}
-                  </div>
-                </td>
-                <td>
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    {c.tags.map(tag => (
-                      <span key={tag} className="tag">{tag}</span>
-                    ))}
-                  </div>
-                </td>
-                <td>
-                  <span className={`tag ${isCampaignActive(c.subscriptionStatus) ? 'cred-high' : 'cred-low'}`}>
-                    {isCampaignActive(c.subscriptionStatus) ? t('active') : t('inactive')}
-                  </span>
-                </td>
-                <td className="data" style={{ color: 'var(--text-2)' }}>{c.userCount}</td>
-                <td className="data" style={{ color: 'var(--text-2)' }}>{c.contentCount}</td>
-                <td className="data" style={{ color: 'var(--text-2)' }}>{fmt(c.monthlySpendCents)}</td>
-                <td>
-                  <Link href={`/admin/campaigns/${c.id}`} className="btn" style={{ fontSize: 12, padding: '5px 10px' }}>
-                    {t('manage')}
-                  </Link>
-                </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={8} className="muted" style={{ padding: 24 }}>
-                  {campaigns.length === 0 ? t('emptyNone') : t('emptyFiltered')}
-                </td>
-              </tr>
-            )}
+                  </td>
+                  <td>
+                    <div className="admin-tags">
+                      {c.jurisdictions.map(j => <span key={j} className="tag">{j}</span>)}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="admin-tags">
+                      {c.tags.map(tag => <span key={tag} className="tag">{tag}</span>)}
+                    </div>
+                  </td>
+                  <td>
+                    <Badge tone={active ? 'ok' : 'neutral'} dot>{active ? t('active') : t('inactive')}</Badge>
+                  </td>
+                  <td className="num">{f.integer(c.userCount)}</td>
+                  <td className="num">{f.integer(c.contentCount)}</td>
+                  <td className="admin-cell-nowrap subtle">{f.date(c.createdAt)}</td>
+                  <td>
+                    <div className="table-actions">
+                      <Link href={`/admin/campaigns/${c.id}`} className="btn btn-sm">{t('manage')}</Link>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
+      {!compact && <Pagination page={page} hrefFor={hrefForPage} />}
     </div>
   );
 }

@@ -4,11 +4,14 @@ import { analyticsProvider } from '@/lib/services';
 import { upsertPostMetrics, generateInsight, insertInsightSnapshot } from '@/lib/analytics';
 import { getCampaignSocialProfile } from '@/lib/channels';
 import type { Platform } from '@/domain/types';
+import { isAuthorizedCron } from '../cron-auth';
+
+// Up to 200 items, each an external Ayrshare analytics call, plus one insight
+// generation (LLM) per campaign — well beyond the default function timeout.
+export const maxDuration = 300;
 
 export async function GET(req: Request) {
-  const secret = process.env.CRON_SECRET;
-  const auth = req.headers.get('authorization');
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!isAuthorizedCron(req.headers.get('authorization'), process.env.CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

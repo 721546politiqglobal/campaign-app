@@ -1,31 +1,34 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getTranslations } from 'next-intl/server';
+import { getFormatter, getTranslations } from 'next-intl/server';
 import { AppFrame } from '@/components/AppFrame';
 import { StatusPill } from '@/components/StatusPill';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Icon } from '@/components/icons';
 import { requireSession } from '@/lib/session';
-import {
-  getContentItems, getMonitoringResults, getMonthlySpend, getScheduledToday,
-} from '@/lib/data';
+import { getContentItems, getMonitoringResults, getScheduledToday } from '@/lib/data';
+import { rowCountLabel } from '@/lib/row-cap';
+import type { Platform } from '@/domain/types';
 
-const PLATFORM_ICON: Record<string, string> = {
-  instagram: 'IG', facebook: 'FB', x: 'X', linkedin: 'LI', tiktok: 'TK', youtube: 'YT',
-};
-
-const CRED_COLOR: Record<string, string> = {
-  high: 'var(--ok)', medium: 'var(--warn)', low: 'var(--bad)',
-};
+const ATTENTION_LIMIT = 6;
+const PULSE_LIMIT = 4;
+const PLATFORM_KEYS: Platform[] = ['instagram', 'facebook', 'x', 'linkedin', 'tiktok', 'youtube'];
 
 export default async function Dashboard() {
-  const t = await getTranslations('dashboard');
-  const tType = await getTranslations('content.types');
+  const [t, tc, tType, tNet, format] = await Promise.all([
+    getTranslations('dashboard'),
+    getTranslations('common'),
+    getTranslations('content.types'),
+    getTranslations('channels.networks'),
+    getFormatter(),
+  ]);
   const s = await requireSession();
   if (s.role === 'super_admin') redirect('/admin');
 
-  const [items, monitoring, spend, todayScheduled] = await Promise.all([
+  const [items, monitoring, todayScheduled] = await Promise.all([
     getContentItems(s.campaignId),
     getMonitoringResults(s.campaignId),
-    getMonthlySpend(s.campaignId),
     getScheduledToday(s.campaignId),
   ]);
 
@@ -34,153 +37,160 @@ export default async function Dashboard() {
     .sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
 
   const count = (st: string) => items.filter(c => c.status === st).length;
-  const reviewN = count('draft') + count('in_review');
+  const inReviewN = count('in_review');
   const scheduledN = count('scheduled');
   const publishedN = count('published');
-  const signalsN = monitoring.length;
+  // getMonitoringResults is an uncapped select, so the count can hit the row cap ("1,000+").
+  const signalsLabel = rowCountLabel(monitoring.length, format.number, c => tc('countCapped', { count: c }));
 
   const tiles = [
-    { label: t('tiles.needsReview'), n: reviewN, tone: reviewN > 0 ? 'var(--warn)' : 'var(--text-3)', href: '/content?f=in_review', sub: t('tiles.itemsWaiting', { count: reviewN }) },
-    { label: t('tiles.scheduled'), n: scheduledN, tone: 'var(--purple)', href: '/content?f=scheduled', sub: t('tiles.queuedToPublish') },
-    { label: t('tiles.published'), n: publishedN, tone: 'var(--ok)', href: '/content?f=published', sub: t('tiles.liveOnSocials') },
-    { label: t('tiles.oppSignals'), n: signalsN, tone: 'var(--live)', href: '/monitoring', sub: t('tiles.inTheFeed') },
-  ];
+    { label: t('tiles.needsReview'), value: format.number(inReviewN), icon: 'inbox', tone: inReviewN > 0 ? 'warn' : '', href: '/content?status=in_review', hint: t('tiles.inReviewWaiting', { count: inReviewN }) },
+    { label: t('tiles.scheduled'), value: format.number(scheduledN), icon: 'calendar', tone: 'purple', href: '/content?status=scheduled', hint: t('tiles.queuedToPublish') },
+    { label: t('tiles.published'), value: format.number(publishedN), icon: 'send', tone: 'ok', href: '/content?status=published', hint: t('tiles.liveOnSocials') },
+    { label: t('tiles.oppSignals'), value: signalsLabel, icon: 'monitoring', tone: 'info', href: '/monitoring', hint: t('tiles.inTheFeed') },
+  ] as const;
+
+  const now = new Date();
+  const networkName = (p: string) =>
+    (PLATFORM_KEYS as string[]).includes(p) ? tNet(`${p}.name`) : p;
 
   return (
     <AppFrame>
-      {/* Action bar */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 22, gap: 16 }}>
-        <div>
-          <span className="eyebrow">{t('overview')}</span>
-          <h1 style={{ margin: '4px 0 0' }}>{t('today')}</h1>
-        </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <Link className="btn" href="/monitoring">{t('opponentFeed')}</Link>
-          <Link className="btn primary" href="/content/new">{t('newContent')}</Link>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow={t('overview')}
+        title={t('today')}
+        description={t('description')}
+        actions={
+          <>
+            <Link className="btn" href="/monitoring">{t('opponentFeed')}</Link>
+            <Link className="btn btn-primary" href="/content/new"><Icon name="plus" size={16} />{t('newContent')}</Link>
+          </>
+        }
+      />
 
-      {/* KPI tiles */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
-        {tiles.map(tile => (
-          <Link key={tile.label} href={tile.href} className="card interactive" style={{ padding: 16, textDecoration: 'none', color: 'inherit' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <span className="eyebrow">{tile.label}</span>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: tile.tone, boxShadow: `0 0 8px ${tile.tone}`, flexShrink: 0 }} />
-            </div>
-            <div className="data" style={{ fontSize: 34, fontWeight: 700, lineHeight: 1, color: 'var(--text)' }}>
-              {String(tile.n).padStart(2, '0')}
-            </div>
-            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{tile.sub}</div>
-          </Link>
-        ))}
-      </div>
-
-      {/* Today's schedule strip */}
-      {todayScheduled.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <div className="eyebrow" style={{ marginBottom: 10 }}>{t('goingOutToday')}</div>
-          <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
-            {todayScheduled.map(item => (
-              <Link key={item.id} href={`/content/${item.id}`} className="card interactive" style={{
-                display: 'flex', flexDirection: 'column', gap: 8, padding: '13px 15px', minWidth: 190,
-                textDecoration: 'none', color: 'inherit', flexShrink: 0,
-              }}>
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                  {item.platforms.slice(0, 3).map(p => (
-                    <span key={p} className="mono" style={{
-                      fontSize: 9.5, fontWeight: 700, padding: '2px 6px',
-                      borderRadius: 4, background: 'var(--accent-dim)', color: 'var(--accent)',
-                      border: '1px solid rgba(249,115,22,0.25)', letterSpacing: '0.05em',
-                    }}>{PLATFORM_ICON[p] ?? p.toUpperCase()}</span>
-                  ))}
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35 }}>
-                  {item.title.slice(0, 48)}{item.title.length > 48 ? '…' : ''}
-                </div>
-                <div className="mono" style={{ fontSize: 11, color: 'var(--accent)' }}>
-                  {new Date(item.scheduledAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                </div>
-              </Link>
-            ))}
-          </div>
+      <div className="stack dash-stack">
+        {/* KPI tiles */}
+        <div className="grid cols-4">
+          {tiles.map(tile => (
+            <Link key={tile.href} href={tile.href} className={`card card-sm stat dash-stat${tile.tone ? ` is-${tile.tone}` : ''}`}>
+              <div className="stat-header">
+                <span className="stat-label">{tile.label}</span>
+                <span className="stat-icon"><Icon name={tile.icon} size={16} /></span>
+              </div>
+              <div className="stat-value num">{tile.value}</div>
+              <div className="stat-hint">{tile.hint}</div>
+            </Link>
+          ))}
         </div>
-      )}
 
-      <div className="grid" style={{ gridTemplateColumns: '1.35fr 1fr', gap: 14 }}>
-        {/* Needs attention */}
-        <div className="card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <h2 style={{ margin: 0 }}>{t('needsAttention')}</h2>
-            {needsAttention.length > 0 && (
-              <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>{needsAttention.length}</span>
-            )}
-          </div>
-          {needsAttention.length === 0 ? (
-            <div style={{ padding: '32px 0', textAlign: 'center' }}>
-              <div className="muted" style={{ marginBottom: 14 }}>{t('emptyCaughtUp')}</div>
-              <Link className="btn primary" href="/content/new">{t('createNewContent')}</Link>
-            </div>
-          ) : (
-            <div style={{ marginTop: 6 }}>
-              {needsAttention.map(c => (
-                <Link key={c.id} href={`/content/${c.id}`} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-                  padding: '12px 10px', margin: '0 -10px', borderRadius: 8,
-                  textDecoration: 'none', color: 'inherit', borderBottom: '1px solid var(--line)',
-                }} className="row-hover">
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title}</div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-                      <span className="mono" style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{tType(c.type)}</span>
-                      <span style={{ color: 'var(--text-3)', fontSize: 11 }}>·</span>
-                      <span className="muted" style={{ fontSize: 11.5 }}>{t('updatedOn', { date: new Date(c.updatedAt).toLocaleDateString('en-US') })}</span>
-                    </div>
+        {/* Today's schedule strip */}
+        {todayScheduled.length > 0 && (
+          <section aria-labelledby="dash-today">
+            <h2 id="dash-today" className="eyebrow dash-section-label">{t('goingOutToday')}</h2>
+            <div className="dash-strip">
+              {todayScheduled.map(item => (
+                <Link key={item.id} href={`/content/${item.id}`} className="card card-sm interactive dash-strip-card">
+                  <div className="dash-strip-platforms">
+                    {item.platforms.slice(0, 3).map(p => (
+                      <span key={p} className="badge badge-sm badge-accent">{networkName(p)}</span>
+                    ))}
                   </div>
-                  <StatusPill status={c.status} />
+                  <div className="dash-strip-title">{item.title}</div>
+                  <div className="dash-strip-time num">
+                    <Icon name="clock" size={13} />
+                    {format.dateTime(new Date(item.scheduledAt), { hour: 'numeric', minute: '2-digit' })}
+                  </div>
                 </Link>
               ))}
             </div>
-          )}
-        </div>
+          </section>
+        )}
 
-        {/* Opponent pulse */}
-        <div className="card">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <h2 style={{ margin: 0 }}>{t('opponentPulse')}</h2>
-            {signalsN > 0 && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--live)', letterSpacing: '0.08em' }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--live)', boxShadow: '0 0 8px var(--live)' }} />{t('live')}
-              </span>
-            )}
-          </div>
-          {monitoring.length === 0 ? (
-            <p className="muted" style={{ padding: '24px 0', textAlign: 'center' }}>{t('noOpponentActivity')}</p>
-          ) : (
-            <div style={{ marginTop: 6 }}>
-              {monitoring.slice(0, 3).map(m => (
-                <div key={m.id} style={{ padding: '11px 0', borderBottom: '1px solid var(--line)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: CRED_COLOR[m.credibility] ?? 'var(--text-3)', flexShrink: 0 }} />
-                    <span className="mono" style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{m.source}</span>
-                  </div>
-                  <div className="excerpt-clamp" style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--text-2)' }}>{m.excerpt}</div>
-                </div>
-              ))}
+        <div className="dash-grid">
+          {/* Needs attention */}
+          <section className="card card-sectioned" aria-labelledby="dash-attention">
+            <div className="card-header">
+              <div className="card-header-text">
+                <h2 id="dash-attention">{t('needsAttention')}</h2>
+              </div>
+              {needsAttention.length > 0 && (
+                <span className="badge badge-neutral badge-sm num">{format.number(needsAttention.length)}</span>
+              )}
             </div>
-          )}
-          <div className="spacer-y" />
-          <Link className="btn" href="/monitoring" style={{ width: '100%', justifyContent: 'center' }}>{t('seeFullFeed')}</Link>
-        </div>
-      </div>
+            {needsAttention.length === 0 ? (
+              <EmptyState
+                plain
+                icon="success"
+                title={t('emptyAttention.title')}
+                description={t('emptyAttention.description')}
+                action={<Link className="btn btn-primary" href="/content/new">{t('createNewContent')}</Link>}
+              />
+            ) : (
+              <ul className="dash-list">
+                {needsAttention.slice(0, ATTENTION_LIMIT).map(c => (
+                  <li key={c.id}>
+                    <Link href={`/content/${c.id}`} className="dash-list-row row-hover">
+                      <span className="dash-list-main">
+                        <span className="dash-list-title">{c.title}</span>
+                        <span className="dash-list-meta">
+                          <span>{tType(c.type)}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{t('updatedOn', { date: format.relativeTime(new Date(c.updatedAt), now) })}</span>
+                        </span>
+                      </span>
+                      <StatusPill status={c.status} size="sm" />
+                    </Link>
+                  </li>
+                ))}
+                {needsAttention.length > ATTENTION_LIMIT && (
+                  <li className="dash-list-more">
+                    <Link className="link" href="/content?status=in_review">
+                      {t('moreItems', { count: needsAttention.length - ATTENTION_LIMIT })}
+                    </Link>
+                  </li>
+                )}
+              </ul>
+            )}
+          </section>
 
-      {/* Spend */}
-      <div className="card" style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 18 }}>
-        <div style={{ minWidth: 0 }}>
-          <div className="eyebrow" style={{ marginBottom: 4 }}>{t('spendThisBillingPeriod')}</div>
-          <span className="data" style={{ color: 'var(--accent)', fontWeight: 700, fontSize: 16 }}>
-            ${(spend / 100).toFixed(2)}
-          </span>
+          {/* Opponent pulse */}
+          <section className="card card-sectioned" aria-labelledby="dash-pulse">
+            <div className="card-header">
+              <div className="card-header-text">
+                <h2 id="dash-pulse">{t('opponentPulse')}</h2>
+              </div>
+              {monitoring.length > 0 && <span className="badge badge-sm badge-info badge-dot">{t('live')}</span>}
+            </div>
+            {monitoring.length === 0 ? (
+              <EmptyState
+                plain
+                icon="monitoring"
+                title={t('opponentEmpty.title')}
+                description={t('opponentEmpty.description')}
+              />
+            ) : (
+              <ul className="dash-pulse">
+                {monitoring.slice(0, PULSE_LIMIT).map(m => (
+                  <li key={m.id} className="dash-pulse-item">
+                    <div className="dash-pulse-head">
+                      <span className={`dash-cred dash-cred-${m.credibility}`} title={t(`credibility.${m.credibility}`)}>
+                        <span className="sr-only">{t(`credibility.${m.credibility}`)}</span>
+                      </span>
+                      <span className="dash-pulse-source">{m.source}</span>
+                      {m.opponent && <span className="dash-pulse-opponent">{m.opponent}</span>}
+                      <span className="dash-pulse-time">{format.relativeTime(new Date(m.capturedAt), now)}</span>
+                    </div>
+                    <p className="dash-pulse-excerpt excerpt-clamp">{m.excerpt}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="card-footer">
+              <Link className="btn btn-ghost btn-sm" href="/monitoring">
+                {t('seeFullFeed')}<Icon name="arrow-right" size={14} />
+              </Link>
+            </div>
+          </section>
         </div>
       </div>
     </AppFrame>

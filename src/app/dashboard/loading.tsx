@@ -3,51 +3,59 @@ import { AppShellSkeleton } from '@/components/AppShellSkeleton';
 export default function DashboardLoading() {
   return (
     <AppShellSkeleton>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 22 }}>
-        <div>
-          <div className="skeleton" style={{ width: 70, height: 10, marginBottom: 10 }} />
-          <div className="skeleton" style={{ width: 120, height: 26 }} />
+      <div className="page-header">
+        <div className="page-header-main">
+          <div className="skeleton sk sk-eyebrow" />
+          <div className="skeleton sk sk-title" />
         </div>
-        <div className="skeleton" style={{ width: 200, height: 36, borderRadius: 7 }} />
+        <div className="page-header-actions">
+          <div className="skeleton sk sk-btn" />
+          <div className="skeleton sk sk-btn" />
+        </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
-        {[0, 1, 2, 3].map(i => (
-          <div key={i} className="card" style={{ padding: 16 }}>
-            <div className="skeleton" style={{ width: '55%', height: 10, marginBottom: 16 }} />
-            <div className="skeleton" style={{ width: 52, height: 34, marginBottom: 10 }} />
-            <div className="skeleton" style={{ width: '70%', height: 10 }} />
-          </div>
-        ))}
-      </div>
-
-      <div className="grid" style={{ gridTemplateColumns: '1.35fr 1fr', gap: 14 }}>
-        <div className="card">
-          <div className="skeleton" style={{ width: 130, height: 11, marginBottom: 18 }} />
+      <div className="stack dash-stack">
+        <div className="grid cols-4">
           {[0, 1, 2, 3].map(i => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--line)' }}>
-              <div style={{ flex: 1 }}>
-                <div className="skeleton" style={{ width: '55%', height: 12, marginBottom: 8 }} />
-                <div className="skeleton" style={{ width: 120, height: 9 }} />
+            <div key={i} className="card card-sm stat">
+              <div className="stat-header">
+                <div className="skeleton sk sk-text sk-w-50" />
+                <div className="skeleton sk sk-icon" />
               </div>
-              <div className="skeleton" style={{ width: 76, height: 20, borderRadius: 999 }} />
+              <div className="skeleton sk sk-stat" />
+              <div className="skeleton sk sk-text sk-w-75" />
             </div>
           ))}
         </div>
-        <div className="card">
-          <div className="skeleton" style={{ width: 110, height: 11, marginBottom: 18 }} />
-          {[0, 1, 2].map(i => (
-            <div key={i} style={{ padding: '11px 0', borderBottom: '1px solid var(--line)' }}>
-              <div className="skeleton" style={{ width: 90, height: 9, marginBottom: 8 }} />
-              <div className="skeleton" style={{ width: '100%', height: 10, marginBottom: 6 }} />
-              <div className="skeleton" style={{ width: '80%', height: 10 }} />
-            </div>
-          ))}
-        </div>
-      </div>
 
-      <div className="card" style={{ marginTop: 14 }}>
-        <div className="skeleton" style={{ width: '100%', height: 30, borderRadius: 8 }} />
+        <div className="dash-grid">
+          <div className="card card-sectioned">
+            <div className="card-header"><div className="skeleton sk sk-heading" /></div>
+            <ul className="dash-list">
+              {[0, 1, 2, 3].map(i => (
+                <li key={i} className="dash-list-row">
+                  <span className="dash-list-main">
+                    <div className="skeleton sk sk-text sk-w-50" />
+                    <div className="skeleton sk sk-text-xs sk-w-25" />
+                  </span>
+                  <div className="skeleton sk sk-pill" />
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="card card-sectioned">
+            <div className="card-header"><div className="skeleton sk sk-heading" /></div>
+            <ul className="dash-pulse">
+              {[0, 1, 2].map(i => (
+                <li key={i} className="dash-pulse-item">
+                  <div className="skeleton sk sk-text-xs sk-w-25" />
+                  <div className="skeleton sk sk-text sk-w-100" />
+                  <div className="skeleton sk sk-text sk-w-75" />
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       </div>
     </AppShellSkeleton>
   );

@@ -1,33 +1,36 @@
 import { AppShellSkeleton } from '@/components/AppShellSkeleton';
 
-export default function ContentLoading() {
+export default function ContentListLoading() {
   return (
     <AppShellSkeleton>
-      <div className="pagehead">
-        <div>
-          <div className="skeleton" style={{ width: 60, height: 10, marginBottom: 8 }} />
-          <div className="skeleton" style={{ width: 130, height: 26 }} />
+      <div className="page-header">
+        <div className="page-header-main">
+          <div className="skeleton sk sk-eyebrow" />
+          <div className="skeleton sk sk-title" />
         </div>
-        <div style={{ marginLeft: 'auto' }}>
-          <div className="skeleton" style={{ width: 130, height: 36, borderRadius: 7 }} />
+        <div className="page-header-actions">
+          <div className="skeleton sk sk-btn" />
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 7, marginBottom: 20 }}>
-        {[54, 60, 74, 84, 76].map((w, i) => (
-          <div key={i} className="skeleton" style={{ width: w, height: 34, borderRadius: 7 }} />
+      <div className="tabs" aria-hidden="true">
+        {[0, 1, 2, 3, 4, 5].map(i => (
+          <span key={i} className="content-skel-tab"><div className="skeleton sk sk-text sk-w-100" /></span>
         ))}
       </div>
 
-      <div className="card" style={{ padding: 0 }}>
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '15px 16px', borderBottom: i < 5 ? '1px solid var(--border)' : 'none' }}>
-            <div className="skeleton" style={{ flex: 2, height: 13 }} />
-            <div className="skeleton" style={{ flex: 1, height: 11 }} />
-            <div className="skeleton" style={{ flex: 1, height: 11 }} />
-            <div className="skeleton" style={{ width: 80, height: 20, borderRadius: 999 }} />
-          </div>
-        ))}
+      <div className="card flush">
+        <ul className="content-skel-rows">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <li key={i} className="content-skel-row">
+              <div className="skeleton sk sk-text content-skel-cell-wide" />
+              <div className="skeleton sk sk-text-xs content-skel-cell" />
+              <div className="skeleton sk sk-text-xs content-skel-cell" />
+              <div className="skeleton sk sk-text-xs content-skel-cell" />
+              <div className="skeleton sk sk-pill" />
+            </li>
+          ))}
+        </ul>
       </div>
     </AppShellSkeleton>
   );

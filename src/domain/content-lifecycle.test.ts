@@ -61,13 +61,9 @@ describe('ContentLifecycle.schedule — the hard gate', () => {
     expect(audit).toContain('schedule');
   });
 
-  // Regression: confirmDisclosureAction (actions.ts) routes AI-generated
-  // content through schedule() as soon as the disclosure gate clears — before
-  // any platforms or a real time have been picked. The wizard's "Schedule for
-  // later" submit then calls schedule() again once those are set. Rejecting
-  // the second call as an illegal transition made every AI-generated item
-  // permanently unschedulable with a real date. Verified live.
-  it('allows scheduling an already-scheduled item again (the disclosure-then-pick-a-time flow)', async () => {
+  // Rescheduling: scheduleWithTimeAction calls schedule() again on an item
+  // that is already 'scheduled' so the new time goes through the same gate.
+  it('allows scheduling an already-scheduled item again (reschedule)', async () => {
     const item = makeItem({ status: 'scheduled', isAiGenerated: true });
     const disc: DisclosureRecord = {
       id: 'd-1', contentItemId: 'ci-1', campaignId: 'c-1',
@@ -168,5 +164,33 @@ describe('ContentLifecycle.assertPublishable — the hard gate before going live
     const { lifecycle, state } = fakes(makeItem({ status: 'approved', isAiGenerated: true }), { approved: true, disclosures: [] });
     await expect(lifecycle.markPublished('ci-1', 'u-1')).rejects.toThrow(/needs a disclosure/);
     expect(state.status).toBe('approved');
+  });
+});
+
+describe('ContentLifecycle.unschedule / revise', () => {
+  it('unschedule moves scheduled → approved and logs it', async () => {
+    const { lifecycle, state, audit } = fakes(makeItem({ status: 'scheduled' }), { approved: true });
+    await lifecycle.unschedule('ci-1', 'u-1');
+    expect(state.status).toBe('approved');
+    expect(audit).toContain('unschedule');
+  });
+
+  it('unschedule refuses anything that is not scheduled', async () => {
+    const { lifecycle, state } = fakes(makeItem({ status: 'approved' }), { approved: true });
+    await expect(lifecycle.unschedule('ci-1', 'u-1')).rejects.toThrow(GateError);
+    expect(state.status).toBe('approved');
+  });
+
+  it('revise moves rejected → draft and logs it', async () => {
+    const { lifecycle, state, audit } = fakes(makeItem({ status: 'rejected' }));
+    await lifecycle.revise('ci-1', 'u-1');
+    expect(state.status).toBe('draft');
+    expect(audit).toContain('revise');
+  });
+
+  it('revise refuses anything that is not rejected', async () => {
+    const { lifecycle, state } = fakes(makeItem({ status: 'published' }));
+    await expect(lifecycle.revise('ci-1', 'u-1')).rejects.toThrow(GateError);
+    expect(state.status).toBe('published');
   });
 });

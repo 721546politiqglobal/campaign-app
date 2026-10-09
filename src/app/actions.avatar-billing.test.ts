@@ -121,18 +121,28 @@ describe('finalizeAvatarAction billing', () => {
       .mockResolvedValueOnce({ lookId: 'look-2', groupId: 'group-1' })
       .mockRejectedValueOnce(new Error('HeyGen training failed'));
 
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     await createAvatar(4);
 
     expect(photoAvatarProvider.createAvatarLook).toHaveBeenCalledTimes(3);
-    expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'failed', expect.objectContaining({ errorMessage: 'HeyGen training failed' }));
+    // The provider's wording is logged, never stored or shown.
+    expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'failed', expect.objectContaining({ errorMessage: expect.stringMatching(/creation failed/i) }));
+    expect(updateAvatarStatus).not.toHaveBeenCalledWith('avatar-1', 'failed', expect.objectContaining({ errorMessage: 'HeyGen training failed' }));
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
-  it('returns ok:false when the HeyGen creation loop fails', async () => {
+  it('returns ok:false with a translated message (not the raw provider error) when the HeyGen creation loop fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     photoAvatarProvider.uploadAsset.mockRejectedValue(new Error('HeyGen upload error: bad file'));
     const result = await createAvatar(4);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/bad file|failed/i);
+    if (!result.ok) {
+      expect(result.error).toMatch(/failed/i);
+      expect(result.error).not.toMatch(/bad file/);
+    }
     expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'failed', expect.objectContaining({ errorMessage: expect.any(String) }));
+    consoleError.mockRestore();
   });
 });
 

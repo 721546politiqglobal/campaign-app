@@ -1,94 +1,89 @@
+import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { getSystemStats, getAllCampaigns } from '@/lib/data';
-import { createCampaignAction } from './actions';
+import { requireAdmin } from '@/lib/session';
+import { getSystemStats, getAdminCampaignsPage } from '@/lib/data';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Icon } from '@/components/icons';
 import { CampaignsTable } from '@/components/CampaignsTable';
+import { adminFormat } from './_components/format';
+import { buildHref } from './_components/query';
+
+const RECENT_LIMIT = 8;
 
 export default async function AdminOverview() {
+  // Defense in depth: the layout already gates on requireAdmin(), but every
+  // admin page re-checks so a future layout change can't expose it (#16).
+  await requireAdmin();
   const t = await getTranslations('admin.dashboard');
-  const [stats, campaigns] = await Promise.all([getSystemStats(), getAllCampaigns()]);
+  const f = await adminFormat();
+  const [stats, recent] = await Promise.all([
+    getSystemStats(),
+    getAdminCampaignsPage({ sort: 'created', dir: 'desc', pageSize: RECENT_LIMIT }),
+  ]);
 
   return (
-    <div>
-      <div className="pagehead">
-        <div>
-          <span className="eyebrow">{t('eyebrow')}</span>
-          <h1>{t('title')}</h1>
-        </div>
-      </div>
+    <div className="stack">
+      <PageHeader
+        eyebrow={t('eyebrow')}
+        title={t('title')}
+        description={t('description')}
+        actions={
+          <Link href="/admin/campaigns?new=1" className="btn btn-primary">
+            <Icon name="plus" size={16} />{t('newCampaign')}
+          </Link>
+        }
+      />
 
-      {/* Stat cards */}
       <div className="admin-stat-grid">
-        <div className="card">
+        <div className="card card-sm stat">
           <div className="stat-header">
             <span className="stat-label">{t('statCampaigns')}</span>
-            <svg className="stat-icon" viewBox="0 0 20 20" fill="none" aria-hidden>
-              <path d="M3 16V8L10 3L17 8V16" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-              <rect x="7" y="10" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.4"/>
-            </svg>
+            <span className="stat-icon"><Icon name="campaign" size={16} /></span>
           </div>
-          <div className="stat-value">{stats.campaignCount}</div>
+          <div className="stat-value num">{f.integer(stats.campaignCount)}</div>
         </div>
-        <div className="card">
+        <div className="card card-sm stat">
           <div className="stat-header">
             <span className="stat-label">{t('statUsers')}</span>
-            <svg className="stat-icon" viewBox="0 0 20 20" fill="none" aria-hidden>
-              <circle cx="8" cy="6" r="3" stroke="currentColor" strokeWidth="1.5"/>
-              <path d="M2 17C2 13.686 4.686 11 8 11C11.314 11 14 13.686 14 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              <path d="M15 9C16.657 9 18 10.343 18 12V17" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-              <circle cx="15.5" cy="6.5" r="2" stroke="currentColor" strokeWidth="1.3"/>
-            </svg>
+            <span className="stat-icon"><Icon name="users" size={16} /></span>
           </div>
-          <div className="stat-value">{stats.userCount}</div>
+          <div className="stat-value num">{f.integer(stats.userCount)}</div>
         </div>
-        <div className="card">
+        <div className="card card-sm stat">
           <div className="stat-header">
             <span className="stat-label">{t('statContentItems')}</span>
-            <svg className="stat-icon" viewBox="0 0 20 20" fill="none" aria-hidden>
-              <rect x="3" y="2" width="14" height="16" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-              <line x1="6" y1="7" x2="14" y2="7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-              <line x1="6" y1="10" x2="14" y2="10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-              <line x1="6" y1="13" x2="10" y2="13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-            </svg>
+            <span className="stat-icon"><Icon name="content" size={16} /></span>
           </div>
-          <div className="stat-value">{stats.contentCount}</div>
+          <div className="stat-value num">{f.integer(stats.contentCount)}</div>
         </div>
-        <div className="card">
+        <Link href="/admin/content?status=in_review" className="card card-sm stat interactive">
           <div className="stat-header">
             <span className="stat-label">{t('statAwaitingReview')}</span>
-            <svg className="stat-icon" viewBox="0 0 20 20" fill="none" aria-hidden>
-              <circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.5"/>
-              <path d="M10 6V10.5L13 12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+            <span className="stat-icon"><Icon name="clock" size={16} /></span>
           </div>
-          <div className="stat-value" style={{ color: stats.inReviewCount > 0 ? 'var(--warn)' : undefined }}>
-            {stats.inReviewCount}
+          <div className={stats.inReviewCount > 0 ? 'stat-value num admin-warn-text' : 'stat-value num'}>
+            {f.integer(stats.inReviewCount)}
           </div>
-        </div>
+          <div className="stat-hint">{t('reviewHint', { count: stats.inReviewCount })}</div>
+        </Link>
       </div>
 
-      {/* Campaigns table */}
-      <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>{t('allCampaigns')}</h2>
-
-      <CampaignsTable campaigns={campaigns} />
-
-      {/* Create campaign form */}
-      <div className="card">
-        <div style={{ marginBottom: 16 }}>
-          <span className="eyebrow">{t('newCampaignEyebrow')}</span>
-          <h2 style={{ fontSize: 15, fontWeight: 700, margin: '4px 0 0' }}>{t('createCampaign')}</h2>
+      <section className="stack">
+        <div className="section-header">
+          <h2>{t('recentCampaigns')}</h2>
+          <Link href="/admin/campaigns" className="link text-sm">{t('viewAllCampaigns')}</Link>
         </div>
-        <form action={createCampaignAction} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div>
-            <label className="field-label">{t('campaignNameLabel')}</label>
-            <input name="name" className="input" placeholder={t('campaignNamePlaceholder')} required />
-          </div>
-          <div>
-            <label className="field-label">{t('jurisdictionsLabel')}</label>
-            <input name="jurisdictions" className="input" placeholder={t('jurisdictionsPlaceholder')} defaultValue="US-FEDERAL" />
-          </div>
-          <button className="btn primary" style={{ alignSelf: 'flex-start' }}>{t('createCampaign')}</button>
-        </form>
-      </div>
+        <CampaignsTable
+          page={recent}
+          sort="created"
+          dir="desc"
+          filtered={false}
+          compact
+          hrefForPage={p => buildHref('/admin/campaigns', { page: p })}
+          hrefForSort={(sort, dir) => buildHref('/admin/campaigns', { sort, dir })}
+          newCampaignAction={<Link href="/admin/campaigns?new=1" className="btn btn-primary">{t('newCampaign')}</Link>}
+        />
+      </section>
     </div>
   );
 }

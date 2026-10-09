@@ -1,13 +1,26 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { ContentStatus } from '@/domain/types';
+import type { ContentStatus } from '@/domain/types';
+import { Badge, type BadgeTone } from '@/components/ui/Badge';
 
-export function StatusPill({ status }: { status: ContentStatus }) {
+const TONE: Record<ContentStatus, BadgeTone> = {
+  draft: 'neutral',
+  in_review: 'warn',
+  approved: 'info',
+  scheduled: 'purple',
+  publishing: 'accent',
+  published: 'ok',
+  rejected: 'bad',
+  archived: 'neutral',
+};
+
+export function StatusPill({ status, size }: { status: ContentStatus; size?: 'sm' | 'md' }) {
   const t = useTranslations('common');
+  const label = t(`status.${status}`);
   return (
-    <span className={`pill ${status}`} aria-label={t('statusAriaLabel', { status: t(`status.${status}`) })}>
-      {t(`status.${status}`)}
-    </span>
+    <Badge tone={TONE[status] ?? 'neutral'} dot size={size} aria-label={t('statusAriaLabel', { status: label })}>
+      {label}
+    </Badge>
   );
 }

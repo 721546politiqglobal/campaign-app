@@ -1,4 +1,4 @@
-import { adminDb } from './supabase';
+import { adminDb, throwOnError } from './supabase';
 
 export const MAX_ATTEMPTS = 5;
 export const WINDOW_MS = 15 * 60 * 1000;
@@ -38,14 +38,19 @@ export async function getAttempts(key: string): Promise<AttemptRow | null> {
 export async function recordFailure(key: string, now: number): Promise<void> {
   const current = await getAttempts(key);
   const next = nextFailureState(current, now);
-  await adminDb.from('login_attempts').upsert({
-    key,
-    attempts: next.attempts,
-    window_start: new Date(next.windowStart).toISOString(),
-    locked_until: next.lockedUntil ? new Date(next.lockedUntil).toISOString() : null,
-  });
+  // A silently failed write would quietly disable brute-force throttling.
+  await throwOnError(
+    adminDb.from('login_attempts').upsert({
+      key,
+      attempts: next.attempts,
+      window_start: new Date(next.windowStart).toISOString(),
+      locked_until: next.lockedUntil ? new Date(next.lockedUntil).toISOString() : null,
+    }),
+    'login_attempts.record_failure',
+  );
 }
 
 export async function clearAttempts(key: string): Promise<void> {
-  await adminDb.from('login_attempts').delete().eq('key', key);
+  // Stale rows that fail to clear can lock a legitimate user out later.
+  await throwOnError(adminDb.from('login_attempts').delete().eq('key', key), 'login_attempts.clear');
 }

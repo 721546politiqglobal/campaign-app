@@ -50,7 +50,7 @@ describe('scheduleWithTimeAction blocks media-required platforms with no media',
     const { scheduleWithTimeAction } = await import('./actions');
     const r = await scheduleWithTimeAction('x', ['instagram', 'facebook'] as any, SCHEDULED_AT, 'America/New_York');
     expect(r.ok).toBe(false);
-    expect(r).toMatchObject({ error: expect.stringContaining('instagram') });
+    expect(r).toMatchObject({ error: expect.stringContaining('Instagram') });
     expect(schedule).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });

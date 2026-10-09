@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useTransition } from 'react';
+import { useId, useTransition } from 'react';
 import { updateLocaleAction } from '@/app/settings/locale-actions';
 import { useToast } from '@/components/Toast';
 import type { Locale } from '@/lib/locale';
@@ -10,13 +10,16 @@ export function LanguageSwitcher({ currentLocale }: { currentLocale: Locale }) {
   const t = useTranslations('common');
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
+  const id = useId();
 
   return (
-    <label className="field">
-      <span>{t('language')}</span>
+    <div className="field" style={{ maxWidth: 280 }}>
+      <label className="field-label" htmlFor={id}>{t('language')}</label>
       <select
+        id={id}
         defaultValue={currentLocale}
         disabled={isPending}
+        aria-busy={isPending}
         onChange={(e) => {
           const locale = e.target.value as Locale;
           // Surface a failed switch instead of letting the rejected promise
@@ -34,6 +37,6 @@ export function LanguageSwitcher({ currentLocale }: { currentLocale: Locale }) {
         <option value="en">{t('languageEnglish')}</option>
         <option value="es">{t('languageSpanish')}</option>
       </select>
-    </label>
+    </div>
   );
 }

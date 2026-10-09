@@ -1,53 +1,71 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getTranslations } from 'next-intl/server';
+import { getFormatter, getTranslations } from 'next-intl/server';
 import { AppFrame } from '@/components/AppFrame';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ChevronDownIcon, ChevronUpIcon } from '@/components/icons';
 import { requireSession } from '@/lib/session';
 import { getPerformanceSummary, getLatestInsight } from '@/lib/analytics';
 import { getMonitoringResults } from '@/lib/data';
+import { rowCountLabel } from '@/lib/row-cap';
+import { renderInlineMarkdown, renderMarkdownLite } from '@/lib/markdown-lite';
 
 function pctDelta(current: number, prior: number): number | null {
   if (prior === 0) return null;
   return Math.round(((current - prior) / prior) * 100);
 }
 
-function Delta({ value }: { value: number | null }) {
+type Translator = Awaited<ReturnType<typeof getTranslations>>;
+type Formatter = Awaited<ReturnType<typeof getFormatter>>;
+
+function Delta({ value, t }: { value: number | null; t: Translator }) {
   if (value === null) return null;
   const up = value >= 0;
+  const label = t(up ? 'deltaUp' : 'deltaDown', { value: Math.abs(value) });
   return (
-    <span className="mono" style={{ fontSize: 11, color: up ? 'var(--ok)' : 'var(--bad)', marginLeft: 8 }}>
-      {up ? '▲' : '▼'} {Math.abs(value)}%
+    <span className={`stat-delta num ${up ? 'up' : 'down'}`} title={label}>
+      {up ? <ChevronUpIcon size={14} /> : <ChevronDownIcon size={14} />}
+      <span aria-hidden="true">{Math.abs(value)}%</span>
+      <span className="sr-only">{label}</span>
     </span>
   );
 }
 
-function BarList({ rows, labelKey, emptyLabel }: { rows: { engagement: number; [k: string]: unknown }[]; labelKey: string; emptyLabel: string }) {
-  if (rows.length === 0) {
-    return <p className="muted" style={{ padding: '24px 0', textAlign: 'center' }}>{emptyLabel}</p>;
-  }
+function BarList({ rows, emptyLabel, format }: {
+  rows: { key: string; label: string; engagement: number }[];
+  emptyLabel: string;
+  format: Formatter;
+}) {
+  if (rows.length === 0) return <p className="muted text-sm an-empty">{emptyLabel}</p>;
   const max = Math.max(...rows.map(r => r.engagement), 1);
   return (
-    <>
+    <ul className="an-bars">
       {rows.map(r => (
-        <div key={String(r[labelKey])} style={{ marginBottom: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 4 }}>
-            <span style={{ textTransform: 'capitalize' }}>{String(r[labelKey]).replace('_', ' ')}</span>
-            <span className="mono">{r.engagement}</span>
+        <li key={r.key} className="an-bar">
+          <div className="an-bar-head">
+            <span className="an-bar-label">{r.label}</span>
+            <span className="num text-sm">{format.number(r.engagement)}</span>
           </div>
-          <div style={{ height: 6, background: 'var(--bg-hover)', borderRadius: 999, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${(r.engagement / max) * 100}%`, background: 'var(--accent-grad)', borderRadius: 999 }} />
+          <div className="an-bar-track" role="presentation">
+            <div className="an-bar-fill" style={{ width: `${(r.engagement / max) * 100}%` }} />
           </div>
-        </div>
+        </li>
       ))}
-    </>
+    </ul>
   );
 }
 
 export default async function AnalyticsPage() {
   const s = await requireSession();
   if (s.role === 'super_admin') redirect('/admin');
-  const t = await getTranslations('analytics');
-  const tType = await getTranslations('content.types');
+  const [t, tc, tType, tNet, format] = await Promise.all([
+    getTranslations('analytics'),
+    getTranslations('common'),
+    getTranslations('content.types'),
+    getTranslations('channels.networks'),
+    getFormatter(),
+  ]);
 
   const [summary, insight, monitoring] = await Promise.all([
     getPerformanceSummary(s.campaignId),
@@ -57,102 +75,131 @@ export default async function AnalyticsPage() {
 
   const hasData = summary.totals.postsCount > 0;
 
+  // Raw platform / content-type keys → the same labels used elsewhere in the app.
+  const platformLabel = (p: string) => (tNet.has(`${p}.name`) ? tNet(`${p}.name`) : p);
+  const typeLabel = (type: string) => (tType.has(type) ? tType(type) : type.replace(/_/g, ' '));
+
   const tiles = [
-    { label: t('tiles.reach'), value: summary.totals.reach, delta: pctDelta(summary.totals.reach, summary.priorTotals.reach) },
-    { label: t('tiles.engagement'), value: summary.totals.engagement, delta: pctDelta(summary.totals.engagement, summary.priorTotals.engagement) },
-    { label: t('tiles.engagementRate'), value: summary.totals.impressions > 0 ? `${((summary.totals.engagement / summary.totals.impressions) * 100).toFixed(1)}%` : '—', delta: null },
-    { label: t('tiles.videoWatchTime'), value: `${summary.totals.videoAvgWatchSeconds.toFixed(0)}s`, delta: null },
+    { label: t('tiles.reach'), value: format.number(summary.totals.reach), delta: pctDelta(summary.totals.reach, summary.priorTotals.reach) },
+    { label: t('tiles.engagement'), value: format.number(summary.totals.engagement), delta: pctDelta(summary.totals.engagement, summary.priorTotals.engagement) },
+    {
+      label: t('tiles.engagementRate'),
+      value: summary.totals.impressions > 0
+        ? format.number(summary.totals.engagement / summary.totals.impressions, { style: 'percent', maximumFractionDigits: 1 })
+        : '—',
+      delta: null,
+    },
+    {
+      label: t('tiles.videoWatchTime'),
+      value: format.number(Math.round(summary.totals.videoAvgWatchSeconds), { style: 'unit', unit: 'second', unitDisplay: 'narrow' }),
+      delta: null,
+    },
   ];
 
   return (
     <AppFrame>
-      <div style={{ marginBottom: 22 }}>
-        <span className="eyebrow">{t('last30Days')}</span>
-        <h1 style={{ margin: '4px 0 0' }}>{t('pageTitle')}</h1>
-      </div>
+      <PageHeader eyebrow={t('eyebrow')} title={t('pageTitle')} description={t('description')}
+        meta={<span className="badge badge-neutral">{t('last30Days')}</span>} />
 
       {!hasData ? (
-        <div className="card" style={{ padding: '40px 24px', textAlign: 'center' }}>
-          <p className="muted">{t('noDataMessage')}</p>
-        </div>
+        <EmptyState
+          icon="analytics"
+          title={t('empty.title')}
+          description={t('empty.description')}
+          action={
+            <>
+              <Link href="/content/new" className="btn btn-primary">{t('empty.cta')}</Link>
+              <Link href="/channels" className="btn">{t('empty.ctaSecondary')}</Link>
+            </>
+          }
+        />
       ) : (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+        <div className="stack an-page">
+          <div className="grid cols-4">
             {tiles.map(tile => (
-              <div key={tile.label} className="card" style={{ padding: 16 }}>
-                <div className="eyebrow" style={{ marginBottom: 12 }}>{tile.label}</div>
-                <div className="data" style={{ fontSize: 28, fontWeight: 700, color: 'var(--text)' }}>
-                  {tile.value}
-                  <Delta value={tile.delta} />
-                </div>
+              <div key={tile.label} className="card card-sm stat">
+                <div className="stat-header"><span className="stat-label">{tile.label}</span></div>
+                <div className="stat-value num">{tile.value}</div>
+                <Delta value={tile.delta} t={t} />
               </div>
             ))}
           </div>
 
-          <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-            <div className="card">
-              <h2 style={{ margin: '0 0 10px' }}>{t('topPerformingContent')}</h2>
+          <div className="grid cols-2">
+            <section className="card" aria-labelledby="an-top-heading">
+              <h2 id="an-top-heading">{t('topPerformingContent')}</h2>
               {summary.topContent.length === 0 ? (
-                <p className="muted" style={{ padding: '24px 0', textAlign: 'center' }}>{t('noContentThisPeriod')}</p>
+                <p className="muted text-sm an-empty">{t('noContentThisPeriod')}</p>
               ) : (
-                summary.topContent.map(c => (
-                  <Link key={c.id} href={`/content/${c.id}`} style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-                    padding: '10px 0', borderBottom: '1px solid var(--line)', textDecoration: 'none', color: 'inherit',
-                  }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title}</div>
-                      <span className="mono" style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase' }}>{tType(c.type)}</span>
-                    </div>
-                    <span className="data" style={{ fontSize: 13, color: 'var(--accent)' }}>{c.engagement}</span>
-                  </Link>
-                ))
-              )}
-            </div>
-
-            <div className="card">
-              <h2 style={{ margin: '0 0 10px' }}>{t('byPlatform')}</h2>
-              <BarList rows={summary.byPlatform} labelKey="platform" emptyLabel={t('barListEmpty')} />
-            </div>
-          </div>
-
-          <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-            <div className="card">
-              <h2 style={{ margin: '0 0 10px' }}>{t('byContentType')}</h2>
-              <BarList rows={summary.byContentType} labelKey="type" emptyLabel={t('barListEmpty')} />
-            </div>
-
-            <div className="card">
-              <h2 style={{ margin: '0 0 10px' }}>{t('opponentActivityTitle')}</h2>
-              <p className="muted" style={{ fontSize: 13 }}>
-                {t.rich('opponentActivityText', {
-                  postsCount: summary.totals.postsCount,
-                  mentionsCount: monitoring.length,
-                  strong: (chunks) => <strong style={{ color: 'var(--text)' }}>{chunks}</strong>,
-                })}
-              </p>
-            </div>
-          </div>
-
-          <div className="card">
-            <h2 style={{ margin: '0 0 10px' }}>{t('aiInsightTitle')}</h2>
-            {insight ? (
-              <>
-                <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text-2)' }}>{insight.summary}</p>
-                <ul style={{ margin: '10px 0 0', paddingLeft: 18 }}>
-                  {insight.recommendations.map((r, i) => (
-                    <li key={i} style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--text-2)' }}>{r}</li>
+                <ul className="an-top-list">
+                  {summary.topContent.map(c => (
+                    <li key={c.id}>
+                      <Link href={`/content/${c.id}`} className="an-top-row">
+                        <span className="an-top-text">
+                          <span className="an-top-title">{c.title}</span>
+                          <span className="subtle text-xs">{typeLabel(c.type)}</span>
+                        </span>
+                        <span className="num an-top-value">{format.number(c.engagement)}</span>
+                      </Link>
+                    </li>
                   ))}
                 </ul>
-                <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 10 }}>
-                  {t('generatedOn', { date: new Date(insight.generatedAt).toLocaleDateString('en-US') })}
-                </div>
-              </>
-            ) : (
-              <p className="muted" style={{ padding: '12px 0' }}>{t('noInsightYet')}</p>
-            )}
+              )}
+            </section>
+
+            <section className="card" aria-labelledby="an-platform-heading">
+              <h2 id="an-platform-heading">{t('byPlatform')}</h2>
+              <BarList
+                rows={summary.byPlatform.map(r => ({ key: r.platform, label: platformLabel(r.platform), engagement: r.engagement }))}
+                emptyLabel={t('barListEmpty')}
+                format={format}
+              />
+            </section>
           </div>
-        </>
+
+          <div className="grid cols-2">
+            <section className="card" aria-labelledby="an-type-heading">
+              <h2 id="an-type-heading">{t('byContentType')}</h2>
+              <BarList
+                rows={summary.byContentType.map(r => ({ key: r.type, label: typeLabel(r.type), engagement: r.engagement }))}
+                emptyLabel={t('barListEmpty')}
+                format={format}
+              />
+            </section>
+
+            <section className="card" aria-labelledby="an-opp-heading">
+              <h2 id="an-opp-heading">{t('opponentActivityTitle')}</h2>
+              <p className="muted text-sm an-prose">
+                {t.rich('opponentActivityText', {
+                  postsCount: format.number(summary.totals.postsCount),
+                  // Same uncapped select as the dashboard tile: at the row cap this reads "1,000+".
+                  mentionsCount: rowCountLabel(monitoring.length, format.number, c => tc('countCapped', { count: c })),
+                  strong: (chunks) => <strong className="an-strong num">{chunks}</strong>,
+                })}
+              </p>
+            </section>
+          </div>
+
+          <section className="card" aria-labelledby="an-insight-heading">
+            <h2 id="an-insight-heading">{t('aiInsightTitle')}</h2>
+            {insight ? (
+              <div className="stack an-insight">
+                {/* Model prose uses light markdown (**bold**, bullets); rendered as elements, never as HTML. */}
+                <div className="an-prose an-md">{renderMarkdownLite(insight.summary)}</div>
+                {insight.recommendations.length > 0 && (
+                  <ul className="an-recs">
+                    {insight.recommendations.map((r, i) => <li key={i}>{renderInlineMarkdown(r)}</li>)}
+                  </ul>
+                )}
+                <p className="subtle text-xs">
+                  {t('generatedOn', { date: format.dateTime(new Date(insight.generatedAt), { dateStyle: 'medium' }) })}
+                </p>
+              </div>
+            ) : (
+              <p className="muted text-sm an-empty">{t('noInsightYet')}</p>
+            )}
+          </section>
+        </div>
       )}
     </AppFrame>
   );

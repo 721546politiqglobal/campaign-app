@@ -1,15 +1,12 @@
 import { cookies, headers } from 'next/headers';
 import { peekSessionLocale } from './session';
 
-export const SUPPORTED_LOCALES = ['en', 'es'] as const;
-export type Locale = (typeof SUPPORTED_LOCALES)[number];
-export const DEFAULT_LOCALE: Locale = 'en';
+import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from './locale-shared';
+
+export { SUPPORTED_LOCALES, DEFAULT_LOCALE, isSupportedLocale } from './locale-shared';
+export type { Locale } from './locale-shared';
 
 const LOCALE_COOKIE = 'locale';
-
-export function isSupportedLocale(value: string | null | undefined): value is Locale {
-  return !!value && (SUPPORTED_LOCALES as readonly string[]).includes(value);
-}
 
 // Picks the language the current request renders in:
 // 1. The signed-in user's session cookie (peekSessionLocale — no DB call).

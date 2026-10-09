@@ -8,6 +8,11 @@
     "mainNavigation": "Main navigation",
     "signOut": "Sign out",
     "dismiss": "Dismiss",
+    "countCapped": "{count}+",
+    "meta": {
+      "title": "PolitIQ",
+      "description": "AI campaign communications — human approval and disclosure built in."
+    },
     "nav": {
       "dashboard": "Dashboard",
       "content": "Content",
@@ -36,21 +41,41 @@
       "rejected": "Rejected",
       "archived": "Archived"
     },
-    "gate": {
-      "publishGates": "Publish gates",
-      "humanApproval": "Human approval",
-      "aiDisclosure": "AI disclosure",
-      "noDisclosureNeeded": "No disclosure needed",
-      "publishStatus": "Publish status",
-      "cleared": "Cleared",
-      "held": "Held"
+    "close": "Close",
+    "signingOut": "Signing out…",
+    "navGroups": {
+      "workspace": "Workspace",
+      "assets": "Assets",
+      "campaign": "Campaign"
+    },
+    "menu": {
+      "open": "Open menu",
+      "close": "Close menu"
+    },
+    "theme": {
+      "label": "Theme",
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    },
+    "confirm": {
+      "confirm": "Confirm",
+      "cancel": "Cancel"
+    },
+    "parties": {
+      "democratic": "Democratic",
+      "republican": "Republican",
+      "independent": "Independent",
+      "green": "Green",
+      "libertarian": "Libertarian",
+      "other": "Other"
     }
   },
   "dashboard": {
     "overview": "Overview",
     "today": "Today",
     "opponentFeed": "Opponent feed",
-    "newContent": "+ New content",
+    "newContent": "New content",
     "tiles": {
       "needsReview": "Needs review",
       "scheduled": "Scheduled",
@@ -59,7 +84,8 @@
       "itemsWaiting": "{count, plural, one {# item waiting} other {# items waiting}}",
       "queuedToPublish": "queued to publish",
       "liveOnSocials": "live on socials",
-      "inTheFeed": "in the feed"
+      "inTheFeed": "in the feed",
+      "inReviewWaiting": "{count, plural, =0 {nothing waiting on you} one {# item waiting on you} other {# items waiting on you}}"
     },
     "goingOutToday": "Going out today",
     "needsAttention": "Needs attention",
@@ -70,7 +96,22 @@
     "live": "LIVE",
     "noOpponentActivity": "No opponent activity picked up yet.",
     "seeFullFeed": "See full feed",
-    "spendThisBillingPeriod": "Spend this billing period"
+    "spendThisBillingPeriod": "Spend this billing period",
+    "description": "What needs your attention today.",
+    "emptyAttention": {
+      "title": "You're all caught up",
+      "description": "Nothing is waiting for review. Drafts and items in review show up here."
+    },
+    "opponentEmpty": {
+      "title": "No opponent activity yet",
+      "description": "Signals from the sources you monitor will show up here."
+    },
+    "credibility": {
+      "high": "High credibility",
+      "medium": "Medium credibility",
+      "low": "Low credibility"
+    },
+    "moreItems": "{count, plural, one {+ # more} other {+ # more}}"
   },
   "content": {
     "pageTitle": "Content",
@@ -86,21 +127,16 @@
     "human": "Human",
     "breadcrumbLabel": "Breadcrumb",
     "activity": "Activity",
-    "filters": {
-      "all": "All",
-      "draft": "draft",
-      "inReview": "in review",
-      "approved": "approved",
-      "scheduled": "scheduled",
-      "published": "published"
-    },
     "emptyState": {
       "default": "No content yet — create your first piece.",
       "draft": "No draft content yet.",
       "inReview": "No content in review yet.",
       "approved": "No approved content yet.",
       "scheduled": "No scheduled content yet.",
-      "published": "No published content yet."
+      "published": "No published content yet.",
+      "title": "No content here yet",
+      "rejected": "No rejected content.",
+      "archived": "No archived content."
     },
     "types": {
       "reel": "Reel",
@@ -122,7 +158,7 @@
       "writeItMyself": "Write it myself",
       "draft": "Draft",
       "bodyLabel": "Body",
-      "saveDraft": "Save draft →",
+      "saveDraft": "Save draft",
       "reelsDisclosureNote": "Reels always require AI disclosure — an avatar video is generated regardless of script authorship.",
       "aiGeneratedDisclosure": "AI-generated (adds required disclosure)",
       "briefSuggestions": {
@@ -131,8 +167,51 @@
         "healthcarePlan": "Share our healthcare plan highlights",
         "thankVolunteers": "Thank volunteers after a successful event",
         "pushBackClaim": "Push back on a false claim in the news"
+      },
+      "savingDraft": "Saving…",
+      "regenerateConfirm": {
+        "title": "Replace your edits?",
+        "description": "Regenerating writes a new title and body over the changes you made.",
+        "confirm": "Regenerate"
+      },
+      "typeLabel": "Content type",
+      "suggestionsLabel": "Try one of these",
+      "draftHint": "You can edit the title and body before saving."
+    },
+    "untitled": "Untitled",
+    "description": "Every draft, review and post in one place.",
+    "updatedLabel": "Updated",
+    "newDescription": "Describe what you need, generate a draft, then save it for review.",
+    "detail": {
+      "createdMeta": "Created by {name} · {date}",
+      "unknownUser": "Unknown user"
+    },
+    "audit": {
+      "title": "Activity",
+      "by": "by {name}",
+      "system": "System",
+      "actions": {
+        "submit_for_review": "Submitted for review",
+        "approve": "Approved",
+        "reject": "Rejected",
+        "revise": "Reopened as draft",
+        "schedule": "Scheduled",
+        "schedule_with_time": "Scheduled",
+        "reschedule": "Rescheduled",
+        "unschedule": "Unscheduled",
+        "publish": "Published",
+        "generate_video": "Video generation started",
+        "confirm_video": "Video confirmed",
+        "confirm_disclosure": "AI disclosure attached",
+        "generate_from_monitoring": "Drafted from a monitoring signal",
+        "cron_publish": "Published automatically",
+        "cron_publish_failed": "Automatic publish failed",
+        "cron_publish_error": "Automatic publish hit an error",
+        "cron_publish_not_connected": "Automatic publish skipped — channel not connected",
+        "other": "{action}"
       }
-    }
+    },
+    "allLabel": "All"
   },
   "contentWizard": {
     "steps": {
@@ -149,7 +228,9 @@
     },
     "published": {
       "title": "Published",
-      "description": "This content is live on all selected platforms."
+      "description": "This content is live on all selected platforms.",
+      "backToContent": "Back to content",
+      "platformsLabel": "Posted to"
     },
     "inactive": {
       "rejectedTitle": "Rejected",
@@ -167,7 +248,24 @@
       "nextVideo": "Next: generate an avatar video of you delivering this script.",
       "nextDisclosure": "Next: review and confirm the required AI disclosure.",
       "nextPublish": "Next: choose platforms and publish.",
-      "continueButton": "Looks good — Continue →"
+      "continueButton": "Looks good — Continue →",
+      "submitForReview": "Submit for review",
+      "submittedToast": "Sent for review",
+      "savedToast": "Edits saved",
+      "approvedToast": "Approved",
+      "rejectedToast": "Draft rejected",
+      "unsavedHint": "Unsaved edits will be saved when you approve.",
+      "editLocked": "This text was approved and can no longer be edited.",
+      "reject": "Reject",
+      "rejectDialog": {
+        "title": "Reject this draft?",
+        "description": "The author sees your reason and can revise the draft.",
+        "reasonLabel": "Reason",
+        "reasonPlaceholder": "Optional — what needs to change?",
+        "confirm": "Reject draft",
+        "rejecting": "Rejecting…"
+      },
+      "submitHint": "Send this draft to an approver when it is ready."
     },
     "video": {
       "scriptTitle": "Script",
@@ -190,7 +288,8 @@
       "generationFailedMessage": "Video generation failed. Try again.",
       "retry": "Retry",
       "timedOutMessage": "This is taking longer than expected. Your video may still be processing — leave this page and check back in a few minutes.",
-      "refresh": "Refresh"
+      "refresh": "Refresh",
+      "viewTitle": "Video"
     },
     "disclosure": {
       "title": "Required AI disclosure",
@@ -199,7 +298,9 @@
       "textPlaceholder": "Enter the required disclosure text…",
       "textRequired": "Disclosure text is required.",
       "confirming": "Confirming…",
-      "confirmButton": "Confirm disclosure — Continue →"
+      "confirmButton": "Confirm disclosure — Continue →",
+      "attachedTitle": "Disclosure attached",
+      "confirmedToast": "Disclosure attached"
     },
     "publish": {
       "title": "Publish",
@@ -208,7 +309,7 @@
       "timingLabel": "Timing",
       "publishNow": "Publish now",
       "scheduleForLater": "Schedule for later",
-      "dateTimeLabel": "Date (MM/DD/YYYY) & time",
+      "dateTimeLabel": "Date & time",
       "pickTimeError": "Pick a time at least 5 minutes from now.",
       "videoLabel": "Video",
       "publishButton": "{count, plural, one {Publish to # platform} other {Publish to # platforms}}",
@@ -223,31 +324,123 @@
       "notConnectedNote": "Only connected channels can be selected.",
       "manageChannels": "Manage channels",
       "noChannelsTitle": "No channels connected yet",
-      "noChannelsBody": "Connect this campaign's social accounts to publish."
-    }
+      "noChannelsBody": "Connect this campaign's social accounts to publish.",
+      "noPlatformsHint": "Select at least one platform to continue.",
+      "timezoneLabel": "Time zone",
+      "invalidTime": "Enter a valid date and time.",
+      "timezones": {
+        "America/New_York": "Eastern — New York",
+        "America/Chicago": "Central — Chicago",
+        "America/Denver": "Mountain — Denver",
+        "America/Phoenix": "Arizona — Phoenix",
+        "America/Los_Angeles": "Pacific — Los Angeles",
+        "America/Anchorage": "Alaska — Anchorage",
+        "Pacific/Honolulu": "Hawaii — Honolulu"
+      },
+      "confirmPublish": {
+        "title": "Publish now?",
+        "description": "{count, plural, one {This posts to # platform} other {This posts to # platforms}} immediately. Posts can’t be unsent.",
+        "confirm": "Publish"
+      },
+      "rescheduleTitle": "Reschedule",
+      "rescheduleButton": "Save new time",
+      "rescheduledToast": "New time saved",
+      "cancel": "Cancel",
+      "scheduleHint": "Scheduled posts go out automatically at the selected time."
+    },
+    "stepperLabel": "Progress",
+    "viewOnly": "Completed step — view only",
+    "backToCurrent": "Back to current step",
+    "publishedToast": "Published",
+    "scheduled": {
+      "title": "Scheduled",
+      "description": "This post is on the calendar and will go out automatically.",
+      "timeLabel": "Goes out",
+      "platformsLabel": "Platforms",
+      "reschedule": "Reschedule",
+      "unschedule": "Unschedule",
+      "unscheduling": "Unscheduling…",
+      "publishNowInstead": "Publish now instead",
+      "managerOnly": "Only managers can change the schedule.",
+      "unscheduledToast": "Post taken off the calendar",
+      "unscheduleConfirm": {
+        "title": "Take this post off the calendar?",
+        "description": "It goes back to Approved. You can schedule it again or publish it any time.",
+        "confirm": "Unschedule"
+      },
+      "publishNowConfirm": {
+        "title": "Publish now instead of waiting?",
+        "description": "It posts immediately to {platforms} and the scheduled time is discarded.",
+        "confirm": "Publish now"
+      }
+    },
+    "publishing": {
+      "title": "Publishing…",
+      "description": "This post is being sent to your channels. Refresh in a moment.",
+      "refresh": "Refresh"
+    },
+    "rejected": {
+      "title": "Rejected",
+      "description": "An approver sent this back. Revise the draft to try again.",
+      "reason": "Reason: {note}",
+      "revise": "Revise draft",
+      "revising": "Reopening…",
+      "revisedToast": "Reopened as draft"
+    },
+    "archived": {
+      "title": "Archived",
+      "description": "This content was archived and can no longer be changed."
+    },
+    "backToContent": "Back to content"
   },
   "settings": {
     "eyebrow": "Configuration",
     "title": "Settings",
+    "description": "Your candidate profile, content defaults, and personal preferences.",
+    "readOnly": {
+      "title": "View only",
+      "body": "Only campaign owners and managers can change these settings. Ask one of them if something needs updating."
+    },
+    "form": {
+      "permissionDenied": "Only campaign owners and managers can change settings.",
+      "saveFailed": "Could not save your changes. Please try again.",
+      "fixErrors": "Fix the highlighted fields and try again."
+    },
+    "validation": {
+      "required": "This field is required.",
+      "tooLong": "Keep this under {max} characters.",
+      "party": "Choose a party from the list.",
+      "contentLocale": "Choose a supported content language.",
+      "voiceTone": "Pick a valid voice tone.",
+      "url": "Enter a valid http(s) URL.",
+      "invalid": "This value isn't valid."
+    },
     "profile": {
       "heading": "Candidate profile",
-      "error": {
-        "title": "Profile not saved",
-        "body": "Check the party, voice tone, content language, and any URL fields — one of them isn't valid."
-      },
+      "description": "Drives every AI draft: who the candidate is, what they stand for, and how they sound.",
+      "saved": "Profile saved.",
+      "saving": "Saving…",
       "fields": {
         "fullName": "Full name",
         "preferredName": "Preferred name",
         "office": "Running for",
         "district": "District",
         "party": "Party",
+        "partyNone": "No party",
         "primaryOpponent": "Primary opponent",
         "bio": "Bio (2–3 sentences)",
         "tagline": "Tagline",
         "targetAudience": "Target audience",
-        "keyPositions": "Key positions (one per line)",
+        "keyPositions": "Key positions",
         "voiceTone": "Voice tone",
         "contentLocale": "Content generation language"
+      },
+      "hints": {
+        "preferredName": "How the candidate is referred to in drafts.",
+        "keyPositions": "One position per line.",
+        "contentLocale": "The language AI drafts are written in. Your own interface language is set under Language & appearance.",
+        "opponentTwitter": "Without the @.",
+        "googleAlertsRssUrl": "Paste the RSS feed URL of a Google Alert to pull its results into monitoring."
       },
       "voiceToneOptions": {
         "conversational": "Conversational",
@@ -269,27 +462,54 @@
     },
     "campaign": {
       "heading": "Campaign",
-      "jurisdictions": "Jurisdictions"
+      "description": "Set up by your platform admin — contact them to change it.",
+      "name": "Name",
+      "jurisdictions": "Jurisdictions",
+      "noJurisdictions": "No jurisdictions set."
     },
     "disclosure": {
+      "sectionHeading": "Content defaults",
       "heading": "Default AI disclosure",
       "description": "Shown for confirmation on every AI-generated content item before it can be scheduled. Leave blank to use the generic default.",
       "placeholder": "This content was generated or substantially altered using AI.",
+      "saved": "Disclosure saved.",
       "saveButton": "Save disclosure"
+    },
+    "preferences": {
+      "heading": "Language & appearance",
+      "description": "These apply to your account only — not to the campaign or its content.",
+      "languageTitle": "Interface language",
+      "languageBody": "The language this app is shown in for you. The language AI drafts are written in is set in the candidate profile.",
+      "themeTitle": "Theme",
+      "themeBody": "Light, dark, or follow your device setting."
     }
   },
   "monitoring": {
     "eyebrow": "Intelligence",
     "title": "Opponent monitoring",
+    "description": "Track what your opponent and the press are saying, then draft a response in one click.",
+    "countLabel": "{count, plural, one {# story} other {# stories}}",
     "addManually": {
       "heading": "Add story manually",
       "description": "Saw something offline? Add it here — a TV segment, a flyer, anything worth tracking.",
-      "headlineLabel": "Headline / description *",
+      "headlineLabel": "Headline / description",
       "headlinePlaceholder": "Smith claimed Rivera raised taxes",
-      "sourceLabel": "Source name *",
+      "sourceLabel": "Source name",
       "sourcePlaceholder": "Local TV / Flyer / Twitter",
-      "urlLabel": "URL (optional)",
-      "submitButton": "Add to monitoring"
+      "urlLabel": "URL",
+      "urlOptional": "optional",
+      "urlHint": "Used to score credibility and categorize the source.",
+      "submitButton": "Add to monitoring",
+      "submitting": "Adding…",
+      "added": "Story added to monitoring.",
+      "errors": {
+        "headlineRequired": "Add a headline or short description.",
+        "headlineTooLong": "Keep the headline under {max} characters.",
+        "sourceRequired": "Add a source name.",
+        "sourceTooLong": "Keep the source name under {max} characters.",
+        "urlInvalid": "Enter a full URL starting with http:// or https://.",
+        "saveFailed": "Couldn't add this story. Please try again."
+      }
     },
     "filters": {
       "all": "All",
@@ -299,32 +519,59 @@
       "facebook": "Facebook",
       "news": "News"
     },
+    "opponentFilter": "Opponent",
+    "allOpponents": "All opponents",
     "category": {
       "news": "News",
       "social": "Social",
       "blog": "Blog",
       "pressRelease": "Press Release"
     },
-    "emptyState": "No results for this filter.",
+    "credibility": {
+      "high": "High credibility",
+      "medium": "Medium credibility",
+      "low": "Low credibility"
+    },
+    "empty": {
+      "title": "Nothing to review yet",
+      "description": "New stories appear here as they're captured. Set your opponent and keywords in Settings, or add a story manually below.",
+      "cta": "Open settings",
+      "filteredTitle": "No stories match these filters",
+      "filteredDescription": "Try a different source or opponent.",
+      "clearFilters": "Clear filters"
+    },
     "trending": "Trending",
     "showLess": "Show less",
     "showMore": "Show more",
     "draftRebuttal": "Draft rebuttal",
-    "readArticle": "Read article ↗",
+    "readArticle": "Read article",
     "dismiss": "Dismiss",
     "dismissing": "Dismissing…",
+    "dismissed": "Story dismissed.",
+    "undo": "Undo",
+    "restored": "Story restored.",
+    "genericError": "Something went wrong. Please try again.",
     "respondToStory": "Respond to this story from {source}: \"{excerpt}\""
   },
   "analytics": {
     "pageTitle": "Analytics",
+    "eyebrow": "Insights",
     "last30Days": "Last 30 days",
-    "noDataMessage": "Performance data will appear here once your published content has synced.",
+    "description": "How your published content performed across channels over the last 30 days.",
+    "empty": {
+      "title": "No performance data yet",
+      "description": "Publish content to your connected channels and its metrics will sync here automatically.",
+      "cta": "Create content",
+      "ctaSecondary": "Connect channels"
+    },
     "tiles": {
       "reach": "Reach",
       "engagement": "Engagement",
       "engagementRate": "Engagement rate",
       "videoWatchTime": "Video watch time"
     },
+    "deltaUp": "Up {value}% vs. the prior 30 days",
+    "deltaDown": "Down {value}% vs. the prior 30 days",
     "topPerformingContent": "Top performing content",
     "noContentThisPeriod": "Nothing published yet this period.",
     "byPlatform": "By platform",
@@ -400,32 +647,39 @@
     }
   },
   "avatars": {
-    "eyebrow": "Configuration",
+    "eyebrow": "Assets",
     "title": "Avatars",
+    "description": "Set up the candidate's AI avatar, cloned voice, and the video format used for campaign videos.",
     "avatarsHeading": "Candidate avatars",
-    "avatarsDescription": "Create an AI avatar of your candidate from photos, then pick a look and video format for campaign videos.",
+    "avatarsDescription": "Create an AI avatar of your candidate from photos or a short video. The active avatar is the one used in campaign videos.",
     "voiceHeading": "Candidate voice",
-    "voiceDescription": "Clone your candidate's voice from an audio sample to use for campaign videos, instead of waiting on an admin to assign one.",
-    "yourAvatar": "Your avatar",
-    "looksDescription": "These are the available looks for your avatar. Pick the one to use in campaign videos.",
+    "voiceDescription": "Clone your candidate's voice from a short audio sample so avatar videos speak in their own voice.",
+    "videoSettingsHeading": "Video settings",
+    "videoSettingsDescription": "Choose the look and format used when generating avatar videos. The format can be set before any avatar is ready.",
+    "yourAvatar": "Avatar look",
+    "looksDescription": "These are the available looks for your active avatar. Pick the one to use in campaign videos.",
     "noLooksYet": "This avatar has no completed looks yet — check back once training finishes.",
+    "noActiveAvatar": "Looks appear here once an avatar is ready and set as active.",
+    "looksLoadFailed": "Couldn't load this avatar's looks.",
+    "retry": "Retry",
     "lookFallbackName": "Look {number}",
-    "previewLink": "Preview ↗",
+    "previewLink": "Preview",
     "videoFormat": "Video format",
     "aspectRatioSub169": "YouTube · LinkedIn",
     "aspectRatioSub916": "Reels · TikTok",
     "aspectRatioSub11": "Facebook · X",
     "saving": "Saving…",
     "saveVideoSettings": "Save video settings",
-    "videoSettingsSaved": "Video settings saved!",
-    "saveFailed": "Save failed"
+    "videoSettingsSaved": "Video settings saved.",
+    "saveFailed": "Couldn't save video settings. Please try again."
   },
   "avatarManager": {
     "avatarCount": "{count, plural, one {# avatar} other {# avatars}}",
-    "fromPhotosButton": "+ From photos",
-    "fromVideoButton": "+ From video",
+    "fromPhotosButton": "From photos",
+    "fromVideoButton": "From video",
     "emptyState": {
-      "canManage": "No avatars yet — create one from a set of candidate photos.",
+      "title": "No avatars yet",
+      "canManage": "Create one from a set of candidate photos or a short training video.",
       "readOnly": "No avatars have been created for this campaign yet."
     },
     "activeBadge": "Active",
@@ -436,33 +690,47 @@
       "failed": "Failed: {message}",
       "unknownError": "Unknown error"
     },
-    "createdOn": " · created {date}",
+    "createdOn": "Created {date}",
     "actions": {
       "copyConsentLink": "Copy consent link",
       "setActive": "Set active",
       "generateLook": "Generate look",
       "delete": "Delete",
+      "deleteNamed": "Delete {name}",
       "cancel": "Cancel",
-      "next": "Next →",
-      "back": "← Back"
+      "next": "Next",
+      "back": "Back"
+    },
+    "deleteConfirm": {
+      "title": "Delete this avatar?",
+      "description": "“{name}” will be permanently removed. If it's the active avatar, videos won't have an avatar until you set another one.",
+      "confirm": "Delete avatar"
     },
     "toast": {
       "consentLinkCopied": "Consent link copied.",
+      "copyFailed": "Couldn't copy the link — copy it manually: {url}",
       "activeAvatarUpdated": "Active avatar updated.",
       "avatarDeleted": "Avatar deleted.",
       "avatarCreationStarted": "Avatar creation started — this can take a few minutes.",
       "videoAvatarCreationStarted": "Video avatar creation started — send the candidate the consent link shown on this avatar.",
       "lookGenerated": "New look generated — it replaces this avatar's current look and will be used for future videos.",
-      "uploadFailed": "Upload failed: {message}"
+      "uploadFailed": "Upload failed — check your connection and try again."
     },
     "errors": {
       "createAvatarFailed": "Failed to create avatar",
       "createVideoAvatarFailed": "Failed to create video avatar",
       "setActiveFailed": "Failed to set active avatar",
       "deleteFailed": "Failed to delete avatar",
-      "generateLookFailed": "Failed to generate look"
+      "generateLookFailed": "Failed to generate look",
+      "generic": "Something went wrong. Please try again."
     },
     "steps": {
+      "photoDialogTitle": "Create avatar from photos",
+      "videoDialogTitle": "Create avatar from video",
+      "photoInputLabel": "Photos",
+      "videoInputLabel": "Training video",
+      "avatarNameLabel": "Avatar name",
+      "removePhoto": "Remove photo {number}",
       "consentLabel": "Step 1 of 3 · Consent",
       "confirmPermissionTitle": "Confirm permission",
       "photoConsentText": "I confirm I have the candidate's permission to use these photos to create an AI avatar of them.",
@@ -499,6 +767,11 @@
   "billing": {
     "eyebrow": "Configuration",
     "title": "Billing",
+    "description": "Your plan, usage, and payment details.",
+    "readOnly": {
+      "title": "View only",
+      "body": "Only campaign owners and managers can change the plan or payment details."
+    },
     "status": {
       "active": "Active",
       "trialing": "Trial",
@@ -515,42 +788,41 @@
     "inactiveTitle": "Billing inactive",
     "inactiveBody": "AI drafting, video, and voice generation are blocked until this is resolved. Contact your platform admin.",
     "noPlan": "No plan",
+    "noPlanAssigned": "No plan assigned yet.",
+    "noPlanBody": "Choose a plan to unlock AI drafting, video, and voice generation.",
+    "choosePlan": "Choose a plan",
     "campaignSubscription": "Campaign subscription",
     "perWeek": "wk",
     "perMonth": "mo",
-    "noPlanAssigned": "No plan assigned yet.",
+    "perWeekLong": "per week",
+    "perMonthLong": "per month",
+    "renewsOn": "Renews on {date}",
     "changePlan": "Change plan",
     "manageBilling": "Manage billing",
+    "openingPortal": "Opening…",
+    "manageBillingHint": "Update your payment method, download invoices, or cancel in the secure billing portal.",
+    "noBillingAccountHint": "The billing portal becomes available after your first payment.",
+    "usageHeading": "Usage",
+    "usageDescription": "Content resets with each billing period; videos reset daily.",
     "contentPiecesThisPeriod": "Content pieces this period",
     "videosToday": "Videos today",
     "avatarsLabel": "Avatars",
+    "seatsLabel": "Team seats",
     "unlimited": "Unlimited",
-    "usedOfLimit": "{used} of {limit}"
+    "usedOfLimit": "{used} of {limit}",
+    "manageTeam": "Manage team"
   },
   "voice": {
-    "library": {
-      "filters": {
-        "all": "All",
-        "male": "Male",
-        "female": "Female"
-      },
-      "useThisVoice": "Use this voice",
-      "saving": "Saving…",
-      "noVoicesConfigured": "No voices found — check that ELEVENLABS_API_KEY is configured.",
-      "noVoicesFilterMatch": "No voices match this filter.",
-      "playPreview": "Play preview",
-      "pausePreview": "Pause preview"
-    },
+    "previewText": "Hello, this is a preview of your cloned voice.",
     "toast": {
-      "voiceSaved": "Voice saved!",
-      "failedToSave": "Failed to save",
       "recordingTooShort": "Recording was too short — try again.",
       "failedToStartCloning": "Failed to start voice cloning",
-      "uploadFailed": "Upload failed: {message}",
+      "uploadFailed": "Upload failed — check your connection and try again.",
       "cloningStarted": "Voice cloning started — this can take a few minutes.",
       "failedToCloneVoice": "Failed to clone voice",
       "couldntPlaySample": "Couldn't play the sample — try again.",
-      "failedToGeneratePreview": "Failed to generate voice preview"
+      "failedToGeneratePreview": "Failed to generate voice preview",
+      "genericError": "Something went wrong. Please try again."
     },
     "clone": {
       "yourVoice": "Your voice",
@@ -564,7 +836,7 @@
         "failed": "Failed: {message}",
         "unknownError": "Unknown error"
       },
-      "playSample": "▶ Play sample",
+      "playSample": "Play sample",
       "generatingSample": "Generating…",
       "micError": {
         "permissionDenied": "Microphone access is needed to record — you can upload a file instead.",
@@ -576,8 +848,8 @@
       },
       "modal": {
         "cancel": "Cancel",
-        "back": "← Back",
-        "next": "Next →",
+        "back": "Back",
+        "next": "Next",
         "consent": {
           "stepLabel": "Step 1 of 3 · Consent",
           "title": "Confirm permission",
@@ -586,18 +858,23 @@
         "audio": {
           "stepLabel": "Step 2 of 3 · Audio sample",
           "title": "Provide an audio sample",
+          "sourceLabel": "Audio source",
           "recordTab": "Record",
           "uploadTab": "Upload a file",
+          "fileLabel": "Audio file",
           "uploadInstructions": "Upload a clear, single-speaker MP3, WAV, M4A, WebM, or OGG recording.",
-          "recordInstructions": "Record a clear, single-speaker sample directly from your microphone.",
+          "recordInstructions": "Record a clear, single-speaker sample directly from your microphone. Aim for 30 seconds to 5 minutes.",
           "recordingNotSupported": "Recording isn't supported in this browser — please upload a file instead.",
-          "startRecording": "● Start Recording",
-          "stopRecording": "Stop Recording",
-          "reRecord": "Re-record"
+          "startRecording": "Start recording",
+          "stopRecording": "Stop recording",
+          "recording": "Recording",
+          "reRecord": "Re-record",
+          "previewLabel": "Sample preview"
         },
         "name": {
           "stepLabel": "Step 3 of 3 · Name",
           "title": "Name this voice",
+          "label": "Voice name",
           "placeholder": "e.g. My voice",
           "cloning": "Cloning…",
           "submit": "Clone voice"
@@ -608,11 +885,20 @@
   "team": {
     "eyebrow": "Configuration",
     "title": "Team",
-    "membersHeading": "Team",
+    "description": "Who can access this campaign and what each person can do.",
+    "membersHeading": "Members",
+    "seats": {
+      "used": "{used} of {limit, plural, one {# seat} other {# seats}} used",
+      "unlimited": "{count, plural, one {# member} other {# members}} · no seat limit",
+      "full": "{limit, plural, one {The only seat is in use.} other {All # seats are in use.}}"
+    },
+    "you": "You",
+    "readOnlyNote": "Only campaign owners and managers can invite teammates or change roles.",
     "errors": {
       "createInviteFailed": "Failed to create invite.",
       "changeRoleFailed": "Failed to change role.",
       "removeTeammateFailed": "Failed to remove teammate.",
+      "revokeInviteFailed": "Failed to revoke invite.",
       "genericError": "Something went wrong. Please try again."
     },
     "table": {
@@ -621,25 +907,69 @@
       "role": "Role",
       "actions": "Actions"
     },
+    "noEmail": "No email",
+    "roleSelectLabel": "Role for {name}",
     "removeButton": "Remove",
+    "removeAria": "Remove {name}",
+    "roleDescriptions": {
+      "owner": "Full access, including billing. Can't be changed or removed.",
+      "manager": "Changes settings, manages the team and avatars, approves, schedules and publishes content.",
+      "approver": "Reviews and approves content. Can't change settings or publish.",
+      "staff": "Drafts content and sends it for review."
+    },
+    "confirmRoleChange": {
+      "title": "Change {name}'s role?",
+      "body": "They will become {role}: {description}",
+      "confirm": "Change role"
+    },
+    "confirmRemove": {
+      "title": "Remove {name} from the team?",
+      "body": "They lose access to this campaign immediately. Content they created stays.",
+      "confirm": "Remove"
+    },
+    "confirmRevoke": {
+      "title": "Revoke this invite?",
+      "body": "The invite link stops working immediately.",
+      "confirm": "Revoke invite"
+    },
+    "toasts": {
+      "roleChanged": "Role updated.",
+      "removed": "Teammate removed.",
+      "inviteCreated": "Invite link created. Copy it from the pending invites and send it to your teammate.",
+      "inviteRevoked": "Invite revoked.",
+      "linkCopied": "Invite link copied.",
+      "copyFailed": "Couldn't copy the link — select it and copy it manually."
+    },
+    "inviteHeading": "Invite a teammate",
+    "inviteDescription": "Generate a link that lets someone join this campaign with the role you choose. Links expire after 7 days.",
+    "inviteRoleLabel": "Role",
+    "generateInviteButton": "Generate invite link",
+    "generatingButton": "Generating…",
+    "memberLimitReachedTitle": "Member limit reached",
+    "memberLimitReachedBody": "Your plan doesn't have room for more teammates. Upgrade your plan to invite more.",
+    "memberLimitReachedCta": "Go to billing",
     "pendingInvitesHeading": "Pending invites",
+    "pendingInvitesDescription": "Active links that have not been used yet.",
+    "expiredInvitesHeading": "Expired invites",
+    "expiredInvitesSummary": "{count, plural, one {# expired invite} other {# expired invites}}",
+    "expiredInvitesDescription": "These links no longer work. Revoke them to clear the list.",
     "invitesTable": {
       "role": "Role",
       "expires": "Expires",
       "status": "Status",
-      "link": "Link"
+      "link": "Link",
+      "actions": "Actions"
     },
     "inviteStatus": {
       "used": "Used",
       "expired": "Expired",
       "active": "Active"
     },
-    "noPendingInvites": "No pending invites.",
-    "memberLimitReachedTitle": "Member limit reached",
-    "memberLimitReachedBody": "Your plan doesn't have room for more teammates. <link>Upgrade your plan</link> to invite more.",
-    "inviteRoleLabel": "Role",
-    "generateInviteButton": "Generate invite link",
-    "generatingButton": "Generating…"
+    "copyLinkButton": "Copy link",
+    "revokeButton": "Revoke",
+    "revokingButton": "Revoking…",
+    "noPendingInvites": "No pending invites",
+    "noPendingInvitesBody": "Generate an invite link above to add a teammate."
   },
   "admin": {
     "sidebar": {
@@ -651,138 +981,84 @@
       "navAuditLog": "Audit log",
       "navBilling": "Billing"
     },
+    "common": {
+      "eyebrow": "System",
+      "search": "Search",
+      "searchButton": "Search",
+      "clearSearch": "Clear",
+      "clearFilters": "Clear filters",
+      "showing": "{from}–{to} of {total}",
+      "pageOf": "Page {page} of {pageCount}",
+      "previous": "Previous",
+      "next": "Next",
+      "pagination": "Pagination",
+      "sortBy": "Sort by {column}",
+      "sortedAsc": "ascending",
+      "sortedDesc": "descending",
+      "genericError": "Something went wrong. Please try again.",
+      "noResults": "No results",
+      "noResultsDesc": "Try a different search or clear the filters.",
+      "actions": "Actions",
+      "cancel": "Cancel",
+      "system": "System",
+      "dash": "—"
+    },
     "dashboard": {
       "eyebrow": "System",
       "title": "Overview",
+      "description": "Everything across all campaigns at a glance.",
       "statCampaigns": "Campaigns",
       "statUsers": "Users",
       "statContentItems": "Content items",
       "statAwaitingReview": "Awaiting review",
-      "allCampaigns": "All campaigns",
-      "newCampaignEyebrow": "New campaign",
-      "createCampaign": "Create campaign",
+      "reviewHint": "{count, plural, =0 {Nothing waiting for review} one {# item waiting for review} other {# items waiting for review}}",
+      "recentCampaigns": "Recent campaigns",
+      "viewAllCampaigns": "View all campaigns",
+      "newCampaign": "New campaign",
+      "noCampaignsTitle": "No campaigns yet",
+      "noCampaignsDesc": "Create the first campaign to onboard a tenant."
+    },
+    "campaigns": {
+      "eyebrow": "System",
+      "title": "Campaigns",
+      "description": "All tenant campaigns, their plans and activity.",
+      "newCampaign": "New campaign",
+      "createDialogTitle": "Create campaign",
+      "createDialogDesc": "Creates an empty campaign. Add an owner from the campaign page afterwards.",
       "campaignNameLabel": "Campaign name",
       "campaignNamePlaceholder": "e.g. Smith for Governor",
       "jurisdictionsLabel": "Jurisdictions",
-      "jurisdictionsPlaceholder": "US-FEDERAL, US-CA"
-    },
-    "audit": {
-      "eyebrow": "Compliance",
-      "title": "Audit log",
-      "entriesSummary": "{count, plural, one {# entry} other {# entries}} · append-only",
-      "colTimestamp": "Timestamp",
-      "colAction": "Action",
-      "colCampaign": "Campaign",
-      "colActor": "Actor",
-      "colEntity": "Entity",
-      "empty": "No audit entries yet."
-    },
-    "users": {
-      "eyebrow": "People",
-      "title": "All users",
-      "countSummary": "{count, plural, one {# user across all campaigns} other {# users across all campaigns}}",
-      "colName": "Name",
-      "colEmail": "Email",
-      "colRole": "Role",
-      "colCampaign": "Campaign",
-      "colActions": "Actions",
-      "noEmail": "No email — can't log in",
-      "signInAs": "Sign in as",
-      "remove": "Remove"
-    },
-    "content": {
-      "eyebrow": "Library",
-      "title": "All content",
-      "itemsCount": "{count, plural, one {# item} other {# items}}",
-      "filterAll": "All",
-      "filteredByCampaign": "Filtered by campaign",
-      "clearFilter": "Clear filter →",
-      "colTitle": "Title",
-      "colCampaign": "Campaign",
-      "colType": "Type",
-      "colSource": "Source",
-      "colStatus": "Status",
-      "colCreated": "Created",
-      "sourceAi": "AI",
-      "sourceHuman": "Human",
-      "empty": "No content with this filter."
-    },
-    "campaignsTable": {
-      "filterAll": "All",
-      "active": "Active",
-      "inactive": "Inactive",
-      "colCampaign": "Campaign",
-      "colJurisdictions": "Jurisdictions",
-      "colTags": "Tags",
-      "colStatus": "Status",
-      "colUsers": "Users",
-      "colContent": "Content",
-      "colSpend": "Spend this period",
-      "inReviewCount": "{count, plural, one {# in review} other {# in review}}",
-      "totalCount": "{count, plural, one {# total} other {# total}}",
-      "manage": "Manage →",
-      "emptyNone": "No campaigns yet.",
-      "emptyFiltered": "No campaigns match this filter."
-    },
-    "billing": {
-      "title": "Billing plans",
-      "saveFailedError": "Save failed.",
-      "syncFailedError": "Sync failed.",
-      "deleteFailedError": "Delete failed.",
-      "actionFailedTitle": "Action failed",
-      "createdTitle": "Plan created",
-      "createdBody": "The new plan is live in Stripe and ready to assign to a campaign.",
-      "updatedTitle": "Plan saved",
-      "updatedBody": "Your changes are saved — price or interval changes are already reflected in Stripe.",
-      "syncedTitle": "Starter plans synced",
-      "syncedBody": "Starter, Pro, and Enterprise are ready to edit or assign below.",
-      "deletedTitle": "Plan deleted",
-      "deletedBody": "The plan is removed and its Stripe product/price archived.",
-      "syncIntro": "Creates the three starter plans (Starter, Pro, Enterprise) in Stripe the first time you set this up. Safe to run more than once — plans that already exist are skipped. Use the forms below to edit prices, limits, or billing interval at any time; changes save straight to Stripe, so there's no separate sync step needed afterward.",
-      "syncingButton": "Syncing…",
-      "syncButton": "Sync starter plans to Stripe",
-      "deletingButton": "Deleting…",
-      "deletePlanButton": "Delete plan",
-      "noPlans": "No plans yet — sync the starter plans above, or create one below.",
-      "newPlanEyebrow": "New plan",
-      "planNameLabel": "Plan name",
-      "priceLabel": "Price (USD)",
-      "billingIntervalLabel": "Billing interval",
-      "weekly": "Weekly",
-      "monthly": "Monthly",
-      "memberLimitLabel": "Member limit",
-      "avatarLimitLabel": "Avatar limit",
-      "contentPerPeriodLabel": "Content/period",
-      "videosPerDayLabel": "Videos/day",
-      "unlimitedPlaceholder": "Unlimited",
-      "savingButton": "Saving…",
+      "jurisdictionsHint": "Comma-separated, informational only. Defaults to US-FEDERAL.",
+      "jurisdictionsPlaceholder": "US-FEDERAL, US-CA",
+      "createButton": "Create campaign",
       "creatingButton": "Creating…",
-      "saveChangesButton": "Save changes",
-      "createPlanButton": "Create plan",
-      "perWeekSuffix": "/wk",
-      "perMonthSuffix": "/mo"
-    },
-    "campaigns": {
-      "title": "Campaigns",
+      "searchPlaceholder": "Search campaigns by name",
+      "filterAll": "All",
+      "filterActive": "Active",
+      "filterInactive": "Inactive",
+      "tagFilterLabel": "Filter by tag",
+      "allTags": "All tags",
       "detail": {
         "eyebrow": "Campaign",
-        "backToCampaigns": "← All campaigns",
-        "settingsSavedTitle": "Campaign settings saved",
-        "settingsSavedBody": "Name, jurisdictions, and tags are up to date.",
-        "settingsEyebrow": "Settings",
-        "editCampaignHeading": "Edit campaign",
+        "backToCampaigns": "Campaigns",
+        "statUsers": "Users",
+        "statContent": "Content items",
+        "statInReview": "Awaiting review",
+        "statCreated": "Created",
+        "settingsHeading": "Settings",
+        "settingsDesc": "Name, jurisdictions and tags shown across the admin console.",
         "nameLabel": "Name",
         "jurisdictionsLabel": "Jurisdictions",
+        "jurisdictionsHint": "Comma-separated. Leave empty to clear.",
         "tagsLabel": "Tags",
         "tagsPlaceholder": "2026-midterm, statewide",
+        "tagsHint": "Comma-separated. Used to filter the campaigns list.",
         "savingButton": "Saving…",
         "saveChangesButton": "Save changes",
-        "spendEyebrow": "Spend",
-        "billingPeriodHeading": "This billing period",
-        "billingEyebrow": "Billing",
-        "subscriptionHeading": "Subscription",
+        "settingsSaved": "Campaign settings saved.",
+        "billingHeading": "Billing",
+        "billingDesc": "Plan assignment and the Stripe subscription for this campaign.",
         "noPlanAssigned": "No plan assigned",
-        "assignPlanFailedError": "Failed to assign plan.",
         "planStatusLine": "{planName} — {status}",
         "unknownStatus": "unknown",
         "currentPeriodEnds": "Current period ends {date}",
@@ -790,33 +1066,55 @@
         "selectPlanOption": "Select a plan",
         "changePlanButton": "Change plan",
         "assignPlanButton": "Assign plan",
-        "openBillingPortalButton": "Open billing portal for this customer →",
-        "viewInStripeDashboard": "View in Stripe Dashboard →",
-        "videoEyebrow": "Video",
+        "assigningButton": "Saving…",
+        "planAssigned": "Plan assigned. It becomes active once the campaign pays through the billing portal.",
+        "assignPlanTitle": "Assign {plan}?",
+        "assignPlanDesc": "A Stripe subscription is created for this campaign. It becomes active once they pay through the billing portal.",
+        "changePlanTitle": "Switch to {plan}?",
+        "changePlanDesc": "The current subscription is canceled with proration and a new one is created in Stripe. The campaign is billed on the new plan from now on.",
+        "confirmAssign": "Assign plan",
+        "confirmChange": "Switch plan",
+        "openBillingPortalButton": "Open billing portal",
+        "openingPortal": "Opening…",
+        "viewInStripeDashboard": "View in Stripe",
+        "noStripeCustomerHint": "A Stripe customer is created when the first plan is assigned.",
+        "avatarHeading": "Avatar & voice",
+        "avatarDesc": "Link HeyGen assets so the campaign can generate video before the owner creates their own.",
         "candidateAvatarHeading": "Candidate avatar",
-        "avatarIntro": "Paste a HeyGen <strong>avatar group ID</strong> to give this campaign a starting avatar — useful right after a campaign is created, before the owner has made their own. This creates an avatar entry that shows up on the campaign's own Avatars page, where they can pick a look, create additional avatars, or replace this one at any time. Find the ID in HeyGen → Photo Avatars → open the avatar → copy the group ID shown in the URL or identity panel.",
+        "avatarIntro": "Paste a HeyGen <strong>avatar group ID</strong> to give this campaign a starting avatar. It shows up on the campaign's own Avatars page, where they can pick a look, create additional avatars, or replace this one at any time. Find the ID in HeyGen → Photo Avatars → open the avatar → copy the group ID shown in the URL or identity panel.",
         "heygenAvatarGroupIdLabel": "HeyGen avatar group ID",
         "avatarIdPlaceholder": "e.g. ee7b9943a5ac4d6e9e986075299dbb02",
         "assignAvatarButton": "Assign avatar",
+        "assigningAvatar": "Assigning…",
         "consentAvatarLabel": "I confirm the candidate has given consent for this HeyGen avatar to be used to generate video on their behalf.",
+        "avatarAssigned": "Avatar assigned.",
         "activeAvatarAssigned": "Active avatar assigned",
         "avatarCreatedNotActive": "Avatar created, not yet active — the campaign hasn’t completed setup",
         "noAvatarAssigned": "No avatar assigned yet",
         "candidateVoiceHeading": "Candidate voice",
-        "voiceIntro": "Paste a HeyGen <strong>voice ID</strong> for this candidate's cloned voice — cloning happens in HeyGen directly (native cloning or a third-party import), this just links the result to this campaign so avatar video generation has a voice to use.",
+        "voiceIntro": "Paste a HeyGen <strong>voice ID</strong> for this candidate's cloned voice. Cloning happens in HeyGen directly; this links the result to the campaign so avatar video generation has a voice to use.",
         "heygenVoiceIdLabel": "HeyGen voice ID",
         "voiceIdPlaceholder": "e.g. 32e35b6753d94b61963bf8d0d2f15980",
         "assignVoiceButton": "Assign voice",
+        "assigningVoice": "Assigning…",
         "consentVoiceLabel": "I confirm the candidate has given consent for this HeyGen voice to be used to generate video on their behalf.",
+        "voiceAssignedToast": "Voice assigned.",
         "voiceAssigned": "Voice assigned",
         "noVoiceAssigned": "No voice assigned yet",
-        "noUsersYet": "No users yet.",
+        "teamHeading": "Team & invites",
+        "teamDesc": "Members of this campaign and the invite links that reserve seats.",
+        "seatUsage": "{used} of {limit} seats used",
+        "seatUsageUnlimited": "{used} seats used · unlimited plan",
+        "pendingInvitesNote": "{count, plural, one {# pending invite counts toward seats} other {# pending invites count toward seats}}",
+        "noUsersYet": "No users yet",
+        "noUsersDesc": "Add the first owner below — they get an invite link to set their password.",
+        "addUserHeading": "Add a user",
         "addUserNamePlaceholder": "Full name",
         "addUserEmailPlaceholder": "user@example.com",
         "addAndInviteButton": "Add & invite",
+        "addingUser": "Adding…",
         "addUserHelperText": "Creates the user account and generates an invite link below — share it so they can set their password.",
-        "viewAllLink": "View all →",
-        "noContentYet": "No content yet.",
+        "userAdded": "User added and invite link generated.",
         "inviteLinksHeading": "Invite links",
         "codeColumn": "Code",
         "expiresColumn": "Expires",
@@ -825,114 +1123,284 @@
         "inviteExpired": "Expired",
         "inviteActive": "Active",
         "generateInviteButton": "Generate invite link",
-        "emptyInvites": "No invite links yet.",
+        "generatingInvite": "Generating…",
+        "inviteGenerated": "Invite link generated.",
+        "emptyInvites": "No invite links yet",
+        "emptyInvitesDesc": "Generate a link to let someone join this campaign with a chosen role.",
+        "copyLink": "Copy link",
+        "copied": "Link copied.",
+        "contentHeading": "Content",
+        "viewAllLink": "View all",
+        "noContentYet": "No content yet",
+        "noContentDesc": "Items this campaign creates show up here.",
         "recentActivityHeading": "Recent activity",
-        "fullLogLink": "Full log →",
+        "fullLogLink": "Full log",
         "timeColumn": "Time",
-        "noActivityYet": "No activity yet."
+        "noActivityYet": "No activity yet",
+        "noActivityDesc": "Approvals, publishes and admin actions for this campaign are recorded here."
       }
+    },
+    "campaignsTable": {
+      "colCampaign": "Campaign",
+      "colJurisdictions": "Jurisdictions",
+      "colTags": "Tags",
+      "colStatus": "Status",
+      "colUsers": "Users",
+      "colContent": "Content",
+      "colCreated": "Created",
+      "active": "Active",
+      "inactive": "Inactive",
+      "inReviewCount": "{count, plural, one {# in review} other {# in review}}",
+      "manage": "Manage",
+      "emptyNone": "No campaigns yet",
+      "emptyNoneDesc": "Create the first campaign to onboard a tenant.",
+      "emptyFiltered": "No campaigns match",
+      "emptyFilteredDesc": "Try a different search or clear the filters."
+    },
+    "users": {
+      "eyebrow": "People",
+      "title": "All users",
+      "description": "Every campaign member across all tenants.",
+      "countSummary": "{count, plural, one {# user across all campaigns} other {# users across all campaigns}}",
+      "searchPlaceholder": "Search by name or email",
+      "colName": "Name",
+      "colEmail": "Email",
+      "colRole": "Role",
+      "colCampaign": "Campaign",
+      "colCreated": "Joined",
+      "colActions": "Actions",
+      "noEmail": "No email — can't log in",
+      "noCampaign": "No campaign",
+      "signInAs": "Sign in as",
+      "signingIn": "Signing in…",
+      "remove": "Remove",
+      "removing": "Removing…",
+      "impersonateTitle": "Sign in as {name}?",
+      "impersonateDesc": "You'll leave the admin console and act as this user inside their campaign until you sign out. This is recorded in the audit log.",
+      "impersonateConfirm": "Sign in as user",
+      "removeTitle": "Remove {name}?",
+      "removeDesc": "They lose access immediately. Content they created stays in the campaign.",
+      "removeConfirm": "Remove user",
+      "removed": "User removed.",
+      "empty": "No users yet",
+      "emptyDesc": "Users appear here once campaigns add members or redeem invites."
+    },
+    "content": {
+      "eyebrow": "Library",
+      "title": "All content",
+      "description": "Every content item across all campaigns.",
+      "itemsCount": "{count, plural, one {# item} other {# items}}",
+      "filterAll": "All",
+      "filteredByCampaign": "Showing content for {campaign}",
+      "clearFilter": "Show all campaigns",
+      "searchPlaceholder": "Search by title",
+      "colTitle": "Title",
+      "colCampaign": "Campaign",
+      "colType": "Type",
+      "colSource": "Source",
+      "colStatus": "Status",
+      "colCreated": "Created",
+      "sourceAi": "AI",
+      "sourceHuman": "Human",
+      "untitled": "Untitled",
+      "empty": "No content here",
+      "emptyDesc": "Nothing matches this status, campaign or search."
+    },
+    "audit": {
+      "eyebrow": "Compliance",
+      "title": "Audit log",
+      "description": "Append-only record of approvals, publishes, channel changes and admin actions.",
+      "entriesSummary": "{count, plural, one {# entry} other {# entries}} · append-only",
+      "searchPlaceholder": "Search by action or entity",
+      "colTimestamp": "Timestamp",
+      "colAction": "Action",
+      "colCampaign": "Campaign",
+      "colActor": "Actor",
+      "colEntity": "Entity",
+      "system": "System",
+      "empty": "No audit entries yet",
+      "emptyDesc": "Entries appear as campaigns approve, schedule and publish content.",
+      "actions": {
+        "submit_for_review": "Submitted for review",
+        "approve": "Approved",
+        "reject": "Rejected",
+        "revise": "Reopened as draft",
+        "schedule": "Scheduled",
+        "schedule_with_time": "Scheduled with a time",
+        "reschedule": "Rescheduled",
+        "unschedule": "Unscheduled",
+        "publish": "Published",
+        "generate_video": "Video generation started",
+        "confirm_video": "Video confirmed",
+        "confirm_disclosure": "AI disclosure attached",
+        "generate_from_monitoring": "Draft generated from monitoring",
+        "user_joined": "User joined",
+        "channels_disconnected": "Channels disconnected",
+        "channels_profile_orphaned": "Channel profile orphaned",
+        "channels_setup_failed": "Channel setup failed",
+        "channels_profile_created": "Channel profile created",
+        "channels_link_started": "Channel linking started",
+        "cron_publish": "Auto-published",
+        "cron_publish_error": "Auto-publish error",
+        "cron_publish_failed": "Auto-publish failed",
+        "cron_publish_not_connected": "Auto-publish skipped (channels not connected)",
+        "admin_impersonate": "Admin signed in as user",
+        "admin_user_added": "Admin added a user",
+        "admin_user_removed": "Admin removed a user"
+      }
+    },
+    "billing": {
+      "eyebrow": "System",
+      "title": "Billing plans",
+      "description": "The plan catalog campaigns can be assigned to. Prices live in Stripe.",
+      "syncHeading": "Starter catalog",
+      "syncIntro": "Creates the three starter plans (Starter, Pro, Enterprise) in Stripe the first time you set this up. Safe to run more than once — plans that already exist are skipped. Edit prices, limits, or billing interval below at any time; changes save straight to Stripe.",
+      "syncingButton": "Syncing…",
+      "syncButton": "Sync starter plans to Stripe",
+      "synced": "Starter plans synced — Starter, Pro and Enterprise are ready to edit or assign.",
+      "deletingButton": "Deleting…",
+      "deletePlanButton": "Delete plan",
+      "deleteTitle": "Delete {name}?",
+      "deleteDesc": "The plan is removed from the catalog and its Stripe product and price are archived. Campaigns can no longer be assigned to it.",
+      "deleteConfirm": "Delete plan",
+      "deleted": "Plan deleted and its Stripe product archived.",
+      "corePlanBadge": "Core plan",
+      "noPlansTitle": "No plans yet",
+      "noPlansDesc": "Sync the starter plans above, or create one below.",
+      "newPlanHeading": "New plan",
+      "newPlanDesc": "Adds a custom plan to the catalog and creates its product and price in Stripe.",
+      "planNameLabel": "Plan name",
+      "priceLabel": "Price (USD)",
+      "billingIntervalLabel": "Billing interval",
+      "weekly": "Weekly",
+      "monthly": "Monthly",
+      "limitsLegend": "Limits (blank = unlimited)",
+      "memberLimitLabel": "Member limit",
+      "avatarLimitLabel": "Avatar limit",
+      "contentPerPeriodLabel": "Content per period",
+      "videosPerDayLabel": "Videos per day",
+      "unlimitedPlaceholder": "Unlimited",
+      "savingButton": "Saving…",
+      "creatingButton": "Creating…",
+      "saveChangesButton": "Save changes",
+      "createPlanButton": "Create plan",
+      "planCreated": "Plan created — live in Stripe and ready to assign to a campaign.",
+      "planUpdated": "Plan saved — price or interval changes are already reflected in Stripe.",
+      "perWeekSuffix": "/wk",
+      "perMonthSuffix": "/mo"
     }
   },
   "landing": {
     "nav": {
       "features": "Features",
-      "howItWorks": "How It Works",
-      "signIn": "Sign In",
-      "getStarted": "Get Started"
+      "howItWorks": "How it works",
+      "signIn": "Sign in",
+      "requestAccess": "Request access",
+      "openDashboard": "Open dashboard"
     },
     "hero": {
-      "title": "The PolitIQ<br></br>for modern<br></br><accent>campaigns.</accent>",
+      "eyebrow": "Invite-only · Built for campaign teams",
+      "title": "The communications platform for <accent>modern campaigns.</accent>",
       "subtitle": "AI-drafted content. Human-reviewed. Fully compliant. Run your entire communications operation from one command center.",
-      "ctaPrimary": "Get Started",
-      "watchDemo": "Watch the 80-Second Demo",
+      "ctaPrimary": "Request access",
+      "watchDemo": "Watch the demo",
+      "inviteHint": "Have an invite code?",
+      "inviteLink": "Join your campaign",
       "trustFec": "FEC-compliant records",
       "trustDisclosures": "State-aware disclosures",
       "trustAudit": "Full audit trail"
     },
+    "mockup": {
+      "campaign": "Rivera for Assembly",
+      "eyebrow": "Overview",
+      "title": "Dashboard",
+      "action": "New content",
+      "queue": "Approval queue",
+      "monitoring": "Opponent monitoring"
+    },
     "features": {
       "eyebrow": "Platform",
-      "title": "Everything your campaign<br></br>needs to communicate.",
+      "title": "Everything your campaign needs to communicate.",
       "subtitle": "Purpose-built for political campaigns, every feature is designed to meet the unique demands of election law, compliance, and campaign operations.",
       "items": {
         "aiContent": {
-          "label": "AI Content Generation",
+          "label": "AI content generation",
           "desc": "Draft social posts, press releases, emails, and talking points in seconds. Every piece is tailored to your campaign's brand voice."
         },
         "approvalWorkflow": {
-          "label": "Human Approval Workflow",
+          "label": "Human approval workflow",
           "desc": "Route every piece of content through role-based review before it ever goes public. Complete chain of custody."
         },
         "disclosures": {
-          "label": "Automatic Disclosures",
+          "label": "Automatic disclosures",
           "desc": "Jurisdiction-aware disclosure rules applied instantly. State-specific AI disclosure requirements are handled automatically."
         },
         "opponentMonitoring": {
-          "label": "Opponent Monitoring",
+          "label": "Opponent monitoring",
           "desc": "Track what the other side is saying in real time. Identify rebuttal opportunities before they become dominant narratives."
         },
         "spendControls": {
-          "label": "Spend Controls",
+          "label": "Spend controls",
           "desc": "Set monthly cost caps per campaign. Track AI drafting, video generation, and voice synthesis against your campaign budget."
         },
         "auditTrail": {
-          "label": "Full Audit Trail",
+          "label": "Full audit trail",
           "desc": "Every action is logged with actor, timestamp, and context. FEC-ready records at your fingertips come disclosure season."
         }
       }
     },
     "workflow": {
-      "eyebrow": "How It Works",
-      "title": "From brief to published<br></br>in minutes, not days.",
+      "eyebrow": "How it works",
+      "title": "From brief to published in minutes, not days.",
       "steps": {
         "draft": {
-          "title": "Draft in Seconds",
+          "title": "Draft in seconds",
           "desc": "Describe what you need. PolitIQ's AI drafts press releases, social posts, email blasts, and talking points instantly."
         },
         "review": {
-          "title": "Review and Approve",
+          "title": "Review and approve",
           "desc": "Content is routed to your approval team. Managers, approvers, and legal all get the right view at the right time."
         },
         "publish": {
-          "title": "Publish with Confidence",
+          "title": "Publish with confidence",
           "desc": "Disclosures are auto-applied by jurisdiction before anything goes live. One click to publish across every platform."
         }
       }
     },
     "cta": {
       "title": "Ready to run a smarter campaign?",
-      "subtitle": "AI-powered communications built for the demands of modern political campaigns.",
-      "primary": "Get Started",
-      "secondary": "Talk to the Team"
+      "subtitle": "PolitIQ is rolled out campaign by campaign. Tell us about yours and we'll set up your workspace.",
+      "primary": "Request access",
+      "secondary": "Sign in"
     },
     "footer": {
-      "tagline": "AI campaign communications<br></br>with compliance built in.",
+      "tagline": "AI campaign communications with compliance built in.",
       "columns": {
         "product": "Product",
-        "legal": "Legal",
+        "account": "Account",
         "company": "Company"
       },
       "links": {
         "features": "Features",
-        "howItWorks": "How It Works",
-        "privacyPolicy": "Privacy Policy",
-        "termsOfService": "Terms of Service",
-        "fecCompliance": "FEC Compliance",
-        "about": "About",
+        "howItWorks": "How it works",
+        "signIn": "Sign in",
+        "joinWithInvite": "Join with an invite code",
+        "requestAccess": "Request access",
         "contact": "Contact"
       },
       "copyright": "© 2026 PolitIQ. All rights reserved.",
-      "bottomNote": "Built for campaigns that play to win."
+      "bottomNote": "Access is by invitation only."
     },
     "demo": {
-      "title": "See Politiq.global in action",
+      "title": "See PolitIQ in action",
       "tabsLabel": "Demo videos",
       "videos": {
         "commercial": "Commercial",
-        "walkthrough": "Platform Walkthrough"
+        "walkthrough": "Platform walkthrough"
       },
       "subtitle": "Your complete campaign command center: AI content creation, campaign messaging, video production, social media management, opponent monitoring and rapid response.",
-      "startCampaign": "Start Your Campaign",
-      "requestDemo": "Request a Demo",
+      "requestDemo": "Request a demo",
+      "signIn": "Sign in",
       "close": "Close video",
       "unsupported": "Your browser does not support embedded video."
     }
@@ -944,10 +1412,13 @@
     "emailPlaceholder": "you@campaign.com",
     "passwordLabel": "Password",
     "signInButton": "Sign in",
+    "signingIn": "Signing in…",
+    "forgotPassword": "Forgot your password?",
+    "forgotPasswordHint": "Contact your campaign owner or admin — they can reset it for you.",
     "haveInviteCode": "Have an invite code?",
-    "joinCampaignLink": "Join your campaign →",
+    "joinCampaignLink": "Join your campaign",
     "secure": "Secure",
-    "aiDisclosed": "AI-Disclosed",
+    "aiDisclosed": "AI-disclosed",
     "audited": "Audited",
     "errors": {
       "incorrectCredentials": "Incorrect email or password.",
@@ -960,6 +1431,7 @@
     "invitedTo": "You've been invited to <name>{campaignName}</name> as <roleTag>{role}</roleTag>.",
     "createAccountIntro": "Create your account using an invite link.",
     "invalidOrUsedNotice": "This invite link is invalid or has already been used.",
+    "askForNewInvite": "Ask your campaign owner or manager for a new invite.",
     "inviteCodeLabel": "Invite code",
     "inviteCodePlaceholder": "inv_xxxxxxxxxxxx",
     "fullNameLabel": "Full name",
@@ -968,11 +1440,14 @@
     "emailPlaceholder": "you@campaign.com",
     "passwordLabel": "Password",
     "passwordPlaceholder": "At least 8 characters",
+    "passwordHint": "Use at least 8 characters.",
     "createAccountButton": "Create account",
+    "creatingAccount": "Creating account…",
     "alreadyHaveAccount": "Already have an account?",
-    "signInLink": "Sign in →",
+    "signInLink": "Sign in",
     "errors": {
       "allFieldsRequired": "All fields are required.",
+      "required": "This field is required.",
       "passwordTooShort": "Password must be at least 8 characters.",
       "inviteInvalid": "This invite link is not valid.",
       "inviteUsed": "This invite link has already been used.",
@@ -982,65 +1457,134 @@
     }
   },
   "pricing": {
-    "choosePlanEyebrow": "Choose a plan",
+    "choosePlanEyebrow": "Step 2 of 2 · Plan",
     "changePlanEyebrow": "Change plan",
-    "subscribeTitle": "Subscribe to get started",
+    "subscribeTitle": "Choose a plan to get started",
     "changePlanTitle": "Change your plan",
     "description": "Every plan includes AI drafting, avatars, and video generation — the limits below are what changes between tiers.",
-    "goToDashboard": "Go to dashboard →",
-    "paymentReceivedTitle": "Payment received",
-    "paymentReceivedBody": "Activating your plan — this can take a few seconds. Refresh if the app doesn’t update.",
-    "couldntChangePlanTitle": "Couldn’t change plan",
-    "failedToChangePlanError": "Failed to change plan.",
-    "teamMembersLabel": "team members",
-    "avatarsLabel": "avatars",
-    "contentPiecesLabel": "content pieces/period",
-    "videosPerDayLabel": "videos/day",
+    "goToDashboard": "Go to dashboard",
+    "stepsLabel": "Setup progress",
+    "steps": {
+      "profile": "Profile",
+      "plan": "Plan"
+    },
+    "checkoutSuccess": {
+      "title": "Payment received",
+      "waiting": "Activating your plan — this usually takes a few seconds.",
+      "activeTitle": "Your plan is active",
+      "activeBody": "You're all set. Head to the dashboard to start drafting.",
+      "timeoutTitle": "Still activating",
+      "timeoutBody": "Your payment went through, but activation is taking longer than usual. Refresh in a moment, or contact support if this persists.",
+      "refresh": "Refresh"
+    },
+    "checkoutCanceled": {
+      "title": "Checkout canceled",
+      "body": "No charge was made. Pick a plan whenever you're ready."
+    },
+    "notAllowed": {
+      "title": "Ask your campaign owner to choose a plan",
+      "body": "Only owners and managers can manage billing. Once a plan is active, your workspace unlocks automatically."
+    },
+    "noPlans": {
+      "title": "No plans available yet",
+      "body": "Plans haven't been published for this workspace. Contact support to get set up."
+    },
+    "planChanged": "Plan updated.",
+    "perInterval": "per {interval}",
+    "features": {
+      "teamMembers": "{count, plural, one {# team member} other {# team members}}",
+      "teamMembersUnlimited": "Unlimited team members",
+      "avatars": "{count, plural, one {# avatar} other {# avatars}}",
+      "avatarsUnlimited": "Unlimited avatars",
+      "contentPieces": "{count, plural, one {# content piece per period} other {# content pieces per period}}",
+      "contentPiecesUnlimited": "Unlimited content per period",
+      "videosPerDay": "{count, plural, one {# video per day} other {# videos per day}}",
+      "videosPerDayUnlimited": "Unlimited videos per day"
+    },
+    "currentPlanBadge": "Current plan",
     "currentPlanButton": "Current plan",
     "switchPlanButton": "Switch to this plan",
-    "subscribeButton": "Subscribe"
+    "switching": "Switching…",
+    "subscribeButton": "Subscribe",
+    "redirecting": "Redirecting to checkout…",
+    "confirmSwitch": {
+      "title": "Switch to {plan}?",
+      "body": "Your subscription changes immediately. Stripe prorates the difference for the rest of the current billing period and invoices it now.",
+      "confirm": "Switch plan"
+    }
   },
   "setup": {
-    "eyebrow": "Welcome · Step 1 of 1",
+    "stepsLabel": "Setup progress",
+    "steps": {
+      "profile": "Profile",
+      "plan": "Plan"
+    },
+    "eyebrow": "Step 1 of 2 · Profile",
     "title": "Set up your campaign",
     "description": "This takes about 3 minutes. Every AI draft will be written specifically for your candidate from this point on.",
-    "requiredFieldsTitle": "Required fields missing",
-    "requiredFieldsBody": "Full name, preferred name, office, and district are required.",
-    "partyErrorTitle": "Choose a party from the list",
-    "partyErrorBody": "Select one of the provided party options, or leave it blank.",
+    "fixErrorsTitle": "Check the highlighted fields",
+    "fixErrorsBody": "A few details are missing or invalid.",
+    "optional": "Optional",
     "candidateHeading": "Candidate",
+    "candidateDescription": "Who is running, and for what.",
     "fields": {
-      "fullName": "Full name *",
+      "fullName": "Full name",
       "fullNamePlaceholder": "Maria Rivera",
-      "preferredName": "Preferred name *",
+      "preferredName": "Preferred name",
       "preferredNamePlaceholder": "Maria",
-      "office": "Running for *",
+      "office": "Running for",
       "officePlaceholder": "California State Assembly",
-      "district": "District / jurisdiction *",
+      "district": "District / jurisdiction",
       "districtPlaceholder": "District 12",
       "party": "Party",
+      "partyPlaceholder": "Select a party",
       "primaryOpponent": "Primary opponent name",
       "opponentNamePlaceholder": "John Smith",
-      "photoUrl": "Candidate photo URL (optional)",
+      "photoUrl": "Candidate photo URL",
       "photoUrlPlaceholder": "https://..."
     },
     "voiceHeading": "Campaign voice",
-    "bioLabel": "Short bio (2–3 sentences used in every AI draft)",
+    "voiceDescription": "Used in every AI draft. You can refine it later in Settings.",
+    "bioLabel": "Short bio",
+    "bioHint": "2–3 sentences used in every AI draft.",
     "bioPlaceholder": "A lifelong community advocate and small business owner, Maria has spent 20 years fighting for working families in the San Fernando Valley.",
     "taglineLabel": "Campaign tagline",
     "taglinePlaceholder": "A Voice for District 12",
     "targetAudienceLabel": "Target audience",
     "targetAudiencePlaceholder": "Working families in the San Fernando Valley",
-    "keyPositionsLabel": "Key policy positions (one per line, 3–7)",
+    "keyPositionsLabel": "Key policy positions",
+    "keyPositionsHint": "One per line, 3–7 positions.",
     "keyPositionsPlaceholder": "Expand access to affordable healthcare\nLower housing costs for renters\nInvest in public schools and teachers",
     "toneHeading": "Tone",
+    "toneDescription": "Sets the default voice for every AI draft.",
     "tones": {
-      "conversational": "Conversational — warm, direct, relatable",
-      "formal": "Formal — authoritative, measured, professional",
-      "urgent": "Urgent — energizing, action-oriented, passionate",
-      "inspirational": "Inspirational — hopeful, visionary, uplifting"
+      "conversational": {
+        "label": "Conversational",
+        "desc": "Warm, direct, relatable"
+      },
+      "formal": {
+        "label": "Formal",
+        "desc": "Authoritative, measured, professional"
+      },
+      "urgent": {
+        "label": "Urgent",
+        "desc": "Energizing, action-oriented, passionate"
+      },
+      "inspirational": {
+        "label": "Inspirational",
+        "desc": "Hopeful, visionary, uplifting"
+      }
     },
-    "submitButton": "Complete setup →"
+    "submitButton": "Continue to plan",
+    "saving": "Saving…",
+    "errors": {
+      "required": "This field is required.",
+      "tooLong": "Keep this under {max} characters.",
+      "party": "Choose a party from the list.",
+      "url": "Enter a valid http(s) URL.",
+      "tone": "Pick a valid tone.",
+      "generic": "Couldn't save your profile. Please try again."
+    }
   },
   "errors": {
     "actions": {
@@ -1062,9 +1606,8 @@
       "monitoringResultNotFound": "Monitoring result not found.",
       "disclosureTextEmpty": "Disclosure text cannot be empty.",
       "noCampaignInSession": "No campaign in session.",
-      "noFileProvided": "No file provided",
-      "backgroundFileTooLarge": "File must be under 10 MB",
-      "backgroundOnlyImageFiles": "Only image files are allowed",
+      "monitoringUpdateFailed": "Couldn't update this story. Please try again.",
+      "storageError": "Couldn't prepare the upload. Please try again.",
       "scheduledTimeRequired": "Scheduled time is required",
       "scheduledTimeMustBeFuture": "Scheduled time must be in the future",
       "consentRequired": "Consent confirmation is required.",
@@ -1073,31 +1616,67 @@
       "avatarOnlyImageFiles": "Only image files are allowed.",
       "invalidUpload": "Invalid upload.",
       "uploadedPhotoNotFound": "Uploaded photo not found.",
-      "avatarCreationFailed": "Avatar creation failed: {details}",
+      "avatarCreationFailed": "Avatar creation failed — the provider couldn't process these photos. Try again with clear, well-lit photos.",
+      "avatarTrainingFailed": "Avatar training failed. Try again with clearer, well-lit photos or footage.",
       "avatarNotFound": "Avatar not found.",
       "uploadTrainingVideo": "Upload a training video.",
       "videoTooLarge500mb": "Video must be under 500 MB.",
       "onlyMp4OrQuicktime": "Only MP4 or QuickTime video files are allowed.",
       "uploadedVideoNotFound": "Uploaded video not found.",
       "digitalTwinNotEnabled": "Video avatars aren't enabled for this HeyGen account. Contact HeyGen support to enable Digital Twin access.",
-      "videoAvatarCreationFailed": "Video avatar creation failed: {details}",
+      "videoAvatarCreationFailed": "Video avatar creation failed — the provider couldn't process this video. Try again with a different clip.",
       "avatarNotReady": "Avatar is not ready yet.",
       "uploadAudioSample": "Upload an audio sample.",
       "audioSampleTooLarge": "Audio sample must be under 50 MB.",
       "onlyAudioFormatsAllowed": "Only MP3, WAV, M4A, WebM, or OGG audio files are allowed.",
       "uploadedAudioNotFound": "Uploaded audio not found.",
       "voiceCloneCapacity": "Voice cloning is temporarily at capacity across the platform — contact support.",
-      "voiceCloningFailed": "Voice cloning failed: {details}",
+      "voiceCloningFailed": "Voice cloning failed — the provider couldn't process this sample. Try again with a clearer recording.",
+      "voiceCloneFailed": "The voice clone didn't complete. Try again with a clearer recording.",
+      "voicePreviewFailed": "Couldn't generate a voice preview. Please try again.",
       "voiceSaveVerificationFailed": "Failed to save the new voice — please try again.",
       "noVoiceCloneReady": "No cloned voice is ready yet.",
       "describeLookPrompt": "Describe how the new look should appear.",
-      "generateLookFailed": "Failed to generate look."
+      "generateLookFailed": "Failed to generate look.",
+      "contentBodyRequired": "Write or generate the content before saving.",
+      "noPlatformsSelected": "Select at least one platform.",
+      "disclosureRequiresApproval": "This content must be approved before a disclosure can be attached.",
+      "notScheduled": "This content isn’t scheduled."
     },
     "admin": {
       "stripeNotConfigured": "STRIPE_SECRET_KEY is not configured on this server.",
       "campaignAndPlanRequired": "Campaign and plan are required.",
       "campaignNotFound": "Campaign not found.",
-      "planNotFound": "Plan not found."
+      "planNotFound": "Plan not found.",
+      "genericError": "Something went wrong. Please try again.",
+      "campaignIdRequired": "Campaign is required.",
+      "invalidRole": "That role can't be assigned here.",
+      "seatLimitReached": "This campaign's plan allows {limit, plural, one {# seat} other {# seats}} and they're all taken (members plus pending invites).",
+      "campaignNameRequired": "Campaign name is required.",
+      "campaignNameTooLong": "Campaign name must be {max} characters or fewer.",
+      "listTooLong": "Use at most {items} entries of {chars} characters each.",
+      "stripeError": "Stripe rejected the request. Check the server logs for details.",
+      "planChangeFailedAfterCancel": "The previous subscription was canceled but the new one couldn't be created. The campaign now has no active subscription — assign the plan again.",
+      "campaignChangedRetry": "This campaign's billing changed while you were saving. Reload the page and try again.",
+      "noStripeCustomer": "This campaign has no Stripe customer yet. Assign a plan first.",
+      "avatarIdRequired": "Enter the HeyGen avatar group ID.",
+      "avatarIdInvalid": "That doesn't look like a HeyGen avatar group ID.",
+      "voiceIdRequired": "Enter the HeyGen voice ID.",
+      "voiceIdInvalid": "That doesn't look like a HeyGen voice ID.",
+      "consentRequired": "Confirm the candidate's consent before assigning.",
+      "profileNotSetUp": "This campaign hasn't completed setup yet, so there is no candidate profile to attach the voice to.",
+      "nameRequired": "Name is required.",
+      "nameTooLong": "Name must be {max} characters or fewer.",
+      "invalidEmail": "Enter a valid email address.",
+      "emailInUse": "A user with this email already exists.",
+      "userAddedInviteFailed": "The user was created but the invite link couldn't be generated. Generate one below.",
+      "userNotFound": "User not found in this campaign.",
+      "cannotRemoveSelf": "You can't remove your own account.",
+      "cannotRemoveSuperAdmin": "Super admins can't be removed here.",
+      "lastOwnerCannotBeRemoved": "This is the campaign's only owner. Add another owner before removing them.",
+      "userHasContentCannotRemove": "This user has created avatars or content in the campaign and can't be removed right now.",
+      "cannotImpersonateSuperAdmin": "You can't sign in as another super admin.",
+      "userHasNoCampaign": "This user isn't a member of any campaign."
     },
     "adminBilling": {
       "stripeNotConfigured": "STRIPE_SECRET_KEY is not configured on this server.",
@@ -1116,17 +1695,18 @@
       "corePlansCannotBeDeleted": "Starter, Pro, and Enterprise are core plans and can’t be deleted.",
       "cannotDeleteInUse": "{count, plural, one {Cannot delete: # campaign is still on this plan.} other {Cannot delete: # campaigns are still on this plan.}}",
       "planNotFound": "Plan not found.",
-      "couldNotDeletePlan": "Could not delete plan."
+      "couldNotDeletePlan": "Could not delete plan.",
+      "couldNotSyncPlans": "Could not sync the starter plans. Check the server logs for details."
     },
     "pricing": {
-      "couldNotStartCheckout": "Could not start checkout.",
-      "permissionDenied": "Permission denied.",
-      "stripeNotConfigured": "STRIPE_SECRET_KEY is not configured on this server.",
+      "couldNotStartCheckout": "Could not start checkout. Please try again or contact support.",
+      "permissionDenied": "Only campaign owners and managers can manage billing.",
+      "stripeNotConfigured": "Billing isn't configured on this server yet. Contact support.",
       "campaignNotFound": "Campaign not found.",
       "planNotFound": "Plan not found.",
       "noActiveSubscription": "No active subscription to change. Subscribe to a plan first.",
       "subscriptionItemNotFound": "Could not find the current subscription item to update.",
-      "couldNotChangePlan": "Could not change plan."
+      "couldNotChangePlan": "Could not change plan. Please try again or contact support."
     },
     "team": {
       "permissionDenied": "Permission denied.",
@@ -1136,7 +1716,16 @@
       "ownerCannotBeRemoved": "The campaign owner can't be removed.",
       "teammateHasContentCannotRemove": "This teammate has created content in the campaign and can't be removed right now.",
       "ownerRoleCannotBeChanged": "The campaign owner's role can't be changed here.",
-      "invalidLanguage": "Invalid language."
+      "invalidLanguage": "Invalid language.",
+      "inviteNotFound": "Invite not found.",
+      "inviteAlreadyUsed": "This invite has already been used.",
+      "revokeFailed": "Could not revoke the invite. Please try again."
+    },
+    "billing": {
+      "permissionDenied": "Only campaign owners and managers can manage billing.",
+      "billingNotConfigured": "Billing isn't configured on this server yet. Contact your platform admin.",
+      "noBillingAccount": "This campaign doesn't have a billing account yet. Subscribe to a plan first.",
+      "portalFailed": "Couldn't open the billing portal. Please try again."
     },
     "channels": {
       "permissionDenied": "Only owners and managers can change social connections.",
@@ -1144,6 +1733,21 @@
       "serviceUnavailable": "Couldn't reach the social connection service. Please try again.",
       "notConfigured": "Social connections aren't configured yet.",
       "unknownNetwork": "That network isn't supported."
+    }
+  },
+  "system": {
+    "error": {
+      "code": "Error",
+      "title": "Something went wrong",
+      "description": "An unexpected error occurred. You can try again, or go back to your dashboard.",
+      "retry": "Try again",
+      "home": "Go to dashboard"
+    },
+    "notFound": {
+      "code": "404",
+      "title": "Page not found",
+      "description": "The page you are looking for does not exist or has been moved.",
+      "home": "Go to home"
     }
   }
 }

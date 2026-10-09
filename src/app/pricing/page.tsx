@@ -1,22 +1,29 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { getTranslations } from 'next-intl/server';
+import { getFormatter, getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/session';
 import { getCampaign, getBillingPlans } from '@/lib/data';
 import { getCandidateProfile } from '@/lib/candidate';
-import { startCheckoutAction, changePlanAction } from './actions';
-
-function fmt(cents: number) {
-  return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-}
+import { can } from '@/lib/permissions';
+import { getTheme } from '@/lib/theme';
+import { logoutAction } from '@/app/actions';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { Logo } from '@/components/Logo';
+import { SubmitButton } from '@/components/SubmitButton';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { AlertIcon, InfoIcon, LogoutIcon } from '@/components/icons';
+import { PricingPlans, type PlanView, type PricingMode } from './PricingPlans';
+import { CheckoutStatus } from './CheckoutStatus';
 
 export default async function PricingPage({
   searchParams,
 }: {
-  searchParams: { checkout?: string; error?: string };
+  searchParams: { checkout?: string };
 }) {
-  const t = await getTranslations('pricing');
-  const tBilling = await getTranslations('billing');
+  const [t, tBilling, tc, format] = await Promise.all([
+    getTranslations('pricing'), getTranslations('billing'), getTranslations('common'), getFormatter(),
+  ]);
   const s = await requireSession();
   if (s.role === 'super_admin') redirect('/admin');
 
@@ -24,87 +31,105 @@ export default async function PricingPage({
   if (!profile) redirect('/setup');
 
   const [campaign, plans] = await Promise.all([getCampaign(s.campaignId), getBillingPlans()]);
+  const hasPlan = !!campaign?.planId;
+  const canManage = can(s.role, 'edit_settings');
+  const mode: PricingMode = !canManage ? 'readonly' : hasPlan ? 'switch' : 'subscribe';
 
-  // Computed as a plain string (not passed via the `t` function itself) so the
-  // inline 'use server' action below closes over a serializable value.
-  const failedToChangePlanFallback = t('failedToChangePlanError');
+  const money = (cents: number) => format.number(cents / 100, {
+    style: 'currency', currency: 'USD',
+    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
+    maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
+  });
+  // Each limit is one ICU message (plural-aware) — never "1 videos" / "0 team members".
+  const feature = (key: 'teamMembers' | 'avatars' | 'contentPieces' | 'videosPerDay', n: number | null) =>
+    (n === null ? t(`features.${key}Unlimited`) : t(`features.${key}`, { count: n }));
 
-  async function switchPlan(planId: string) {
-    'use server';
-    const result = await changePlanAction(planId);
-    if (!result.ok) {
-      redirect(`/pricing?error=${encodeURIComponent(result.error ?? failedToChangePlanFallback)}`);
-    }
-    redirect('/billing');
-  }
+  const views: PlanView[] = plans.map(plan => ({
+    id: plan.id,
+    name: plan.name,
+    price: money(plan.monthlyPriceCents),
+    interval: plan.billingInterval === 'week' ? tBilling('perWeek') : tBilling('perMonth'),
+    features: [
+      feature('teamMembers', plan.seatLimit),
+      feature('avatars', plan.avatarLimit),
+      feature('contentPieces', plan.contentLimitMonthly),
+      feature('videosPerDay', plan.videoLimitDaily),
+    ],
+    isCurrent: campaign?.planId === plan.id,
+  }));
+
+  const signOut = (
+    <form action={logoutAction}>
+      <SubmitButton variant="ghost" size="sm" pendingText={tc('signingOut')}>
+        <LogoutIcon size={14} />
+        {tc('signOut')}
+      </SubmitButton>
+    </form>
+  );
 
   return (
-    <div className="setup-wrap">
-      <div style={{ width: '100%', maxWidth: 960 }}>
-        <div style={{ marginBottom: 32, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
-          <div>
-            <span className="eyebrow">{campaign?.planId ? t('changePlanEyebrow') : t('choosePlanEyebrow')}</span>
-            <h1 style={{ margin: '6px 0 8px' }}>{campaign?.planId ? t('changePlanTitle') : t('subscribeTitle')}</h1>
-            <p className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>
-              {t('description')}
-            </p>
+    <div className="onboarding-wrap">
+      <div className="onboarding onboarding-wide">
+        <div className="onboarding-bar">
+          <Logo className="onboarding-logo" />
+          <div className="preauth-controls">
+            <ThemeToggle current={getTheme()} size="sm" />
+            {/* /pricing renders outside AppFrame (no sidebar), so without a plan
+                there is nowhere else to go — sign out is the only exit. */}
+            {signOut}
           </div>
-          {/* /pricing renders outside AppFrame (no sidebar nav) so it isn't
-              wrapped in the race-with-the-webhook problem I3 fixes for
-              success_url — but that leaves nothing to click back into the
-              app with once a plan is active. Only show this once a plan
-              exists; with no plan, AppFrame itself redirects back here. */}
-          {campaign?.planId && (
-            <Link href="/dashboard" className="btn" style={{ flexShrink: 0 }}>{t('goToDashboard')}</Link>
-          )}
         </div>
 
-        {searchParams.checkout === 'success' && (
-          <div className="banner ok" style={{ marginBottom: 20 }}>
-            <div>
-              <div className="t">{t('paymentReceivedTitle')}</div>
-              <div className="b">{t('paymentReceivedBody')}</div>
-            </div>
-          </div>
-        )}
-        {searchParams.error && (
-          <div className="banner warn" style={{ marginBottom: 20 }}>
-            <div><div className="t">{t('couldntChangePlanTitle')}</div><div className="b">{searchParams.error}</div></div>
-          </div>
+        {!hasPlan && (
+          <ol className="stepper onboarding-stepper" aria-label={t('stepsLabel')}>
+            <li className="step done">
+              <span className="marker" aria-hidden="true">1</span>
+              {t('steps.profile')}
+            </li>
+            <li className="connector done" aria-hidden="true" />
+            <li className="step active" aria-current="step">
+              <span className="marker" aria-hidden="true">2</span>
+              {t('steps.plan')}
+            </li>
+          </ol>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20 }}>
-          {plans.map(plan => {
-            const isCurrent = campaign?.planId === plan.id;
-            return (
-              <div key={plan.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div>
-                  <div style={{ fontSize: 18, fontWeight: 800 }}>{plan.name}</div>
-                  <div className="data" style={{ fontSize: 26, fontWeight: 700, marginTop: 4 }}>
-                    {fmt(plan.monthlyPriceCents)}
-                    <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>/{plan.billingInterval === 'week' ? tBilling('perWeek') : tBilling('perMonth')}</span>
-                  </div>
-                </div>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
-                  <li>{plan.seatLimit ?? tBilling('unlimited')} {t('teamMembersLabel')}</li>
-                  <li>{plan.avatarLimit ?? tBilling('unlimited')} {t('avatarsLabel')}</li>
-                  <li>{plan.contentLimitMonthly ?? tBilling('unlimited')} {t('contentPiecesLabel')}</li>
-                  <li>{plan.videoLimitDaily ?? tBilling('unlimited')} {t('videosPerDayLabel')}</li>
-                </ul>
-                {isCurrent ? (
-                  <button className="btn" disabled style={{ marginTop: 'auto' }}>{t('currentPlanButton')}</button>
-                ) : campaign?.planId ? (
-                  <form action={switchPlan.bind(null, plan.id)} style={{ marginTop: 'auto' }}>
-                    <button className="btn primary" type="submit" style={{ width: '100%' }}>{t('switchPlanButton')}</button>
-                  </form>
-                ) : (
-                  <form action={startCheckoutAction.bind(null, plan.id)} style={{ marginTop: 'auto' }}>
-                    <button className="btn primary" type="submit" style={{ width: '100%' }}>{t('subscribeButton')}</button>
-                  </form>
-                )}
+        <PageHeader
+          eyebrow={hasPlan ? t('changePlanEyebrow') : t('choosePlanEyebrow')}
+          title={hasPlan ? t('changePlanTitle') : t('subscribeTitle')}
+          description={t('description')}
+          actions={hasPlan ? <Link href="/dashboard" className="btn">{t('goToDashboard')}</Link> : undefined}
+        />
+
+        <div className="stack">
+          {searchParams.checkout === 'success' && <CheckoutStatus active={hasPlan} />}
+
+          {searchParams.checkout === 'canceled' && !hasPlan && (
+            <div className="alert alert-info" role="status">
+              <InfoIcon className="icon" size={16} />
+              <div className="alert-body">
+                <div className="alert-title">{t('checkoutCanceled.title')}</div>
+                <div className="alert-text">{t('checkoutCanceled.body')}</div>
               </div>
-            );
-          })}
+            </div>
+          )}
+
+          {!canManage && (
+            <div className="alert alert-warn" role="status">
+              <AlertIcon className="icon" size={16} />
+              <div className="alert-body">
+                <div className="alert-title">{t('notAllowed.title')}</div>
+                <div className="alert-text">{t('notAllowed.body')}</div>
+                {!hasPlan && <div className="alert-actions">{signOut}</div>}
+              </div>
+            </div>
+          )}
+
+          {views.length === 0 ? (
+            <EmptyState icon="billing" title={t('noPlans.title')} description={t('noPlans.body')} />
+          ) : (
+            <PricingPlans plans={views} mode={mode} />
+          )}
         </div>
       </div>
     </div>

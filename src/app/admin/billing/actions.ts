@@ -7,45 +7,82 @@ import { adminDb, throwOnError } from '@/lib/supabase';
 import { stripe } from '@/lib/stripe';
 import { PLAN_DEFINITIONS } from '@/lib/billing-catalog';
 import { prefixedId } from '@/lib/store';
+import type { AdminActionResult } from '../actions';
 
 const CORE_PLAN_IDS = new Set(PLAN_DEFINITIONS.map(d => d.id));
 
-export async function syncBillingPlansAction(): Promise<{ ok: boolean; error?: string }> {
+export async function syncBillingPlansAction(): Promise<AdminActionResult> {
   const s = await requireAdmin();
   const t = await getTranslations({ locale: s.locale, namespace: 'errors.adminBilling' });
   if (!stripe) return { ok: false, error: t('stripeNotConfigured') };
 
-  const { data: existingPlans } = await adminDb.from('billing_plans').select('id');
-  const existingIds = new Set((existingPlans ?? []).map(p => p.id));
+  try {
+    // A transient read failure must not look like "no plans yet" — that would
+    // mint duplicate Stripe products for every core plan.
+    const existingPlans = await throwOnError(adminDb.from('billing_plans').select('id'), 'billing_plans.select');
+    const existingIds = new Set((existingPlans ?? []).map(p => p.id));
 
-  for (const def of PLAN_DEFINITIONS) {
-    if (existingIds.has(def.id)) continue;
+    for (const def of PLAN_DEFINITIONS) {
+      if (existingIds.has(def.id)) continue;
 
-    const product = await stripe.products.create({ name: `${def.name} plan` });
+      // A previous run may have created the Stripe objects and then failed on
+      // the DB insert. Check-then-create by metadata so a retry reuses them,
+      // and pin idempotency keys so even a concurrent double-submit can't
+      // mint duplicates.
+      const productId = await findProductByPlanId(def.id)
+        ?? (await stripe.products.create(
+          { name: `${def.name} plan`, metadata: { plan_id: def.id } },
+          { idempotencyKey: `billing-plan-product:${def.id}` },
+        )).id;
 
-    const flatPrice = await stripe.prices.create({
-      product: product.id,
-      currency: 'usd',
-      unit_amount: def.monthlyPriceCents,
-      recurring: { interval: 'month' },
-    });
+      const flatPrice = await stripe.prices.create(
+        {
+          product: productId,
+          currency: 'usd',
+          unit_amount: def.monthlyPriceCents,
+          recurring: { interval: 'month' },
+          metadata: { plan_id: def.id },
+        },
+        { idempotencyKey: `billing-plan-price:${def.id}:${def.monthlyPriceCents}:month` },
+      );
 
-    await adminDb.from('billing_plans').insert({
-      id: def.id,
-      name: def.name,
-      monthly_price_cents: def.monthlyPriceCents,
-      seat_limit: def.seatLimit,
-      avatar_limit: def.avatarLimit,
-      content_limit_monthly: def.contentLimitMonthly,
-      video_limit_daily: def.videoLimitDaily,
-      stripe_product_id: product.id,
-      stripe_flat_price_id: flatPrice.id,
-      is_active: true,
-    });
+      await throwOnError(
+        adminDb.from('billing_plans').insert({
+          id: def.id,
+          name: def.name,
+          monthly_price_cents: def.monthlyPriceCents,
+          seat_limit: def.seatLimit,
+          avatar_limit: def.avatarLimit,
+          content_limit_monthly: def.contentLimitMonthly,
+          video_limit_daily: def.videoLimitDaily,
+          stripe_product_id: productId,
+          stripe_flat_price_id: flatPrice.id,
+          is_active: true,
+        }),
+        'billing_plans.insert',
+      );
+    }
+  } catch (e) {
+    console.error('syncBillingPlansAction failed', e);
+    return { ok: false, error: t('couldNotSyncPlans') };
   }
 
   revalidatePath('/admin/billing');
   return { ok: true };
+}
+
+// Active Stripe product previously created for this plan id (metadata set by
+// the sync above). Search is best-effort: if it's unavailable, fall through to
+// create and rely on the idempotency key.
+async function findProductByPlanId(planId: string): Promise<string | null> {
+  if (!stripe || typeof stripe.products.search !== 'function') return null;
+  try {
+    const found = await stripe.products.search({ query: `active:'true' AND metadata['plan_id']:'${planId}'`, limit: 1 });
+    return found.data[0]?.id ?? null;
+  } catch (e) {
+    console.error('syncBillingPlansAction: products.search failed', e);
+    return null;
+  }
 }
 
 // A blank limit field legitimately means "unlimited" (null). Anything non-blank that
@@ -69,7 +106,7 @@ const LIMIT_FIELDS = [
   { field: 'videoLimitDaily', column: 'video_limit_daily', labelKey: 'limitLabels.videoLimitDaily' },
 ] as const;
 
-export async function upsertBillingPlanAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
+export async function upsertBillingPlanAction(formData: FormData): Promise<AdminActionResult> {
   const s = await requireAdmin();
   const t = await getTranslations({ locale: s.locale, namespace: 'errors.adminBilling' });
   if (!stripe) return { ok: false, error: t('stripeNotConfigured') };
@@ -177,16 +214,17 @@ export async function upsertBillingPlanAction(formData: FormData): Promise<{ ok:
     }
   } catch (e) {
     // A wrong-mode Stripe key, an archived/invalid price id, or a DB failure would
-    // otherwise surface as an unhandled 500 instead of the error banner
-    // /admin/billing already renders for `{ ok: false, error }`.
-    return { ok: false, error: e instanceof Error ? e.message : t('couldNotSavePlan') };
+    // otherwise surface as an unhandled 500. Log the raw provider/DB message
+    // server-side; the admin sees a translated one.
+    console.error('upsertBillingPlanAction failed', e);
+    return { ok: false, error: t('couldNotSavePlan') };
   }
 
   revalidatePath('/admin/billing');
   return { ok: true };
 }
 
-export async function deleteBillingPlanAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
+export async function deleteBillingPlanAction(formData: FormData): Promise<AdminActionResult> {
   const s = await requireAdmin();
   const t = await getTranslations({ locale: s.locale, namespace: 'errors.adminBilling' });
   if (!stripe) return { ok: false, error: t('stripeNotConfigured') };
@@ -202,7 +240,10 @@ export async function deleteBillingPlanAction(formData: FormData): Promise<{ ok:
   }
 
   try {
-    const { count } = await adminDb.from('campaigns').select('id', { count: 'exact', head: true }).eq('plan_id', id);
+    const { count, error: countError } = await adminDb.from('campaigns')
+      .select('id', { count: 'exact', head: true }).eq('plan_id', id);
+    // A failed count must not read as "nobody is on this plan".
+    if (countError) throw new Error(`campaigns.count_by_plan: ${countError.message}`);
     if ((count ?? 0) > 0) {
       return { ok: false, error: t('cannotDeleteInUse', { count }) };
     }
@@ -228,7 +269,8 @@ export async function deleteBillingPlanAction(formData: FormData): Promise<{ ok:
       // ignored — see comment above
     }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : t('couldNotDeletePlan') };
+    console.error('deleteBillingPlanAction failed', e);
+    return { ok: false, error: t('couldNotDeletePlan') };
   }
 
   revalidatePath('/admin/billing');

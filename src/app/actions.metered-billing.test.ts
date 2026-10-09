@@ -142,24 +142,3 @@ describe('generateVideoAction billing', () => {
     await expect(generateVideoAction('ci-1', 'script', { avatarId: 'look_1' })).rejects.toThrow('HeyGen 500');
   });
 });
-
-describe('synthesizeVoiceAction billing', () => {
-  it('checks the video quota before synthesizing', async () => {
-    getCandidateProfile.mockResolvedValue({ elevenLabsVoiceId: 'ev-1' });
-    voiceProvider.synthesize.mockResolvedValue({ audioUrl: 'https://media/x.mp3' });
-    const { synthesizeVoiceAction } = await import('./actions');
-    const r = await synthesizeVoiceAction('hello');
-    expect(r.ok).toBe(true);
-    expect(quotaGate.checkAndIncrement).toHaveBeenCalledWith('c-1', 'video', expect.any(Date), null);
-    expect(quotaGate.release).not.toHaveBeenCalled();
-  });
-
-  it('releases the video slot when ElevenLabs fails (I7/BILL-9)', async () => {
-    getCandidateProfile.mockResolvedValue({ elevenLabsVoiceId: 'ev-1' });
-    voiceProvider.synthesize.mockRejectedValue(new Error('ElevenLabs 503'));
-    const { synthesizeVoiceAction } = await import('./actions');
-    await expect(synthesizeVoiceAction('hello')).rejects.toThrow('ElevenLabs 503');
-    const incrementPeriod = (quotaGate.checkAndIncrement.mock.calls[0] as unknown[])[2];
-    expect(quotaGate.release).toHaveBeenCalledWith('c-1', 'video', incrementPeriod);
-  });
-});

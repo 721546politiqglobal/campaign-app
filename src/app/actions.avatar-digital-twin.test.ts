@@ -142,7 +142,8 @@ describe('finalizeVideoAvatarAction', () => {
     });
   });
 
-  it('marks the row failed (never silently dropped) when consent request fails after avatar creation', async () => {
+  it('marks the row failed (never silently dropped) with a translated message when consent request fails after avatar creation', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     photoAvatarProvider.uploadAsset.mockResolvedValue({ assetId: 'asset-1' });
     photoAvatarProvider.createVideoAvatar.mockResolvedValue({ lookId: 'look-1', groupId: 'group-1' });
     photoAvatarProvider.requestConsent.mockRejectedValue(new Error('HeyGen consent request error: 500'));
@@ -150,7 +151,10 @@ describe('finalizeVideoAvatarAction', () => {
     const result = await createVideoAvatar();
 
     expect(result.ok).toBe(false);
-    expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'failed', expect.objectContaining({ errorMessage: expect.stringMatching(/consent/i) }));
+    if (!result.ok) expect(result.error).not.toMatch(/HeyGen consent request error/);
+    expect(updateAvatarStatus).toHaveBeenCalledWith('avatar-1', 'failed', expect.objectContaining({ errorMessage: expect.stringMatching(/creation failed/i) }));
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   it('shows a clear access-denied message (not a generic one) when this HeyGen account lacks Digital Twin access', async () => {

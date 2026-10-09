@@ -33,21 +33,26 @@ vi.mock('@/lib/services', () => ({
 describe('scheduling hard gate cannot be bypassed', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('confirmDisclosureAction routes through lifecycle.schedule (never a raw scheduled write)', async () => {
-    get.mockResolvedValue({ id: 'x', campaignId: 'c-1', status: 'approved', type: 'social_post', isAiGenerated: true, body: 'b', title: 't', targetJurisdictions: ['US-CA'] });
-    const { confirmDisclosureAction } = await import('./actions');
-    await confirmDisclosureAction('x');
-    expect(lifecycle.schedule).toHaveBeenCalledWith('x', 'u-1');
-    expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'scheduled' }));
-  });
-
-  it('confirmDisclosureAction surfaces the gate error when approval is missing', async () => {
-    const { GateError } = await import('@/domain/content-lifecycle');
-    lifecycle.schedule.mockRejectedValueOnce(new GateError('Can’t schedule: no human approval on record.'));
+  // The disclosure step attaches the record and leaves the item `approved`:
+  // only scheduleWithTimeAction (with a real time + platforms) may move it to
+  // `scheduled`, so the publish cron never sees a scheduled row without a
+  // scheduled_at.
+  it('confirmDisclosureAction attaches the disclosure without scheduling or a raw status write', async () => {
     get.mockResolvedValue({ id: 'x', campaignId: 'c-1', status: 'approved', type: 'social_post', isAiGenerated: true, body: 'b', title: 't', targetJurisdictions: ['US-CA'] });
     const { confirmDisclosureAction } = await import('./actions');
     const r = await confirmDisclosureAction('x');
+    expect(r).toEqual({ ok: true });
+    expect(lifecycle.schedule).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'scheduled' }));
+  });
+
+  it('confirmDisclosureAction refuses an item that has not been approved yet', async () => {
+    get.mockResolvedValue({ id: 'x', campaignId: 'c-1', status: 'in_review', type: 'social_post', isAiGenerated: true, body: 'b', title: 't', targetJurisdictions: ['US-CA'] });
+    const { confirmDisclosureAction } = await import('./actions');
+    const r = await confirmDisclosureAction('x');
     expect(r.ok).toBe(false);
+    expect(lifecycle.schedule).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
   });
 
   it('confirmDisclosureAction denies a role without schedule permission', async () => {
