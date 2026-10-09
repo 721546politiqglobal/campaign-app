@@ -45,7 +45,7 @@ Rules: follow `2026-10-09-ui-ux-revamp-wave2-brief.md` (no commits, no prod writ
 Run `tsc`, `vitest` and `next build`. Re-screenshot analytics, dashboard (390px), team, pricing, landing and content/new with the test account (ask the user for credentials again; never store them).
 
 ## Open product decisions (for the user)
-- Exact-time scheduled publishing: the cron only runs daily at 06:00 UTC.
+- ~~Exact-time scheduled publishing~~ — resolved 2026-10-09: on Vercel Pro, the publish cron runs every minute.
 - Landing hero copy; the removed Privacy/Terms/FEC links; the `NEXT_PUBLIC_CONTACT_EMAIL` fallback `ceo@ivac.org`.
 - The landing "Spend controls" feature card advertises cost caps the app no longer tracks.
 - Monitoring dismiss uses Undo instead of a confirm dialog.
