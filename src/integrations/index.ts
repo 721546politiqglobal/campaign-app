@@ -19,6 +19,7 @@ function parseConsentStatus<F>(raw: unknown, fallback: F): ConsentStatus | F {
 
 import type { CandidateProfile } from '@/domain/types';
 import type { Locale } from '@/lib/locale';
+import { ayrshareUrl } from './ayrshare-base';
 
 export interface ContentGenerator {
   draft(input: {
@@ -527,7 +528,7 @@ export class AyrsharePublisher implements Publisher {
         // text — without it Ayrshare rejects the upload entirely (verified live).
         if (platform === 'youtube') body.youTubeOptions = { title };
 
-        const res = await fetch('https://app.ayrshare.com/api/post', {
+        const res = await fetch(ayrshareUrl('app', '/post'), {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json', 'Profile-Key': profileKey },
           body: JSON.stringify(body),
@@ -563,15 +564,17 @@ export interface AnalyticsProvider {
 
 // Ayrshare returns a completely different field shape per platform (verified
 // live against real posts) — there is no shared "analytics" field naming, so
-// each platform needs its own extractor. Only instagram/tiktok/youtube are
-// verified against real responses; facebook/x/linkedin are unverified best
-// guesses until confirmed live the same way.
+// each platform needs its own extractor. instagram/tiktok/youtube are verified
+// against real responses; twitter/facebook/linkedin follow Ayrshare's documented
+// example responses (/apis/analytics/post) and should be re-checked against the
+// first real post on each.
 type RawAnalytics = Record<string, unknown>;
 type NormalizedAnalytics = {
   impressions: number; reach: number; likes: number; comments: number;
   shares: number; saves: number; videoViews: number; videoAvgWatchSeconds: number;
 };
 const num = (v: unknown): number => typeof v === 'number' ? v : 0;
+const obj = (v: unknown): RawAnalytics => (v && typeof v === 'object' ? v as RawAnalytics : {});
 const ANALYTICS_EXTRACTORS: Partial<Record<string, (a: RawAnalytics) => NormalizedAnalytics>> = {
   instagram: (a) => ({
     impressions: 0, // not present on Reels analytics
@@ -604,6 +607,42 @@ const ANALYTICS_EXTRACTORS: Partial<Record<string, (a: RawAnalytics) => Normaliz
     videoViews: num(a.views),
     videoAvgWatchSeconds: num(a.averageViewDuration),
   }),
+  twitter: (a) => {
+    const pub = obj(a.publicMetrics);
+    const organic = obj(a.organicMetrics);
+    return {
+      impressions: num(pub.impressionCount) || num(organic.impressionCount),
+      reach: 0, // X exposes no unique-reach count
+      likes: num(pub.likeCount),
+      comments: num(pub.replyCount),
+      shares: num(pub.retweetCount) + num(pub.quoteCount),
+      saves: num(pub.bookmarkCount),
+      videoViews: num(obj(organic.video).viewCount),
+      videoAvgWatchSeconds: 0, // not reported
+    };
+  },
+  facebook: (a) => ({
+    impressions: num(a.mediaView), // Meta retired impressionsUnique; mediaView is total views
+    reach: num(a.totalMediaViewUnique),
+    likes: num(obj(a.reactions).total) || num(a.likeCount),
+    comments: num(a.commentsCount),
+    shares: num(a.sharesCount),
+    saves: 0, // not reported
+    videoViews: num(a.videoViews) || num(a.totalVideoViews),
+    // Graph API reports average watch time in milliseconds
+    videoAvgWatchSeconds: num(a.totalVideoAvgTimeWatched || a.postVideoAvgTimeWatched) / 1000,
+  }),
+  linkedin: (a) => ({
+    impressions: num(a.impressionCount),
+    reach: num(a.uniqueImpressionsCount),
+    likes: num(a.likeCount),
+    comments: num(a.commentCount),
+    shares: num(a.shareCount),
+    saves: 0, // not reported
+    videoViews: num(a.videoViews),
+    // only total watch time is reported; average it over unique viewers
+    videoAvgWatchSeconds: num(a.videoViewers) > 0 ? num(a.videoWatchTimeMs) / num(a.videoViewers) / 1000 : 0,
+  }),
 };
 
 export class AyrshareAnalyticsProvider implements AnalyticsProvider {
@@ -615,7 +654,7 @@ export class AyrshareAnalyticsProvider implements AnalyticsProvider {
     const out: { platform: Platform; impressions: number; reach: number; likes: number; comments: number; shares: number; saves: number; videoViews: number; videoAvgWatchSeconds: number }[] = [];
     for (const { platform, postId } of posts) {
       try {
-        const res = await fetch('https://app.ayrshare.com/api/analytics/post', {
+        const res = await fetch(ayrshareUrl('app', '/analytics/post'), {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json', 'Profile-Key': profileKey },
           body: JSON.stringify({ id: postId }),

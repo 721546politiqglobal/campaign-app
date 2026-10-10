@@ -10,6 +10,10 @@
 -- billing migration is 019. Migration 020 (billing-period window) re-defines
 -- reserve_usage and MUST preserve this `returns text` / reservation-id shape.
 
+-- 013 created reserve_usage `returns boolean`; Postgres can't change a return
+-- type via CREATE OR REPLACE, so drop it first or a fresh rebuild fails here.
+drop function if exists reserve_usage(text, integer, integer);
+
 create or replace function reserve_usage(
   p_campaign_id text,
   p_cap_cents integer,

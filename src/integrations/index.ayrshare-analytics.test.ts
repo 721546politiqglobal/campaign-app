@@ -136,14 +136,60 @@ describe('AyrshareAnalyticsProvider.getPostAnalytics', () => {
     expect(out).toEqual([{ platform: 'tiktok', impressions: 0, reach: 0, likes: 0, comments: 0, shares: 0, saves: 0, videoViews: 12, videoAvgWatchSeconds: 2.82 }]);
   });
 
-  it('skips a platform with no extractor yet (e.g. facebook — unverified) instead of guessing at its shape', async () => {
+  // x / facebook / linkedin shapes come from Ayrshare's documented example
+  // responses (docs: /apis/analytics/post), not yet captured live.
+  it('maps an x (twitter) analytics response onto our metric shape', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ id: 'top-id', status: 'success', facebook: { id: 'fb-id', analytics: { likes: 1 } } }),
+      json: async () => ({
+        id: 'top-id', status: 'success',
+        twitter: { id: 'tw-id', analytics: {
+          publicMetrics: { impressionCount: 120, likeCount: 7, replyCount: 2, retweetCount: 3, quoteCount: 1, bookmarkCount: 4 },
+          organicMetrics: { impressionCount: 110, video: { viewCount: 40 } },
+        } },
+      }),
     }));
-    const provider = new AyrshareAnalyticsProvider('test-key');
-    const out = await provider.getPostAnalytics([{ platform: 'facebook', postId: 'top-id' }], 'pk-test');
-    expect(out).toEqual([]);
+    const out = await new AyrshareAnalyticsProvider('test-key').getPostAnalytics([{ platform: 'x', postId: 'top-id' }], 'pk-test');
+    expect(out).toEqual([{ platform: 'x', impressions: 120, reach: 0, likes: 7, comments: 2, shares: 4, saves: 4, videoViews: 40, videoAvgWatchSeconds: 0 }]);
+  });
+
+  it('maps a facebook analytics response onto our metric shape', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'top-id', status: 'success',
+        facebook: { id: 'fb-id', analytics: {
+          mediaView: 300, totalMediaViewUnique: 210, likeCount: 5, reactions: { like: 5, love: 2, total: 9 },
+          commentsCount: 3, sharesCount: 2, videoViews: 80, totalVideoAvgTimeWatched: 4500,
+        } },
+      }),
+    }));
+    const out = await new AyrshareAnalyticsProvider('test-key').getPostAnalytics([{ platform: 'facebook', postId: 'top-id' }], 'pk-test');
+    expect(out).toEqual([{ platform: 'facebook', impressions: 300, reach: 210, likes: 9, comments: 3, shares: 2, saves: 0, videoViews: 80, videoAvgWatchSeconds: 4.5 }]);
+  });
+
+  it('maps a linkedin analytics response onto our metric shape (avg watch = total ms / viewers)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'top-id', status: 'success',
+        linkedin: { id: 'li-id', analytics: {
+          impressionCount: 500, uniqueImpressionsCount: 320, likeCount: 11, commentCount: 4, shareCount: 2,
+          videoViews: 60, videoViewers: 20, videoWatchTimeMs: 100000,
+        } },
+      }),
+    }));
+    const out = await new AyrshareAnalyticsProvider('test-key').getPostAnalytics([{ platform: 'linkedin', postId: 'top-id' }], 'pk-test');
+    expect(out).toEqual([{ platform: 'linkedin', impressions: 500, reach: 320, likes: 11, comments: 4, shares: 2, saves: 0, videoViews: 60, videoAvgWatchSeconds: 5 }]);
+  });
+
+  it('treats missing metrics as 0 (text-only posts have no video fields)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'top-id', status: 'success', linkedin: { id: 'li-id', analytics: { impressionCount: 9 } } }),
+    }));
+    const out = await new AyrshareAnalyticsProvider('test-key').getPostAnalytics([{ platform: 'linkedin', postId: 'top-id' }], 'pk-test');
+    expect(out).toEqual([{ platform: 'linkedin', impressions: 9, reach: 0, likes: 0, comments: 0, shares: 0, saves: 0, videoViews: 0, videoAvgWatchSeconds: 0 }]);
   });
 
   it('skips a post that fails (never throws) and still returns data for the others', async () => {

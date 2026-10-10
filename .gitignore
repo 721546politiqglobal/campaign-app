@@ -11,6 +11,7 @@ build/
 # env files (keep .env.example)
 .env
 .env.local
+.env.e2e
 .env.development.local
 .env.test.local
 .env.production.local
@@ -31,3 +32,9 @@ yarn-error.log*
 
 # local browser-automation artifacts
 .playwright-mcp/
+
+# playwright
+/e2e/.auth/
+/playwright-report/
+/test-results/
+/.next-e2e/

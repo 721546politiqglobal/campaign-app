@@ -3,8 +3,7 @@
 // own networks through Ayrshare's hosted linking page, never Ayrshare itself.
 import type { Platform } from '@/domain/types';
 import { SOCIAL_PLATFORMS, type SocialAccount } from '@/domain/channels';
-
-const BASE = 'https://api.ayrshare.com/api';
+import { ayrshareUrl } from './ayrshare-base';
 
 export const AYRSHARE_PLATFORM: Record<Platform, string> = {
   instagram: 'instagram', facebook: 'facebook', x: 'twitter',
@@ -65,7 +64,7 @@ export class AyrshareSocialAccountsProvider implements SocialAccountsProvider {
     // error they map to "try again" — otherwise the UI waits forever on it.
     let res: Response;
     try {
-      res = await fetch(`${BASE}${path}`, {
+      res = await fetch(ayrshareUrl('api', path), {
         method: init.method,
         headers,
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
