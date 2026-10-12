@@ -489,6 +489,7 @@
     "title": "Monitoreo del oponente",
     "description": "Sigue lo que dicen tu oponente y la prensa, y redacta una respuesta con un clic.",
     "countLabel": "{count, plural, one {# historia} other {# historias}}",
+    "showingLatest": "Mostrando las {shown, number} historias relevantes más recientes ({total, number} capturadas en total).",
     "addManually": {
       "heading": "Agregar historia manualmente",
       "description": "¿Viste algo fuera de línea? Agrégalo aquí — un segmento de TV, un volante, cualquier cosa que valga la pena rastrear.",

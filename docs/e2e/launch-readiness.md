@@ -191,3 +191,35 @@ None open (both fixed — see "Fixed" at the end).
 **E2E-001 fix (2026-10-11):** `supabase/migrations/019_finalize_usage.sql` now drops `reserve_usage(text, integer, integer)` before re-creating it; the reset-script workaround was removed, and the test DB rebuilds from the migrations alone. Already-applied production databases are unaffected (migrations are not re-run).
 
 **E2E-007 fix (2026-10-11):** added `twitter`, `facebook` and `linkedin` extractors to `ANALYTICS_EXTRACTORS` (`src/integrations/index.ts`), mapped from Ayrshare's documented `/analytics/post` example responses, with 4 new unit tests; the E2E test (`analytics.spec.ts` › "with the bearer, an X post gets metrics") now passes without `test.fail`. Caveat: the owner's Ayrshare account had no successfully published X/Facebook/LinkedIn post to verify against live (all historical posts on those networks failed to publish, and only Instagram/TikTok/YouTube are currently linked) — re-check the numbers against the first real post on each network.
+
+## Opposition-monitoring pipeline audit (2026-10-11)
+
+Live n8n workflow ("My workflow", GFk7S3n3qL4aXFj9) + production data (25,424 rows) + the monitoring page reviewed against production.
+
+| # | Problem | Fix | Where |
+|---|---|---|---|
+| M1 | Format steps used `$input.first()` → only the first campaign's results survived (4 of 5 campaigns got no YouTube/Instagram/Facebook; 40 of 50 articles dropped per run) | Each Format step now runs once per campaign, paired with that campaign's config. Verified on a live run: 10 items × 5 campaigns. Published. | n8n (backup: "BACKUP 2026-10-11 — My workflow (before monitoring fixes)", inactive) |
+| M2 | Old "Command Center — Opposition Monitoring" workflow also active → duplicate NewsData calls, simultaneous GDELT calls | Deactivated (kept, reversible) | n8n |
+| M3 | GDELT rate-limited ("one request every 5 seconds") → 0 items | Duplicate workflow off; GDELT batch interval 5.5s → 7s | n8n |
+| M4 | X/Twitter API returns `402 credits depleted` → 0 items | **Owner action:** top up X API credits or remove the X branch | X developer account |
+| M5 | Off-topic stories (no relevance filter: `relevance_terms` never sent) | Ingest derives relevance terms from the campaign's opponent/aliases/keywords; feed hides automated off-topic rows already stored (manual entries never hidden) | `src/app/api/monitoring/ingest/route.ts`, `src/lib/monitoring-normalize.ts` |
+| M6 | CNN/Fox/Boston Globe/NY Post labelled "blog"; almost nothing "high" credibility | Unknown editorial sites → "news"; "blog" only for blog platforms or `/blog/` paths; ~35 major outlets rated high; subdomain-aware, lookalike-safe. Derived from the URL at read time, so all existing rows display correctly | `src/lib/credibility.ts` |
+| M7 | 82% of items had no opponent | Server-side matching on full name, aliases and surname (whole words) at ingest and read time | `src/lib/monitoring-normalize.ts` |
+| M8 | HTML entities (`&quot;`, `&#39;`) and raw source slugs (`wsws_org`) | Entities/tags decoded; outlet display names for known domains; slugs humanized | `src/lib/monitoring-normalize.ts` |
+| M9 | Same wire story from several outlets | Ingest skips a story already captured in the last 3 days; feed collapses existing copies | ingest route + feed |
+| M10 | Feed loaded every row (~5,000 per campaign); dashboard/analytics showed "1,000+" | Feed shows the 200 most recent relevant stories with a "N captured in total" note (EN/ES); tiles use an exact count | `src/lib/data.ts`, `MonitoringTable.tsx`, dashboard, analytics |
+| M11 | Google Alerts not configured for any campaign; 2 campaigns have no aliases/keywords | **Owner action:** add Google Alerts RSS URLs, aliases and keywords in campaign settings | campaign settings |
+
+**Deploy note:** the n8n fixes (M1–M3) are live now. The app fixes (M5–M10) take effect in production only after this branch is deployed; until then new items still arrive through the old ingest code (the feed-side cleanup also needs the deploy).
+
+**Harness:** `e2e/fixtures.ts` now ignores Next's benign "Failed to fetch RSC payload … Falling back to browser navigation" message globally (aborted prefetch), which was causing intermittent failures.
+
+### Follow-up (2026-10-12)
+- **Verified after M1:** YouTube now reaches all 5 campaigns (44–88 items each in 24h, previously 1 campaign); Instagram returns 12 latest posts per campaign and the app accepts them (no new rows until the opponent posts — URL de-dupe working as intended).
+- **M12 (fixed, n8n):** Facebook Reels have no caption → empty excerpt → every Facebook item rejected (400) since 2026-10-04; scraper error items were also forwarded as posts. Facebook Format now skips error items, describes caption-less posts ("… posted a video on Facebook · 387.8K views · 14.8K likes …") and attributes them to the opponent. Verified on a live run (6 valid posts), published.
+- **GDELT removed (owner decision, 2026-10-12):** it stayed rate-limited even with the duplicate workflow off (GDELT throttles by source IP and n8n Cloud IPs are shared). NewsData covers the same news. Existing GDELT stories stay in the feeds; restore from n8n version history if needed.
+- **Campaign settings (owner action):**
+  - "Final Test" and "Ernesto Ackerman Last Review" have no X / Instagram / Facebook handles → no social monitoring.
+  - "hamza" Facebook page is "Donald" (wrong page → "not available"); should be `DonaldTrump`.
+  - Both "Ernesto for district 24" campaigns use aliases "president" / "white house" (and typo "Donal J. Trump") and keywords "democrats" / "whashington": generic terms make unrelated stories pass the relevance filter. Aliases should be names for the opponent ("Trump", "DJT"); keywords should be race-specific (district, city, local issues).
+  - No campaign has a Google Alerts RSS URL; two campaigns share the name "Ernesto for district 24".

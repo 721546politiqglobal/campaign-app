@@ -2,6 +2,7 @@
 // All functions use the admin client — server-side only.
 
 import { adminDb } from './supabase';
+import { presentMonitoringItems, type StoredMonitoringRow } from './monitoring-normalize';
 import { ContentStatus, ContentType, Platform } from '@/domain/types';
 import type { Locale } from '@/lib/locale';
 import { ACTIVE_SUBSCRIPTION_STATUSES, type CampaignStatusFilter } from '@/lib/campaign-filters';
@@ -95,17 +96,37 @@ export async function getCampaignAuditEntries(campaignId: string, limit = 10): P
   }));
 }
 
+// The feed shows the most recent items only; campaigns accumulate thousands.
+export const MONITORING_FEED_LIMIT = 200;
+// Fetch extra so syndicated copies and off-topic items hidden by
+// presentMonitoringItems don't leave the feed short.
+const MONITORING_FETCH_LIMIT = 600;
+
 export async function getMonitoringResults(campaignId: string): Promise<MonitoringResult[]> {
-  const { data } = await adminDb.from('monitoring_results').select('*')
+  const [{ data }, { data: profile }] = await Promise.all([
+    adminDb.from('monitoring_results').select('*')
+      .eq('campaign_id', campaignId)
+      .is('dismissed_at', null)
+      .order('captured_at', { ascending: false })
+      .limit(MONITORING_FETCH_LIMIT),
+    adminDb.from('candidate_profiles').select('opponent_name, opponent_aliases, monitoring_keywords')
+      .eq('campaign_id', campaignId).maybeSingle(),
+  ]);
+  const opp = {
+    opponentName: (profile?.opponent_name as string | null) ?? null,
+    aliases: ((profile?.opponent_aliases as string[] | null) ?? []).filter(Boolean),
+    keywords: ((profile?.monitoring_keywords as string[] | null) ?? []).filter(Boolean),
+  };
+  return presentMonitoringItems((data ?? []) as StoredMonitoringRow[], opp).slice(0, MONITORING_FEED_LIMIT);
+}
+
+// Exact number of active (not dismissed) items, for count tiles.
+export async function getMonitoringCount(campaignId: string): Promise<number> {
+  const { count } = await adminDb.from('monitoring_results')
+    .select('id', { count: 'exact', head: true })
     .eq('campaign_id', campaignId)
-    .is('dismissed_at', null)
-    .order('captured_at', { ascending: false });
-  return (data ?? []).map(r => ({
-    id: r.id, campaignId: r.campaign_id, source: r.source,
-    opponent: r.opponent, excerpt: r.excerpt, url: r.url, capturedAt: r.captured_at,
-    credibility: (r.credibility as 'high' | 'medium' | 'low') ?? 'medium',
-    category: (r.category as 'news' | 'social' | 'blog' | 'press_release') ?? 'news',
-  }));
+    .is('dismissed_at', null);
+  return count ?? 0;
 }
 
 export async function getContentUsageThisPeriod(campaignId: string, currentPeriodEnd: string | null): Promise<number> {

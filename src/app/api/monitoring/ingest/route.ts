@@ -3,6 +3,11 @@ import { adminDb } from '@/lib/supabase';
 import { scoreCredibility, categorizeSource, isRelevant } from '@/lib/credibility';
 import { monitoringBearerOk } from '@/lib/monitoring-auth';
 import { uid } from '@/lib/store';
+import { cleanText, sourceDisplayName, matchOpponent, relevanceTermsFor, excerptFingerprint } from '@/lib/monitoring-normalize';
+
+// How far back to look for a syndicated copy of the same story.
+const SYNDICATION_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+const SYNDICATION_SCAN_LIMIT = 300;
 
 // Field limits. Excerpts are truncated (the feed only ever shows a clamp of
 // them); everything else is rejected so a misconfigured workflow fails loudly.
@@ -42,10 +47,15 @@ export async function POST(req: NextRequest) {
   }
 
   const campaign_id = str(body.campaign_id);
-  const source = str(body.source);
-  const excerpt = str(body.excerpt);
+  const rawSource = str(body.source);
+  const rawExcerpt = str(body.excerpt);
   const url = str(body.url);
-  const opponent = str(body.opponent);
+  const rawOpponent = str(body.opponent);
+  // Feeds (YouTube, RSS) leave HTML entities/tags in titles; clean before
+  // validating so a markup-only excerpt counts as empty.
+  const excerpt = rawExcerpt === null ? null : cleanText(rawExcerpt);
+  const source = rawSource === null ? null : cleanText(rawSource);
+  const opponent = rawOpponent === null ? null : cleanText(rawOpponent);
 
   if (!campaign_id || !source || !excerpt || !url) {
     return NextResponse.json(
@@ -81,13 +91,42 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unknown campaign_id' }, { status: 404 });
   }
 
-  // Drop clearly off-topic items before they pollute the feed (UX-5). With no
-  // terms configured this keeps everything, so nothing is silently blackholed.
-  const terms = Array.isArray(body.relevance_terms)
+  const { data: profile } = await adminDb
+    .from('candidate_profiles')
+    .select('opponent_name, opponent_aliases, monitoring_keywords')
+    .eq('campaign_id', campaign_id)
+    .maybeSingle();
+  const opp = {
+    opponentName: (profile?.opponent_name as string | null) ?? null,
+    aliases: ((profile?.opponent_aliases as string[] | null) ?? []).filter(Boolean),
+    keywords: ((profile?.monitoring_keywords as string[] | null) ?? []).filter(Boolean),
+  };
+
+  // Drop clearly off-topic items before they pollute the feed (UX-5). Workflows
+  // may send their own relevance_terms; otherwise derive them from the
+  // campaign's opponent config. With no terms at all this keeps everything, so
+  // nothing is silently blackholed.
+  const sentTerms = Array.isArray(body.relevance_terms)
     ? (body.relevance_terms as unknown[]).filter((t): t is string => typeof t === 'string')
     : [];
+  const terms = sentTerms.length ? sentTerms : relevanceTermsFor(opp);
   if (!isRelevant(`${excerpt} ${source} ${opponent ?? ''}`, terms)) {
     return NextResponse.json({ ok: true, skipped: true, reason: 'off_topic' });
+  }
+
+  // The same wire story republished by several outlets → keep the first copy.
+  const fingerprint = excerptFingerprint(excerpt);
+  if (fingerprint) {
+    const { data: recentRows } = await adminDb
+      .from('monitoring_results')
+      .select('excerpt')
+      .eq('campaign_id', campaign_id)
+      .gte('captured_at', new Date(Date.now() - SYNDICATION_WINDOW_MS).toISOString())
+      .order('captured_at', { ascending: false })
+      .limit(SYNDICATION_SCAN_LIMIT);
+    if ((recentRows ?? []).some(r => excerptFingerprint(String(r.excerpt ?? '')) === fingerprint)) {
+      return NextResponse.json({ ok: true, skipped: true, reason: 'duplicate_story' });
+    }
   }
 
   // Dedup atomically on (campaign_id, url) — a unique index backs this
@@ -99,8 +138,8 @@ export async function POST(req: NextRequest) {
       {
         id: uid(),
         campaign_id,
-        source,
-        opponent: opponent || null,
+        source: sourceDisplayName(source, url),
+        opponent: opponent || matchOpponent(`${excerpt} ${source}`, opp),
         excerpt: excerpt.substring(0, MAX_EXCERPT_LEN),
         url,
         credibility: scoreCredibility(url),

@@ -31,24 +31,41 @@ const card = (page: import('@playwright/test').Page, text: string) =>
   page.getByRole('listitem').filter({ hasText: text });
 
 test.describe('feed rendering', () => {
-  test('seeded results render with credibility and category indicators', async ({ asRole }) => {
-    const page = await asRole('owner');
-    await page.goto('/monitoring');
-    await expect(page.getByRole('heading', { level: 1, name: 'Opponent monitoring' })).toBeVisible();
+  // Credibility and category are derived from the story's domain when the feed
+  // is read (src/lib/monitoring-normalize.ts), not taken from stored columns.
+  test('credibility and category badges follow the story domain', async ({ asRole, request, db }) => {
+    const key = testKey();
+    const stories = [
+      { tag: 'high', url: `https://apnews.com/e2e/${key}`, excerpt: `E2E-MON-${key} wire report on Pat Opponent transit vote` },
+      { tag: 'low', url: `https://www.infowars.com/blog/e2e-${key}`, excerpt: `E2E-MON-${key} blog post about Pat Opponent water policy` },
+    ];
+    try {
+      for (const st of stories) {
+        const res = await ingest(request, { campaign_id: CAMPAIGN_A, source: 'NewsData', excerpt: st.excerpt, url: st.url });
+        expect(res.ok(), await res.text()).toBeTruthy();
+      }
+      const page = await asRole('owner');
+      await page.goto('/monitoring');
+      await expect(page.getByRole('heading', { level: 1, name: 'Opponent monitoring' })).toBeVisible();
 
-    const high = card(page, 'announced a new transit position');
-    await expect(high.getByText('High credibility')).toBeVisible();
-    await expect(high.getByText('News', { exact: true })).toBeVisible();
-    await expect(high.getByText('NewsData')).toBeVisible();
-    await expect(high.getByRole('link', { name: 'Read article' })).toHaveAttribute('href', 'https://news.e2e.test/a/transit');
+      const high = card(page, stories[0].excerpt);
+      await expect(high.getByText('High credibility')).toBeVisible();
+      await expect(high.getByText('News', { exact: true })).toBeVisible();
+      await expect(high.getByText('AP News')).toBeVisible(); // display name from the domain
+      await expect(high.getByText('Pat Opponent', { exact: true })).toBeVisible(); // opponent attributed server-side
+      await expect(high.getByRole('link', { name: 'Read article' })).toHaveAttribute('href', stories[0].url);
 
-    const low = card(page, 'Opinion blog discusses Pat Opponent water policy');
-    await expect(low.getByText('Low credibility')).toBeVisible();
-    await expect(low.getByText('Blog', { exact: true })).toBeVisible();
-    await expect(card(page, 'Local coverage compares the two candidates').getByText('Medium credibility')).toBeVisible();
+      const low = card(page, stories[1].excerpt);
+      await expect(low.getByText('Low credibility')).toBeVisible();
+      await expect(low.getByText('Blog', { exact: true })).toBeVisible();
 
-    await expect(page.getByText(/\d+ stor(y|ies)/)).toBeVisible();
-    await expect(page.locator('body')).not.toContainText('B-ONLY-');
+      // seeded row on an unknown editorial domain → neutral
+      await expect(card(page, 'announced a new transit position').getByText('Medium credibility')).toBeVisible();
+      await expect(page.getByText(/\d+ stor(y|ies)/)).toBeVisible();
+      await expect(page.locator('body')).not.toContainText('B-ONLY-');
+    } finally {
+      for (const st of stories) await must(db.from('monitoring_results').delete().eq('campaign_id', CAMPAIGN_A).eq('url', st.url));
+    }
   });
 });
 
@@ -115,7 +132,8 @@ test.describe('dismiss and restore', () => {
     const item = await throwaway(request, db, 'tenant');
     const t2 = await createSecondTenant(db, testKey());
     try {
-      const own = `E2E-MON-T2-${testKey()} second tenant story`;
+      // mentions the tenant's opponent ('Opp') so it passes the relevance filter
+      const own = `E2E-MON-T2-${testKey()} Opp second tenant story`;
       const res = await ingest(request, { campaign_id: t2.campaignId, source: 'E2E Wire', excerpt: own, url: `https://news.e2e.test/mon/t2-${testKey()}` });
       expect(res.ok()).toBeTruthy();
 

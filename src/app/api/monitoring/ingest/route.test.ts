@@ -6,11 +6,18 @@ const campaignRow: { value: { id: string } | null; error: { message: string } | 
 const maybeSingle = vi.fn(async () => ({ data: campaignRow.value, error: campaignRow.error }));
 const eq = vi.fn(() => ({ maybeSingle }));
 const select = vi.fn(() => ({ eq }));
+// candidate profile (opponent config) for the campaign
+const profileRow: { value: Record<string, unknown> | null } = { value: null };
+const profileSelect = vi.fn(() => ({ eq: () => ({ maybeSingle: async () => ({ data: profileRow.value, error: null }) }) }));
+// recent rows for the syndication check
+const recent: { rows: { excerpt: string }[] } = { rows: [] };
+const recentSelect = vi.fn(() => ({ eq: () => ({ gte: () => ({ order: () => ({ limit: async () => ({ data: recent.rows, error: null }) }) }) }) }));
 vi.mock('@/lib/supabase', () => ({
   adminDb: {
     from: vi.fn((table: string) => {
       if (table === 'campaigns') return { select };
-      if (table === 'monitoring_results') return { upsert };
+      if (table === 'candidate_profiles') return { select: profileSelect };
+      if (table === 'monitoring_results') return { upsert, select: recentSelect };
       throw new Error(`unexpected table ${table}`);
     }),
   },
@@ -38,6 +45,43 @@ describe('monitoring ingest', () => {
     process.env.MONITORING_INGEST_SECRET = 'test-key';
     campaignRow.value = { id: 'c-1' };
     campaignRow.error = null;
+    profileRow.value = null;
+    recent.rows = [];
+  });
+
+  it('decodes HTML entities and cleans the source name before saving', async () => {
+    const { POST } = await import('./route');
+    await POST(req({ ...valid, source: 'bostonglobe', url: 'https://www.bostonglobe.com/a', excerpt: '&quot;It&#39;s time&quot; says F&amp;M' }));
+    const row = (upsert.mock.calls[0] as unknown[])[0] as { excerpt: string; source: string };
+    expect(row.excerpt).toBe('"It\'s time" says F&M');
+    expect(row.source).toBe('The Boston Globe');
+  });
+
+  it('attributes the opponent server-side when the workflow sent none (surname match)', async () => {
+    profileRow.value = { opponent_name: 'Susan Collins', opponent_aliases: [], monitoring_keywords: [] };
+    const { POST } = await import('./route');
+    await POST(req({ ...valid, excerpt: 'Collins votes against the transit bill' }));
+    const row = (upsert.mock.calls[0] as unknown[])[0] as { opponent: string | null };
+    expect(row.opponent).toBe('Susan Collins');
+  });
+
+  it('drops off-topic items using the campaign profile when the workflow sent no relevance_terms', async () => {
+    profileRow.value = { opponent_name: 'Susan Collins', opponent_aliases: ['Sen. Collins'], monitoring_keywords: ['Maine housing'] };
+    const { isRelevant } = await import('@/lib/credibility');
+    vi.mocked(isRelevant).mockReturnValueOnce(false);
+    const { POST } = await import('./route');
+    const res = await POST(req({ ...valid, excerpt: 'Russian aerial bombs hit Zaporizhzhia' }));
+    expect(await res.json()).toMatchObject({ skipped: true, reason: 'off_topic' });
+    expect(vi.mocked(isRelevant).mock.calls[0][1]).toEqual(['Susan Collins', 'Sen. Collins', 'Maine housing', 'Collins']);
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it('skips a syndicated copy of a story already captured from another outlet', async () => {
+    recent.rows = [{ excerpt: 'Sen. Susan Collins is no longer Maine’s senator, critics said on Monday' }];
+    const { POST } = await import('./route');
+    const res = await POST(req({ ...valid, url: 'https://other.example/b', excerpt: 'sen susan collins is no longer maine\'s senator critics said on monday' }));
+    expect(await res.json()).toMatchObject({ skipped: true, reason: 'duplicate_story' });
+    expect(upsert).not.toHaveBeenCalled();
   });
 
   it('upserts with ignoreDuplicates on the (campaign_id, url) conflict target', async () => {

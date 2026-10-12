@@ -489,6 +489,7 @@
     "title": "Opponent monitoring",
     "description": "Track what your opponent and the press are saying, then draft a response in one click.",
     "countLabel": "{count, plural, one {# story} other {# stories}}",
+    "showingLatest": "Showing the {shown, number} most recent relevant stories ({total, number} captured in total).",
     "addManually": {
       "heading": "Add story manually",
       "description": "Saw something offline? Add it here — a TV segment, a flyer, anything worth tracking.",

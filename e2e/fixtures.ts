@@ -47,7 +47,11 @@ export const test = base.extend<Fixtures>({
     currentAllow = [];
     const g: Guard = { errors: [], allow: currentAllow };
     await use(g);
-    const real = g.errors.filter((e) => !g.allow.some((re) => re.test(e)));
+    // Next logs this when a <Link> prefetch is aborted by a navigation and then
+    // falls back to a normal page load — the user sees nothing wrong. Real
+    // console errors and same-origin 5xx still fail the test.
+    const benign = /^console: Failed to fetch RSC payload for .+ Falling back to browser navigation\./;
+    const real = g.errors.filter((e) => !benign.test(e) && !g.allow.some((re) => re.test(e)));
     expect(real, 'console errors / 5xx during test').toEqual([]);
   },
   page: async ({ page, _guard }, use) => {

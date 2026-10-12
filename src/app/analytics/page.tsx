@@ -7,8 +7,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ChevronDownIcon, ChevronUpIcon } from '@/components/icons';
 import { requireSession } from '@/lib/session';
 import { getPerformanceSummary, getLatestInsight } from '@/lib/analytics';
-import { getMonitoringResults } from '@/lib/data';
-import { rowCountLabel } from '@/lib/row-cap';
+import { getMonitoringCount } from '@/lib/data';
 import { renderInlineMarkdown, renderMarkdownLite } from '@/lib/markdown-lite';
 
 function pctDelta(current: number, prior: number): number | null {
@@ -67,10 +66,10 @@ export default async function AnalyticsPage() {
     getFormatter(),
   ]);
 
-  const [summary, insight, monitoring] = await Promise.all([
+  const [summary, insight, monitoringCount] = await Promise.all([
     getPerformanceSummary(s.campaignId),
     getLatestInsight(s.campaignId),
-    getMonitoringResults(s.campaignId),
+    getMonitoringCount(s.campaignId),
   ]);
 
   const hasData = summary.totals.postsCount > 0;
@@ -172,8 +171,7 @@ export default async function AnalyticsPage() {
               <p className="muted text-sm an-prose">
                 {t.rich('opponentActivityText', {
                   postsCount: format.number(summary.totals.postsCount),
-                  // Same uncapped select as the dashboard tile: at the row cap this reads "1,000+".
-                  mentionsCount: rowCountLabel(monitoring.length, format.number, c => tc('countCapped', { count: c })),
+                  mentionsCount: format.number(monitoringCount),
                   strong: (chunks) => <strong className="an-strong num">{chunks}</strong>,
                 })}
               </p>

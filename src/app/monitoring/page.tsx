@@ -3,20 +3,20 @@ import { AppFrame } from '@/components/AppFrame';
 import { MonitoringTable } from '@/components/MonitoringTable';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { requireSession } from '@/lib/session';
-import { getMonitoringResults } from '@/lib/data';
+import { getMonitoringCount, getMonitoringResults } from '@/lib/data';
 import { MonitoringAddForm } from './MonitoringAddForm';
 
 export default async function Monitoring() {
   const t = await getTranslations('monitoring');
   const s = await requireSession();
-  const results = await getMonitoringResults(s.campaignId);
+  const [results, total] = await Promise.all([getMonitoringResults(s.campaignId), getMonitoringCount(s.campaignId)]);
 
   return (
     <AppFrame>
       <PageHeader eyebrow={t('eyebrow')} title={t('title')} description={t('description')} />
 
       <div className="stack mon-page">
-        <MonitoringTable results={results} />
+        <MonitoringTable results={results} total={total} />
 
         <section className="card card-sectioned" aria-labelledby="mon-add-heading">
           <div className="card-header">

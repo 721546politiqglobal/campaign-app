@@ -7,8 +7,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Icon } from '@/components/icons';
 import { requireSession } from '@/lib/session';
-import { getContentItems, getMonitoringResults, getScheduledToday } from '@/lib/data';
-import { rowCountLabel } from '@/lib/row-cap';
+import { getContentItems, getMonitoringCount, getMonitoringResults, getScheduledToday } from '@/lib/data';
 import type { Platform } from '@/domain/types';
 
 const ATTENTION_LIMIT = 6;
@@ -26,9 +25,10 @@ export default async function Dashboard() {
   const s = await requireSession();
   if (s.role === 'super_admin') redirect('/admin');
 
-  const [items, monitoring, todayScheduled] = await Promise.all([
+  const [items, monitoring, monitoringCount, todayScheduled] = await Promise.all([
     getContentItems(s.campaignId),
     getMonitoringResults(s.campaignId),
+    getMonitoringCount(s.campaignId),
     getScheduledToday(s.campaignId),
   ]);
 
@@ -40,8 +40,7 @@ export default async function Dashboard() {
   const inReviewN = count('in_review');
   const scheduledN = count('scheduled');
   const publishedN = count('published');
-  // getMonitoringResults is an uncapped select, so the count can hit the row cap ("1,000+").
-  const signalsLabel = rowCountLabel(monitoring.length, format.number, c => tc('countCapped', { count: c }));
+  const signalsLabel = format.number(monitoringCount);
 
   const tiles = [
     { label: t('tiles.needsReview'), value: format.number(inReviewN), icon: 'inbox', tone: inReviewN > 0 ? 'warn' : '', href: '/content?status=in_review', hint: t('tiles.inReviewWaiting', { count: inReviewN }) },

@@ -63,7 +63,36 @@ describe('categorizeSource', () => {
     expect(categorizeSource('https://prnewswire.com/release', 'PR Newswire')).toBe('press_release');
   });
 
-  it('categorizes unknown sources as blog', () => {
-    expect(categorizeSource('https://randomblog.com', 'Random Blog')).toBe('blog');
+  it('categorizes known blog platforms as blog', () => {
+    expect(categorizeSource('https://someone.substack.com/p/x', 'Substack')).toBe('blog');
+    expect(categorizeSource('https://medium.com/@a/b', 'Medium')).toBe('blog');
+    expect(categorizeSource('https://x.blogspot.com/2026/1', 'x')).toBe('blog');
+    expect(categorizeSource('https://example.wordpress.com/a', 'x')).toBe('blog');
+    expect(categorizeSource('https://americanthinker.com/blog/2026/x', 'americanthinker')).toBe('blog');
+  });
+
+  it('categorizes mainstream and unknown editorial outlets as news, not blog', () => {
+    expect(categorizeSource('https://www.cnn.com/x', 'cnn')).toBe('news');
+    expect(categorizeSource('https://www.foxnews.com/x', 'foxnews')).toBe('news');
+    expect(categorizeSource('https://www.bostonglobe.com/x', 'bostonglobe')).toBe('news');
+    expect(categorizeSource('https://mankatofreepress.com/news/x', 'mankatofreepress')).toBe('news');
+  });
+
+  it('categorizes youtube and subdomains of social sites as social', () => {
+    expect(categorizeSource('https://www.youtube.com/watch?v=1', 'YouTube')).toBe('social');
+    expect(categorizeSource('https://m.facebook.com/p/1', 'Facebook')).toBe('social');
+  });
+});
+
+describe('scoreCredibility (major outlets)', () => {
+  it('rates major national outlets, including on subdomains, as high', () => {
+    for (const u of ['https://www.cnn.com/x', 'https://www.foxnews.com/x', 'https://www.wsj.com/x',
+      'https://www.bostonglobe.com/x', 'https://www.usatoday.com/x', 'https://www.theguardian.com/x',
+      'https://abcnews.go.com/x', 'https://news.yahoo.com/x', 'https://www.axios.com/x', 'https://www.bloomberg.com/x']) {
+      expect(scoreCredibility(u), u).toBe('high');
+    }
+  });
+  it('does not treat a lookalike domain as high', () => {
+    expect(scoreCredibility('https://cnn.com.evil.io/x')).toBe('medium');
   });
 });

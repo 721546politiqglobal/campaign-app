@@ -58,7 +58,7 @@ function rebuttalHref(brief: string): string {
   return `/content/new?${params.toString()}`;
 }
 
-export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
+export function MonitoringTable({ results, total }: { results: MonitoringResult[]; total?: number }) {
   const t = useTranslations('monitoring');
   const format = useFormatter();
   const { toast } = useToast();
@@ -166,6 +166,9 @@ export function MonitoringTable({ results }: { results: MonitoringResult[] }) {
           <span className="subtle text-sm num" aria-live="polite">{t('countLabel', { count: filtered.length })}</span>
         </div>
       </div>
+      {total !== undefined && total > results.length && (
+        <p className="subtle text-sm">{t('showingLatest', { shown: results.length, total })}</p>
+      )}
 
       {filtered.length === 0 ? (
         <EmptyState
