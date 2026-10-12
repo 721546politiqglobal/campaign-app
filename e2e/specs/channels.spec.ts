@@ -11,7 +11,8 @@ const card = (page: Page, network: string) => page.getByRole('region', { name: n
 // fetch and logs a console error, so let it finish first.
 const settle = (page: Page) => page.waitForLoadState('networkidle');
 const NETWORK_NAME: Record<string, string> = { instagram: 'Instagram', facebook: 'Facebook', x: 'X', linkedin: 'LinkedIn', tiktok: 'TikTok', youtube: 'YouTube' };
-const NETWORKS = ['Instagram', 'Facebook', 'X', 'LinkedIn', 'TikTok', 'YouTube'];
+// X isn't linkable through Ayrshare, so /channels doesn't show it.
+const NETWORKS = ['Instagram', 'Facebook', 'LinkedIn', 'TikTok', 'YouTube'];
 
 async function must(r: PromiseLike<{ error: { message: string } | null }>) {
   const { error } = await r;
@@ -69,13 +70,13 @@ test('owner sees campaign A\'s seeded connections and they persist after reload'
   const page = await asRole('owner');
   await page.goto('/channels');
   await expect(page.getByRole('heading', { name: 'Channels', level: 1 })).toBeVisible();
-  // Seed (and the fake behind it) links X + Facebook. Other networks are not
-  // asserted on beyond TikTok/YouTube: other specs briefly link Instagram/LinkedIn.
-  for (const n of ['X', 'Facebook']) {
-    await expect(card(page, n).getByText('Connected', { exact: true })).toBeVisible();
-    await expect(card(page, n).getByRole('button', { name: `Disconnect ${n}` })).toBeVisible();
-  }
-  await expect(card(page, 'X').getByText('@e2e_camp_a')).toBeVisible();
+  // Seed (and the fake behind it) links X + Facebook; X has no card here (not
+  // linkable through Ayrshare). Other networks are not asserted on beyond
+  // TikTok/YouTube: other specs briefly link Instagram/LinkedIn.
+  await expect(card(page, 'Facebook').getByText('Connected', { exact: true })).toBeVisible();
+  await expect(card(page, 'Facebook').getByRole('button', { name: 'Disconnect Facebook' })).toBeVisible();
+  await expect(card(page, 'X')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Connect X$|Disconnect X$/ })).toHaveCount(0);
   for (const n of ['TikTok', 'YouTube']) {
     await expect(card(page, n).getByText('Not connected', { exact: true })).toBeVisible();
     await expect(card(page, n).getByRole('button', { name: `Connect ${n}` })).toBeVisible();
@@ -84,7 +85,7 @@ test('owner sees campaign A\'s seeded connections and they persist after reload'
 
   await settle(page);
   await page.reload();
-  for (const n of ['X', 'Facebook']) await expect(card(page, n).getByText('Connected', { exact: true })).toBeVisible();
+  await expect(card(page, 'Facebook').getByText('Connected', { exact: true })).toBeVisible();
   await expect(card(page, 'TikTok').getByText('Not connected', { exact: true })).toBeVisible();
 });
 
@@ -99,7 +100,7 @@ test('connect adds a platform, disconnect removes it, and state persists after r
   try {
     await loginAs(page, owner.email);
     await page.goto('/channels');
-    await expect(page.getByText('0 of 6 connected')).toBeVisible();
+    await expect(page.getByText('0 of 5 connected')).toBeVisible();
     for (const n of NETWORKS) await expect(card(page, n).getByText('Not connected', { exact: true })).toBeVisible();
 
     // Connect: the app creates the campaign's profile lazily, opens the (fake)
@@ -117,7 +118,7 @@ test('connect adds a platform, disconnect removes it, and state persists after r
     const net = NETWORK_NAME[linked];
     await expect(card(page, net).getByText('Connected', { exact: true })).toBeVisible();
     await expect(page.getByText(`${net} connected`)).toBeVisible();
-    await expect(page.getByText('1 of 6 connected')).toBeVisible();
+    await expect(page.getByText('1 of 5 connected')).toBeVisible();
     const stored = (await db.from('campaigns').select('ayrshare_profile_key').eq('id', camp).single()).data?.ayrshare_profile_key as string;
     expect(stored).toMatch(/^fake-profile-\d+$/);
     expect((await fakeRequests({ path: '/api/profiles/generateJWT', profileKey: undefined })).some(
@@ -131,7 +132,7 @@ test('connect adds a platform, disconnect removes it, and state persists after r
     await page.getByRole('dialog').getByRole('button', { name: 'Disconnect', exact: true }).click();
     await expect(page.getByText(`${net} disconnected`)).toBeVisible();
     await expect(card(page, net).getByText('Not connected', { exact: true })).toBeVisible();
-    await expect(page.getByText('0 of 6 connected')).toBeVisible();
+    await expect(page.getByText('0 of 5 connected')).toBeVisible();
     await expect.poll(async () => await readAccounts()).toEqual([]);
     const unlink = (await fakeRequests({ path: '/api/profiles/social', profileKey: stored })).at(-1);
     expect(unlink).toMatchObject({ method: 'DELETE', body: { platform: linked } });
@@ -139,7 +140,7 @@ test('connect adds a platform, disconnect removes it, and state persists after r
     await settle(page);
     await page.reload();
     await expect(card(page, net).getByText('Not connected', { exact: true })).toBeVisible();
-    await expect(page.getByText('0 of 6 connected')).toBeVisible();
+    await expect(page.getByText('0 of 5 connected')).toBeVisible();
   } finally {
     await dropCampaign(db, camp, owner);
   }
@@ -147,13 +148,13 @@ test('connect adds a platform, disconnect removes it, and state persists after r
 
 test('publish panel only offers connected platforms for an approved item', async ({ page, db }) => {
   const key = testKey();
-  // X connected; Facebook needs reconnecting (cannot post); LinkedIn not connected.
-  const { camp, owner } = await makeCampaign(db, key, [account('x'), account('facebook', true)]);
+  // LinkedIn connected; Facebook needs reconnecting (cannot post); X is never offered.
+  const { camp, owner } = await makeCampaign(db, key, [account('linkedin'), account('facebook', true)]);
   const id = `e2e-chan-${key}-item`;
   try {
     await must(db.from('content_items').insert({
       id, campaign_id: camp, type: 'social_post', title: `E2E channels ${id}`, body: `Channels publish ${key}`,
-      status: 'approved', is_ai_generated: false, target_jurisdictions: ['US-TX'], created_by: owner.id, platforms: ['x', 'facebook'],
+      status: 'approved', is_ai_generated: false, target_jurisdictions: ['US-TX'], created_by: owner.id, platforms: ['linkedin', 'facebook'],
     }));
     await must(db.from('approval_records').insert({
       content_item_id: id, campaign_id: camp, approver_user_id: owner.id, decision: 'approve',
@@ -162,10 +163,11 @@ test('publish panel only offers connected platforms for an approved item', async
     await page.goto(`/content/${id}`);
 
     const platforms = page.getByRole('group', { name: 'Platforms' });
-    await expect(platforms.getByRole('checkbox', { name: 'X' })).toBeChecked();
-    await expect(platforms.getByRole('checkbox', { name: 'X' })).toBeEnabled();
-    for (const n of ['Facebook', 'LinkedIn']) await expect(platforms.getByRole('checkbox', { name: n })).toBeDisabled();
-    for (const n of ['Facebook', 'LinkedIn']) await expect(platforms.getByRole('checkbox', { name: n })).not.toBeChecked();
+    await expect(platforms.getByRole('checkbox', { name: 'LinkedIn' })).toBeChecked();
+    await expect(platforms.getByRole('checkbox', { name: 'LinkedIn' })).toBeEnabled();
+    await expect(platforms.getByRole('checkbox', { name: 'Facebook' })).toBeDisabled();
+    await expect(platforms.getByRole('checkbox', { name: 'Facebook' })).not.toBeChecked();
+    await expect(platforms.getByRole('checkbox', { name: 'X' })).toHaveCount(0);
     await expect(page.getByText('Only connected channels can be selected.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Publish to 1 platform', exact: true })).toBeEnabled();
 
@@ -174,7 +176,7 @@ test('publish panel only offers connected platforms for an approved item', async
     await settle(page);
     await page.reload();
     await expect(page.getByText('No channels connected yet')).toBeVisible();
-    for (const n of ['Facebook', 'X', 'LinkedIn']) await expect(platforms.getByRole('checkbox', { name: n })).toBeDisabled();
+    for (const n of ['Facebook', 'LinkedIn']) await expect(platforms.getByRole('checkbox', { name: n })).toBeDisabled();
     await expect(page.getByRole('button', { name: /^Publish to \d+ platforms?$/ })).toBeDisabled();
     await expect(page.getByRole('link', { name: 'Manage channels' })).toHaveAttribute('href', '/channels');
   } finally {
@@ -187,7 +189,7 @@ for (const role of ['approver', 'staff'] as const) {
   test(`${role} sees connections read-only`, async ({ asRole }) => {
     const page = await asRole(role);
     await page.goto('/channels');
-    await expect(card(page, 'X').getByText('Connected', { exact: true })).toBeVisible();
+    await expect(card(page, 'Facebook').getByText('Connected', { exact: true })).toBeVisible();
     await expect(page.getByText('Only owners and managers can change connections.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Connect accounts' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /^(Connect|Disconnect|Reconnect) / })).toHaveCount(0);
@@ -199,7 +201,7 @@ test('a campaign with no Ayrshare profile sees the not-connected empty state', a
   try {
     await loginAs(page, owner.email);
     await page.goto('/channels');
-    await expect(page.getByText('0 of 6 connected')).toBeVisible();
+    await expect(page.getByText('0 of 5 connected')).toBeVisible();
     await expect(page.getByRole('region', { name: 'Get set up in a minute' })).toBeVisible();
     for (const n of NETWORKS) {
       await expect(card(page, n).getByText('Not connected', { exact: true })).toBeVisible();

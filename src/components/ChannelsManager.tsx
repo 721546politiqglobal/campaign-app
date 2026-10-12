@@ -11,7 +11,7 @@ import { ChannelIcon } from '@/components/ChannelIcons';
 import {
   startChannelLinkAction, refreshChannelsAction, disconnectChannelAction, completeMockLinkAction,
 } from '@/app/channels/actions';
-import { SOCIAL_PLATFORMS, newlyConnected, type SocialAccount } from '@/domain/channels';
+import { CONNECTABLE_PLATFORMS, newlyConnected, type SocialAccount } from '@/domain/channels';
 import type { Platform } from '@/domain/types';
 
 type Busy = { kind: 'linking' } | { kind: 'disconnecting'; platform: Platform } | null;
@@ -270,8 +270,9 @@ export function ChannelsManager({
   }
 
   const byPlatform = new Map(accounts.map(a => [a.platform, a]));
-  const connectedCount = accounts.filter(a => !a.refreshRequired).length;
-  const total = SOCIAL_PLATFORMS.length;
+  // Only networks shown here count (an X account linked earlier would read "6 of 5").
+  const connectedCount = accounts.filter(a => !a.refreshRequired && CONNECTABLE_PLATFORMS.includes(a.platform)).length;
+  const total = CONNECTABLE_PLATFORMS.length;
   const linking = busy?.kind === 'linking';
 
   return (
@@ -325,7 +326,7 @@ export function ChannelsManager({
       )}
 
       <div className="channels-grid">
-        {SOCIAL_PLATFORMS.map(p => {
+        {CONNECTABLE_PLATFORMS.map(p => {
           const a = byPlatform.get(p);
           const needsReconnect = !!a?.refreshRequired;
           const connected = !!a && !needsReconnect;

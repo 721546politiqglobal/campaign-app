@@ -15,6 +15,11 @@ export type SocialAccount = {
 export const SOCIAL_PLATFORMS: readonly Platform[] =
   ['instagram', 'facebook', 'x', 'linkedin', 'tiktok', 'youtube'] as const;
 
+// Networks a campaign can link on /channels. X isn't linkable through
+// Ayrshare, so it's left out of the Channels page and the linking page; it
+// stays in SOCIAL_PLATFORMS so an account linked earlier still parses.
+export const CONNECTABLE_PLATFORMS: readonly Platform[] = SOCIAL_PLATFORMS.filter(p => p !== 'x');
+
 export function isSocialPlatform(v: unknown): v is Platform {
   return typeof v === 'string' && (SOCIAL_PLATFORMS as readonly string[]).includes(v);
 }

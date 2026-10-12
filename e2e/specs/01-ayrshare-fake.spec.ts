@@ -10,12 +10,12 @@ import { E2E_SECRETS, FAKE_AYRSHARE_URL } from '../env';
 
 const SEEDED_PROFILE_KEY = 'e2e-profile-a'; // e2e/seed.e2e.sql, campaign A
 
-/** A throwaway approved, human-written X post in campaign A (needs no disclosure). */
+/** A throwaway approved, human-written Facebook post in campaign A (needs no disclosure). */
 async function insertApproved(db: SupabaseClient, id: string, marker: string) {
   const { error } = await db.from('content_items').insert({
     id, campaign_id: CAMPAIGN_A, type: 'social_post', title: `E2E fake ${id}`,
     body: `Fake Ayrshare smoke ${marker}`, status: 'approved', is_ai_generated: false,
-    target_jurisdictions: ['US-FEDERAL'], created_by: USERS.staff.id, platforms: ['x'],
+    target_jurisdictions: ['US-FEDERAL'], created_by: USERS.staff.id, platforms: ['facebook'],
   });
   expect(error).toBeNull();
   const { error: e2 } = await db.from('approval_records').insert({
@@ -61,13 +61,13 @@ test('Publish now reaches the fake Ayrshare with the campaign profile key', asyn
     expect(req).toMatchObject({
       host: 'app', method: 'POST',
       headers: { authorization: `Bearer ${E2E_SECRETS.ayrshareKey}`, 'profile-key': SEEDED_PROFILE_KEY },
-      body: { platforms: ['twitter'] },
+      body: { platforms: ['facebook'] },
     });
     // The fake's post id is stored for analytics sync — in a second write after the status
     // flips to published (src/app/actions.ts publishAction), so poll for it.
     await expect.poll(async () =>
       (await db.from('content_items').select('ayrshare_post_ids').eq('id', id).single()).data?.ayrshare_post_ids)
-      .toEqual({ x: expect.stringMatching(/^fake-post-\d+$/) });
+      .toEqual({ facebook: expect.stringMatching(/^fake-post-\d+$/) });
   } finally {
     await cleanup(db, id);
   }
@@ -78,11 +78,11 @@ test('a platform failure from Ayrshare surfaces as a failed publish', async ({ a
   try {
     await insertApproved(db, id, marker);
     // Scoped to this test's post, so parallel publishes elsewhere still succeed.
-    await addFakeRule(marker, { failPlatforms: ['x'], match: { textIncludes: marker } });
+    await addFakeRule(marker, { failPlatforms: ['facebook'], match: { textIncludes: marker } });
     const page = await asRole('owner');
     await publishNow(page, id);
 
-    await expect(page.getByText('Publishing failed: X')).toBeVisible();
+    await expect(page.getByText('Publishing failed: Facebook')).toBeVisible();
     expect(await postsWith(marker)).toHaveLength(1);
     const { data } = await db.from('content_items').select('status').eq('id', id).single();
     expect(data?.status).toBe('approved');

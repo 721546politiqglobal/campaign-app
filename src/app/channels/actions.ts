@@ -8,7 +8,7 @@ import { getCampaign } from '@/lib/data';
 import { adminDb } from '@/lib/supabase';
 import { socialAccounts, MissingProviderKeyError } from '@/lib/services';
 import { getCampaignSocialProfile, saveProfileKeyIfAbsent, saveSocialAccounts, replaceMockProfileKey } from '@/lib/channels';
-import { SOCIAL_PLATFORMS, isSocialPlatform, type SocialAccount } from '@/domain/channels';
+import { CONNECTABLE_PLATFORMS, isSocialPlatform, type SocialAccount } from '@/domain/channels';
 import { SocialAccountsError, MockSocialAccountsProvider } from '@/integrations/social-accounts';
 import type { Platform } from '@/domain/types';
 
@@ -101,7 +101,7 @@ export async function startChannelLinkAction(): Promise<{ ok: true; url: string 
     const { url } = await socialAccounts.createLinkUrl({
       profileKey,
       redirect: `${process.env.NEXT_PUBLIC_SITE_URL}/channels?linked=1`,
-      platforms: [...SOCIAL_PLATFORMS],
+      platforms: [...CONNECTABLE_PLATFORMS],
     });
     await audit(s.campaignId, s.userId, 'channels_link_started');
     return { ok: true, url };

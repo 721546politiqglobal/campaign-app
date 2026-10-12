@@ -45,11 +45,12 @@ const US_TIMEZONES = [
 const DEFAULT_TIMEZONE = 'America/New_York';
 const MIN_LEAD_MS = 5 * 60 * 1000;
 
+// X isn't linkable through Ayrshare (see CONNECTABLE_PLATFORMS), so it's never offered.
 const CONTENT_TYPE_PLATFORMS: Record<string, Platform[]> = {
-  social_post:    ['instagram', 'facebook', 'x', 'linkedin', 'tiktok'],
+  social_post:    ['instagram', 'facebook', 'linkedin', 'tiktok'],
   reel:           ['instagram', 'tiktok', 'youtube'],
   press_release:  ['facebook', 'linkedin'],
-  ad_copy:        ['instagram', 'facebook', 'x', 'linkedin'],
+  ad_copy:        ['instagram', 'facebook', 'linkedin'],
   talking_points: ['linkedin'],
 };
 

@@ -39,3 +39,12 @@ describe('isSocialPlatform', () => {
     expect(isSocialPlatform(undefined)).toBe(false);
   });
 });
+
+import { CONNECTABLE_PLATFORMS, SOCIAL_PLATFORMS as ALL_PLATFORMS } from './channels';
+
+describe('CONNECTABLE_PLATFORMS', () => {
+  it('offers every social platform except X (not linkable through Ayrshare)', () => {
+    expect(CONNECTABLE_PLATFORMS).toEqual(['instagram', 'facebook', 'linkedin', 'tiktok', 'youtube']);
+    expect(ALL_PLATFORMS).toContain('x'); // still parsed if an account was linked earlier
+  });
+});

@@ -173,20 +173,22 @@ test.describe('happy path across roles', () => {
     await expect(owner.getByRole('button', { name: L.publishButton })).toBeVisible();
     expect(await item(db, id)).toMatchObject({ status: 'approved', scheduled_at: null });
 
-    await selectPlatforms(owner, ['X', 'Facebook']);
-    await owner.getByRole('button', { name: 'Publish to 2 platforms' }).click();
+    // X isn't offered (not linkable through Ayrshare); campaign A's other linked network is Facebook.
+    await expect(owner.getByRole('group', { name: 'Platforms' }).getByRole('checkbox', { name: 'X' })).toHaveCount(0);
+    await selectPlatforms(owner, ['Facebook']);
+    await owner.getByRole('button', { name: 'Publish to 1 platform' }).click();
     await owner.getByRole('dialog').getByRole('button', { name: 'Publish', exact: true }).click();
 
     await expect(owner.getByRole('heading', { name: 'Published', exact: true })).toBeVisible();
     const postedTo = owner.locator('.wizard-platform-list');
     await expect(postedTo).toContainText('Posted to');
-    await expect(postedTo.locator('.badge')).toHaveCount(2);
-    expect((await postedTo.locator('.badge').allInnerTexts()).sort()).toEqual(['Facebook', 'X']);
+    await expect(postedTo.locator('.badge')).toHaveCount(1);
+    expect(await postedTo.locator('.badge').allInnerTexts()).toEqual(['Facebook']);
     expect(await statusOf(db, id)).toBe('published');
 
     // One request per platform, each carrying the body with the disclosure appended.
     const posts = await postsWith(`Happy path body ${key}`);
-    expect(posts.map((p) => (p.body as { platforms: string[] }).platforms).flat().sort()).toEqual(['facebook', 'twitter']);
+    expect(posts.map((p) => (p.body as { platforms: string[] }).platforms).flat()).toEqual(['facebook']);
     for (const p of posts) {
       expect((p.body as { post: string }).post).toBe(`Happy path body ${key}\n\n${disclosure()}`);
     }
@@ -319,7 +321,7 @@ test.describe('gates', () => {
       // Capture a real publish of a throwaway approved item, aim it at the unapproved one.
       const ok = await approvedHumanItem(owner, `E2E capture pub ${key}`, `Capture publish ${key}`);
       await owner.goto(`/content/${ok}`);
-      await selectPlatforms(owner, ['X']);
+      await selectPlatforms(owner, ['Facebook']);
       await owner.getByRole('button', { name: 'Publish to 1 platform' }).click();
       const action = await captureAction(owner, () =>
         owner.getByRole('dialog').getByRole('button', { name: 'Publish', exact: true }).click());

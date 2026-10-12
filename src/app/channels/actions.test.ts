@@ -53,7 +53,8 @@ describe('startChannelLinkAction', () => {
     expect(saveProfileKeyIfAbsent).toHaveBeenCalledWith('c-1', { profileKey: 'pk-new', refId: 'ref' });
     expect(provider.createLinkUrl).toHaveBeenCalledWith({
       profileKey: 'pk-new', redirect: 'http://localhost:3000/channels?linked=1',
-      platforms: ['instagram', 'facebook', 'x', 'linkedin', 'tiktok', 'youtube'],
+      // X can't be linked through Ayrshare, so the linking page doesn't offer it.
+      platforms: ['instagram', 'facebook', 'linkedin', 'tiktok', 'youtube'],
     });
   });
 
