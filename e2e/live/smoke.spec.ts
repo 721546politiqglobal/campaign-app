@@ -29,13 +29,15 @@ test('ElevenLabs: GET /v1/voices lists voices', async () => {
   expect(Array.isArray(body.voices)).toBe(true);
 });
 
-test('HeyGen: GET /v2/avatars lists avatars', async () => {
+// /v2/avatars returns the whole public catalogue (~1,300 avatars, ~40s), so the
+// key is checked against the fast remaining-quota endpoint instead.
+test('HeyGen: the API key authenticates (remaining quota)', async () => {
   const key = process.env.HEYGEN_API_KEY;
   test.skip(!key, 'HEYGEN_API_KEY not set');
-  const res = await fetch('https://api.heygen.com/v2/avatars', { headers: { 'X-Api-Key': key!, accept: 'application/json' } });
+  const res = await fetch('https://api.heygen.com/v2/user/remaining_quota', { headers: { 'X-Api-Key': key!, accept: 'application/json' } });
   expect(res.status).toBe(200);
   const body = await res.json();
-  expect(body.data?.avatars ?? body.avatars).toBeTruthy();
+  expect(body.error ?? null).toBeNull();
 });
 
 test('Ayrshare: GET /api/user returns the account', async () => {

@@ -15,6 +15,17 @@ describe('buildTriagePrompt', () => {
   });
 });
 
+describe('buildTriagePrompt — opponent-owned posts', () => {
+  it("tells the model when a post comes from the opponent's own social account", () => {
+    const p = buildTriagePrompt({ ...item, source: 'Instagram', excerpt: 'Big rally tonight' }, ctx);
+    expect(p).toMatch(/posted on the opponent's own Instagram account/i);
+    expect(buildTriagePrompt(item, ctx)).not.toMatch(/opponent's own .* account/i);
+  });
+  it('defines opponent_statement as anything the opponent posted, even off-topic', () => {
+    expect(buildTriagePrompt(item, ctx)).toMatch(/even if it is not about this race/i);
+  });
+});
+
 describe('parseTriage', () => {
   it('accepts a valid level and trims the reason', () => {
     expect(parseTriage('{"level":"attack","reason":"  Directly criticizes our candidate. "}'))
