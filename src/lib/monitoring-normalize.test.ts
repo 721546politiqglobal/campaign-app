@@ -131,3 +131,25 @@ describe('presentMonitoringItems relevance', () => {
     expect(out).toHaveLength(1);
   });
 });
+
+describe('excerptFingerprint bylines', () => {
+  it('ignores a leading byline/dateline so syndicated copies match', () => {
+    const cnn = 'The Trump administration has spent $19 million in taxpayer money on the controversial ad campaign';
+    expect(excerptFingerprint(`By Betsy Klein, CNN (CNN) — ${cnn}`)).toBe(excerptFingerprint(cnn));
+    expect(excerptFingerprint(`By KEVIN FREKING WASHINGTON (AP) — ${cnn}`)).toBe(excerptFingerprint(cnn));
+    expect(excerptFingerprint(`WASHINGTON (AP) — ${cnn}`)).toBe(excerptFingerprint(cnn));
+  });
+});
+
+describe('presentMonitoringItems triage', () => {
+  const opp = { opponentName: 'Donald Trump', aliases: [], keywords: [] as string[] };
+  it('passes through triage, treating untriaged rows as relevant', () => {
+    const base = { campaign_id: 'c', source: 'CNN', opponent: null, url: 'https://cnn.com/a', captured_at: '2026-10-10T10:00:00Z' };
+    const out = presentMonitoringItems([
+      { ...base, id: 'a', excerpt: 'Trump attacks the senator over housing', triage_level: 'attack', triage_reason: 'Names our candidate.' },
+      { ...base, id: 'b', excerpt: 'Trump tariffs rise again this week', url: 'https://cnn.com/b' },
+    ], opp);
+    expect(out.find(r => r.id === 'a')).toMatchObject({ triageLevel: 'attack', triageReason: 'Names our candidate.' });
+    expect(out.find(r => r.id === 'b')).toMatchObject({ triageLevel: 'relevant', triageReason: undefined });
+  });
+});

@@ -10,8 +10,15 @@ const select = vi.fn(() => ({ eq }));
 const profileRow: { value: Record<string, unknown> | null } = { value: null };
 const profileSelect = vi.fn(() => ({ eq: () => ({ maybeSingle: async () => ({ data: profileRow.value, error: null }) }) }));
 // recent rows for the syndication check
-const recent: { rows: { excerpt: string }[] } = { rows: [] };
-const recentSelect = vi.fn(() => ({ eq: () => ({ gte: () => ({ order: () => ({ limit: async () => ({ data: recent.rows, error: null }) }) }) }) }));
+const recent: { rows: { excerpt: string }[]; existingUrl: boolean } = { rows: [], existingUrl: false };
+// monitoring_results reads: the exact-URL check (eq.eq.maybeSingle) and the
+// recent-rows syndication scan (eq.gte.order.limit).
+const recentSelect = vi.fn(() => ({
+  eq: () => ({
+    eq: () => ({ maybeSingle: async () => ({ data: recent.existingUrl ? { id: 'old' } : null, error: null }) }),
+    gte: () => ({ order: () => ({ limit: async () => ({ data: recent.rows, error: null }) }) }),
+  }),
+}));
 vi.mock('@/lib/supabase', () => ({
   adminDb: {
     from: vi.fn((table: string) => {
@@ -28,6 +35,8 @@ vi.mock('@/lib/credibility', () => ({
   isRelevant: vi.fn(() => true),
 }));
 vi.mock('@/lib/store', () => ({ uid: vi.fn(() => 'mr-1') }));
+const triage = vi.fn(async (..._a: unknown[]) => ({ level: 'relevant', reason: 'About the opponent.' }));
+vi.mock('@/lib/services', () => ({ monitoringTriager: { triage: (...a: unknown[]) => triage(...a) } }));
 
 function req(body: unknown) {
   return new Request('http://x/api/monitoring/ingest', {
@@ -47,6 +56,35 @@ describe('monitoring ingest', () => {
     campaignRow.error = null;
     profileRow.value = null;
     recent.rows = [];
+    recent.existingUrl = false;
+  });
+
+  it('stores the AI triage level and reason, with race context from the profile', async () => {
+    profileRow.value = { full_name: 'Ernesto Ackerman', office: 'State Senate', district: 'District 24', opponent_name: 'Susan Collins', opponent_aliases: [], monitoring_keywords: [] };
+    triage.mockResolvedValueOnce({ level: 'attack', reason: 'Names our candidate.' });
+    const { POST } = await import('./route');
+    await POST(req({ ...valid, excerpt: 'Collins attacks Ackerman' }));
+    const row = (upsert.mock.calls[0] as unknown[])[0] as { triage_level: string; triage_reason: string };
+    expect(row).toMatchObject({ triage_level: 'attack', triage_reason: 'Names our candidate.' });
+    expect(triage.mock.calls[0][1]).toMatchObject({ candidateName: 'Ernesto Ackerman', district: 'District 24', opponentName: 'Susan Collins' });
+  });
+
+  it('skips an already-captured URL without calling the AI triage', async () => {
+    recent.existingUrl = true;
+    const { POST } = await import('./route');
+    const res = await POST(req(valid));
+    expect(await res.json()).toMatchObject({ ok: true, skipped: true, reason: 'duplicate_url' });
+    expect(triage).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it('still saves the story as relevant when triage throws', async () => {
+    triage.mockRejectedValueOnce(new Error('LLM_API_KEY is not configured'));
+    const { POST } = await import('./route');
+    const res = await POST(req(valid));
+    expect(res.status).toBe(200);
+    const row = (upsert.mock.calls[0] as unknown[])[0] as { triage_level: string; triage_reason: string | null };
+    expect(row).toMatchObject({ triage_level: 'relevant', triage_reason: null });
   });
 
   it('decodes HTML entities and cleans the source name before saving', async () => {
@@ -130,6 +168,17 @@ describe('monitoring ingest', () => {
     const { POST } = await import('./route');
     expect((await POST(req({ ...valid, source: 42 }))).status).toBe(400);
     expect((await POST(req('{not json'))).status).toBe(400);
+  });
+
+  it('still saves the story (without triage) if the triage columns are not migrated yet', async () => {
+    upsert.mockResolvedValueOnce({ error: { code: 'PGRST204', message: "Could not find the 'triage_level' column of 'monitoring_results' in the schema cache" } as never, data: null });
+    const { POST } = await import('./route');
+    const res = await POST(req(valid));
+    expect(res.status).toBe(200);
+    expect(upsert).toHaveBeenCalledTimes(2);
+    const retry = (upsert.mock.calls[1] as unknown[])[0] as Record<string, unknown>;
+    expect(retry).not.toHaveProperty('triage_level');
+    expect(retry).not.toHaveProperty('triage_reason');
   });
 
   it('does not leak the database error message on a failed upsert', async () => {

@@ -19,6 +19,7 @@ function parseConsentStatus<F>(raw: unknown, fallback: F): ConsentStatus | F {
 
 import type { CandidateProfile } from '@/domain/types';
 import type { Locale } from '@/lib/locale';
+import type { RebuttalContext } from '@/lib/prompt';
 import { ayrshareUrl } from './ayrshare-base';
 
 export interface ContentGenerator {
@@ -29,6 +30,8 @@ export interface ContentGenerator {
     candidateProfile?: CandidateProfile;
     locale?: Locale;
     matchLanguageOf?: string;
+    /** Set when drafting a response to a monitored story. */
+    rebuttal?: RebuttalContext;
   }): Promise<{ text: string; title: string; locale: Locale }>;
 }
 
@@ -90,15 +93,16 @@ export class ClaudeContentGenerator implements ContentGenerator {
     this.client = new Anthropic({ apiKey });
   }
 
-  async draft({ instruction, type, candidateProfile, locale, matchLanguageOf }: {
+  async draft({ instruction, type, candidateProfile, locale, matchLanguageOf, rebuttal }: {
     instruction: string;
     type: string;
     audience?: string;
     candidateProfile?: CandidateProfile;
     locale?: Locale;
     matchLanguageOf?: string;
+    rebuttal?: RebuttalContext;
   }) {
-    const { buildCandidatePrompt } = await import('@/lib/prompt');
+    const { buildCandidatePrompt, REBUTTAL_RULES, rebuttalStoryBlock } = await import('@/lib/prompt');
     const { isSupportedLocale, DEFAULT_LOCALE } = await import('@/lib/locale');
 
     // Two mutually exclusive modes: an explicit locale (the caller already
@@ -109,13 +113,15 @@ export class ClaudeContentGenerator implements ContentGenerator {
     const explicitLocale = isSupportedLocale(locale) ? locale : undefined;
     const excerptToMatch = !explicitLocale ? matchLanguageOf?.trim() : undefined;
 
-    const systemPrompt = candidateProfile
+    const baseSystemPrompt = candidateProfile
       ? buildCandidatePrompt(candidateProfile, type, explicitLocale ?? DEFAULT_LOCALE)
       : explicitLocale === 'es'
         ? 'You are a professional political campaign copywriter. Write factual, persuasive campaign content in fluent, natural Spanish. Keep the literal marker word "Title:" in English exactly as shown in the instructions.'
         : 'You are a professional political campaign copywriter. Write factual, persuasive campaign content.';
+    const systemPrompt = rebuttal ? `${baseSystemPrompt}\n\n${REBUTTAL_RULES}` : baseSystemPrompt;
+    const storyBlock = rebuttal ? `${rebuttalStoryBlock(rebuttal)}\n\n` : '';
 
-    const userMessage = excerptToMatch
+    const userMessage = storyBlock + (excerptToMatch
       ? `Content type: ${type}
 Brief: ${instruction}
 
@@ -130,7 +136,7 @@ Write the content now. First line: "Language: en" or "Language: es" (whichever l
       : `Content type: ${type}
 Brief: ${instruction}
 
-Write the content now. Start with "Title: [your title here]" on the first line, then a blank line, then the body.`;
+Write the content now. Start with "Title: [your title here]" on the first line, then a blank line, then the body.`);
 
     const msg = await this.client.messages.create({
       model: 'claude-sonnet-4-6',
@@ -700,14 +706,14 @@ export class NewsDataMonitoringSource implements MonitoringSource {
 // ── Mock implementations (used when no API key is present) ───────────────────
 
 export class MockContentGenerator implements ContentGenerator {
-  async draft({ instruction, type, locale }: {
+  async draft({ instruction, type, locale, rebuttal }: {
     instruction: string; type: string; candidateProfile?: CandidateProfile;
-    locale?: Locale; matchLanguageOf?: string;
+    locale?: Locale; matchLanguageOf?: string; rebuttal?: RebuttalContext;
   }) {
     const { isSupportedLocale, DEFAULT_LOCALE } = await import('@/lib/locale');
     const resolvedLocale: Locale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
     const title = instruction.replace(/^(make|write|draft)\s+(a|an)?\s*/i, '').slice(0, 60) || 'Untitled draft';
-    const text =
+    const text = (rebuttal ? `Responding to ${rebuttal.source}: here's where we stand.\n\n` : '') +
       `Here's how our plan answers what voters told us matters most.\n\n` +
       `${instruction.trim()}\n\n` +
       `We'll keep costs down, protect what works, and fix what doesn't. ` +

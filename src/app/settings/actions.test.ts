@@ -84,6 +84,18 @@ describe('saveProfileAction', () => {
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
+  it('rejects generic monitoring aliases/keywords without saving, naming the offending terms', async () => {
+    const { saveProfileAction } = await import('./actions');
+    const result = await saveProfileAction(INITIAL, formData({
+      ...VALID, opponent_aliases: 'Trump, president, white house', monitoring_keywords: 'Doral zoning, democrats',
+    }));
+    expect(result.ok).toBe(false);
+    expect(result.fieldErrors?.opponent_aliases).toContain('president, white house');
+    expect(result.fieldErrors?.opponent_aliases).not.toContain('Trump');
+    expect(result.fieldErrors?.monitoring_keywords).toContain('democrats');
+    expect(upsertCandidateProfile).not.toHaveBeenCalled();
+  });
+
   it('translates validation messages into the session locale', async () => {
     session.locale = 'es';
     const { saveProfileAction } = await import('./actions');

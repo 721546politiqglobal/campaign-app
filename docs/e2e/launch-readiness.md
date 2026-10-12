@@ -223,3 +223,15 @@ Live n8n workflow ("My workflow", GFk7S3n3qL4aXFj9) + production data (25,424 ro
   - "hamza" Facebook page is "Donald" (wrong page → "not available"); should be `DonaldTrump`.
   - Both "Ernesto for district 24" campaigns use aliases "president" / "white house" (and typo "Donal J. Trump") and keywords "democrats" / "whashington": generic terms make unrelated stories pass the relevance filter. Aliases should be names for the opponent ("Trump", "DJT"); keywords should be race-specific (district, city, local issues).
   - No campaign has a Google Alerts RSS URL; two campaigns share the name "Ernesto for district 24".
+
+### Monitoring relevance & rebuttal upgrade (2026-10-12)
+1. **AI triage** (`src/lib/monitoring-triage.ts`, migration `045_monitoring_triage.sql`): every new story is rated by Claude Haiku 5.5 — Attack on candidate / Opponent statement / Race-relevant / Low priority — with a one-line "why it matters". Feed shows the badge + reason, a "Priority only" filter, and hides low-priority stories behind a toggle. Already-captured URLs skip triage (no wasted calls). Failures save the story as Race-relevant; if migration 045 hasn't run, stories still save (without triage).
+2. **YouTube** (n8n): relevance order, last 3 days, `relevanceLanguage=en`, `regionCode=US` (was newest-first, which surfaced spam Shorts).
+3. **Duplicates**: bylines/datelines ("By …, CNN (CNN) —", "WASHINGTON (AP) —") stripped before comparing stories.
+4. **Settings guardrail**: generic aliases/keywords ("president", "white house", "democrats", …) are rejected with an EN/ES explanation naming the terms.
+5. **Rebuttals**: the AI now receives the full story (server-loaded by id, scoped to the campaign — cross-campaign ids are refused), link, source, date, opponent and triage reason, plus rebuttal rules (lead with the candidate's positions, don't repeat the attack, treat claims as unverified, never invent facts).
+6. **Formats**: each story offers Draft rebuttal (reply post), Talking points and Press statement; the editor shows "Responding to {source}" with a link to the story.
+
+Tests: 804 unit (new: triage, ingest triage/URL pre-check/migration fallback, bylines, generic-term validation, rebuttal prompt and draft action), E2E `e2e/specs/monitoring-triage.spec.ts`; full suite 421 passed / 5 skipped / 0 failed before the final small changes, monitoring + content specs 55/55 after.
+
+**Deploy order:** migration 045 was applied to production on 2026-10-12 (via the Supabase SQL editor; verified through the API, existing rows untouched) — deploy the branch next. Production needs `LLM_API_KEY` (already used for drafting). Expected triage cost: well under $1/day at current volume.

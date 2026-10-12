@@ -53,3 +53,21 @@ export function validateCandidateProfile(input: ProfileInput): Result {
   if (input.photoUrl && !isHttpUrl(input.photoUrl)) errors.photoUrl = 'Enter a valid http(s) URL.';
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true };
 }
+
+// Monitoring aliases/keywords decide which stories count as relevant. These
+// words appear in nearly every political story, so using one makes the
+// opposition feed fill with unrelated news.
+const GENERIC_MONITORING_TERMS = new Set([
+  'president', 'the president', 'vice president', 'white house', 'congress', 'senate', 'senator', 'house',
+  'government', 'governor', 'mayor', 'politics', 'political', 'election', 'elections', 'vote', 'voters',
+  'campaign', 'democrat', 'democrats', 'democratic', 'republican', 'republicans', 'gop', 'party',
+  'america', 'american', 'usa', 'us', 'united states', 'washington', 'news', 'policy', 'state', 'city',
+]);
+
+/** Terms too generic (or too short) to use as monitoring aliases/keywords. */
+export function genericMonitoringTerms(terms: string[]): string[] {
+  return terms.filter(t => {
+    const norm = t.trim().toLowerCase().replace(/\s+/g, ' ');
+    return norm.length < 3 || GENERIC_MONITORING_TERMS.has(norm);
+  });
+}

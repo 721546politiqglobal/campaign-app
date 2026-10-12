@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
 
   const { data: profile } = await adminDb
     .from('candidate_profiles')
-    .select('opponent_name, opponent_aliases, monitoring_keywords')
+    .select('full_name, office, district, opponent_name, opponent_aliases, monitoring_keywords')
     .eq('campaign_id', campaign_id)
     .maybeSingle();
   const opp = {
@@ -114,6 +114,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, skipped: true, reason: 'off_topic' });
   }
 
+  // Already captured this exact URL (e.g. the same latest Instagram posts every
+  // run) → skip before spending an AI triage call on it.
+  const { data: existing } = await adminDb
+    .from('monitoring_results')
+    .select('id')
+    .eq('campaign_id', campaign_id)
+    .eq('url', url)
+    .maybeSingle();
+  if (existing) {
+    return NextResponse.json({ ok: true, skipped: true, reason: 'duplicate_url' });
+  }
+
   // The same wire story republished by several outlets → keep the first copy.
   const fingerprint = excerptFingerprint(excerpt);
   if (fingerprint) {
@@ -132,21 +144,48 @@ export async function POST(req: NextRequest) {
   // Dedup atomically on (campaign_id, url) — a unique index backs this
   // (migration 017). Concurrent ingests can't both insert the same URL any more
   // (audit finding DATA-17); the DB collapses the conflict and we skip.
-  const { error: upsertError } = await adminDb
-    .from('monitoring_results')
-    .upsert(
+  // AI triage: how much this story matters to the campaign. Never blocks the
+  // save — any failure (missing key, timeout, refusal) records 'relevant'.
+  const finalOpponent = opponent || matchOpponent(`${excerpt} ${source}`, opp);
+  let triage: { level: string; reason: string | null } = { level: 'relevant', reason: null };
+  try {
+    const { monitoringTriager } = await import('@/lib/services');
+    triage = await monitoringTriager.triage(
+      { source: sourceDisplayName(source, url), excerpt: excerpt.substring(0, MAX_EXCERPT_LEN), url, opponent: finalOpponent },
       {
-        id: uid(),
-        campaign_id,
-        source: sourceDisplayName(source, url),
-        opponent: opponent || matchOpponent(`${excerpt} ${source}`, opp),
-        excerpt: excerpt.substring(0, MAX_EXCERPT_LEN),
-        url,
-        credibility: scoreCredibility(url),
-        category: categorizeSource(url, source),
+        candidateName: (profile?.full_name as string | null) ?? null,
+        office: (profile?.office as string | null) ?? null,
+        district: (profile?.district as string | null) ?? null,
+        opponentName: opp.opponentName, aliases: opp.aliases, keywords: opp.keywords,
       },
-      { onConflict: 'campaign_id,url', ignoreDuplicates: true },
     );
+  } catch (e) {
+    console.error('[monitoring/ingest] triage failed', e instanceof Error ? e.message : e);
+  }
+
+  const row = {
+    id: uid(),
+    campaign_id,
+    source: sourceDisplayName(source, url),
+    opponent: finalOpponent,
+    excerpt: excerpt.substring(0, MAX_EXCERPT_LEN),
+    url,
+    credibility: scoreCredibility(url),
+    category: categorizeSource(url, source),
+    triage_level: triage.level,
+    triage_reason: triage.reason,
+  };
+  const save = (r: Record<string, unknown>) => adminDb
+    .from('monitoring_results')
+    .upsert(r, { onConflict: 'campaign_id,url', ignoreDuplicates: true });
+  let { error: upsertError } = await save(row);
+  // Deployed before migration 045 (triage columns)? Save the story without
+  // triage rather than dropping it.
+  if (upsertError && /triage_(level|reason)/.test(String(upsertError.message ?? ''))) {
+    console.error('[monitoring/ingest] triage columns missing — run migration 045', upsertError.message);
+    const { triage_level: _l, triage_reason: _r, ...withoutTriage } = row;
+    ({ error: upsertError } = await save(withoutTriage));
+  }
 
   if (upsertError) {
     console.error('[monitoring/ingest]', upsertError);

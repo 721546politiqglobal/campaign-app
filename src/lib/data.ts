@@ -2,7 +2,7 @@
 // All functions use the admin client — server-side only.
 
 import { adminDb } from './supabase';
-import { presentMonitoringItems, type StoredMonitoringRow } from './monitoring-normalize';
+import { presentMonitoringItems, type PresentedMonitoringItem, type StoredMonitoringRow } from './monitoring-normalize';
 import { ContentStatus, ContentType, Platform } from '@/domain/types';
 import type { Locale } from '@/lib/locale';
 import { ACTIVE_SUBSCRIPTION_STATUSES, type CampaignStatusFilter } from '@/lib/campaign-filters';
@@ -18,12 +18,7 @@ export interface Campaign {
   currentPeriodEnd: string | null;
 }
 export interface User { id: string; name: string; role: string; campaignId: string | null; email: string | null; }
-export interface MonitoringResult {
-  id: string; campaignId: string; source: string; opponent?: string;
-  excerpt: string; url: string; capturedAt: string;
-  credibility: 'high' | 'medium' | 'low';
-  category: 'news' | 'social' | 'blog' | 'press_release';
-}
+export type MonitoringResult = PresentedMonitoringItem;
 
 export async function getCampaign(campaignId: string): Promise<Campaign | null> {
   const { data } = await adminDb.from('campaigns').select('*').eq('id', campaignId).single();
@@ -118,6 +113,24 @@ export async function getMonitoringResults(campaignId: string): Promise<Monitori
     keywords: ((profile?.monitoring_keywords as string[] | null) ?? []).filter(Boolean),
   };
   return presentMonitoringItems((data ?? []) as StoredMonitoringRow[], opp).slice(0, MONITORING_FEED_LIMIT);
+}
+
+// One story from the caller's own campaign (for "Draft rebuttal"); null when
+// the id is unknown or belongs to another campaign.
+export async function getMonitoringItemForCampaign(campaignId: string, id: string): Promise<MonitoringResult | null> {
+  const [{ data }, { data: profile }] = await Promise.all([
+    adminDb.from('monitoring_results').select('*').eq('campaign_id', campaignId).eq('id', id).maybeSingle(),
+    adminDb.from('candidate_profiles').select('opponent_name, opponent_aliases').eq('campaign_id', campaignId).maybeSingle(),
+  ]);
+  if (!data) return null;
+  const opp = {
+    opponentName: (profile?.opponent_name as string | null) ?? null,
+    aliases: ((profile?.opponent_aliases as string[] | null) ?? []).filter(Boolean),
+  };
+  // No relevance/dedupe filtering for a single explicitly chosen story.
+  return presentMonitoringItems([data as StoredMonitoringRow], { ...opp, keywords: [] })[0]
+    ?? presentMonitoringItems([data as StoredMonitoringRow], { opponentName: null, aliases: [], keywords: [] })[0]
+    ?? null;
 }
 
 // Exact number of active (not dismissed) items, for count tiles.

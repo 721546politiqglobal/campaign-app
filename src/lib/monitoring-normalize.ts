@@ -113,19 +113,29 @@ export function relevanceTermsFor(p: OpponentProfile & { keywords: string[] }): 
 
 // Same story syndicated across outlets → same fingerprint. Null for excerpts
 // too short to be distinctive ("Crime is down").
+// Wire stories are republished with a byline/dateline prefix
+// ("By Betsy Klein, CNN (CNN) —", "WASHINGTON (AP) —") — drop it before comparing.
+const BYLINE_PREFIX = /^\s*(?:[Bb][Yy]\s+[^—–]{2,90}?\s*[—–]\s*|[A-Z][A-Z .,'-]{1,40}\s*\([A-Za-z .]{1,20}\)\s*[—–]\s*)/;
+
 export function excerptFingerprint(excerpt: string): string | null {
-  const norm = cleanText(excerpt).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+  const norm = cleanText(excerpt).replace(BYLINE_PREFIX, '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
   if (norm.split(' ').length < 6) return null;
   return norm.slice(0, 160);
 }
 
+export type TriageLevel = 'attack' | 'opponent_statement' | 'relevant' | 'noise';
+const TRIAGE_LEVEL_SET = new Set<string>(['attack', 'opponent_statement', 'relevant', 'noise']);
+
 export type StoredMonitoringRow = {
   id: string; campaign_id: string; source: string; opponent: string | null; excerpt: string;
   url: string; captured_at: string; credibility?: string | null; category?: string | null;
+  triage_level?: string | null; triage_reason?: string | null;
 };
 export type PresentedMonitoringItem = {
   id: string; campaignId: string; source: string; opponent?: string; excerpt: string; url: string; capturedAt: string;
   credibility: 'high' | 'medium' | 'low'; category: 'news' | 'social' | 'blog' | 'press_release';
+  // Rows captured before triage existed count as 'relevant'.
+  triageLevel: TriageLevel; triageReason?: string;
 };
 
 // Rows written by our integrations (own labels or raw NewsData slugs), as
@@ -160,6 +170,8 @@ export function presentMonitoringItems(
       excerpt, url: r.url, capturedAt: r.captured_at,
       credibility: scoreCredibility(r.url),
       category: categorizeSource(r.url, rawSource),
+      triageLevel: r.triage_level && TRIAGE_LEVEL_SET.has(r.triage_level) ? r.triage_level as TriageLevel : 'relevant',
+      triageReason: r.triage_reason ?? undefined,
     });
   }
   return out;

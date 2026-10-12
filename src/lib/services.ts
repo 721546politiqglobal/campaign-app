@@ -20,6 +20,7 @@ import {
   AyrshareSocialAccountsProvider, MockSocialAccountsProvider,
   type SocialAccountsProvider,
 } from '@/integrations/social-accounts';
+import { ClaudeMonitoringTriager, MockMonitoringTriager, type MonitoringTriager } from '@/lib/monitoring-triage';
 
 export const disclosureEngine = new DisclosureEngine();
 export const lifecycle = new ContentLifecycle(contentRepo, approvalRepo, disclosureRepo, auditRepo);
@@ -95,6 +96,14 @@ export const publisher: Publisher = process.env.AYRSHARE_API_KEY
 export const analyticsProvider: AnalyticsProvider = process.env.AYRSHARE_API_KEY
   ? new AyrshareAnalyticsProvider(process.env.AYRSHARE_API_KEY)
   : new MockAnalyticsProvider();
+
+// Rates incoming opposition-monitoring stories (attack / opponent statement /
+// relevant / noise). Callers must treat a failure as "relevant" — it never
+// blocks ingest.
+export const monitoringTriager: MonitoringTriager = realOrMock(
+  'LLM_API_KEY',
+  () => new ClaudeMonitoringTriager(process.env.LLM_API_KEY!),
+  () => new MockMonitoringTriager());
 
 export const monitoringSource = realOrMock(
   'NEWSDATA_API_KEY',

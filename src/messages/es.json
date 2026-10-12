@@ -176,7 +176,9 @@
       },
       "typeLabel": "Tipo de contenido",
       "suggestionsLabel": "Prueba una de estas",
-      "draftHint": "Puedes editar el título y el cuerpo antes de guardar."
+      "draftHint": "Puedes editar el título y el cuerpo antes de guardar.",
+      "respondingTo": "Respondiendo a {source}",
+      "viewStory": "Abrir la historia"
     },
     "untitled": "Sin título",
     "description": "Todos los borradores, revisiones y publicaciones en un solo lugar.",
@@ -413,7 +415,8 @@
       "contentLocale": "Elige un idioma de contenido compatible.",
       "voiceTone": "Elige un tono de voz válido.",
       "url": "Ingresa una URL http(s) válida.",
-      "invalid": "Este valor no es válido."
+      "invalid": "Este valor no es válido.",
+      "genericTerms": "Demasiado general para el monitoreo: {terms}. Usa otros nombres del oponente (p. ej., un apodo o usuario) o temas específicos de esta contienda."
     },
     "profile": {
       "heading": "Perfil del candidato",
@@ -552,7 +555,21 @@
     "undo": "Deshacer",
     "restored": "Historia restaurada.",
     "genericError": "Algo salió mal. Inténtalo de nuevo.",
-    "respondToStory": "Responde a esta noticia de {source}: \"{excerpt}\""
+    "respondToStory": "Responde a esta noticia de {source}: \"{excerpt}\"",
+    "priorityOnly": "Solo prioritarias",
+    "showNoise": "Mostrar {count, plural, one {# historia de baja prioridad} other {# historias de baja prioridad}}",
+    "hideNoise": "Ocultar historias de baja prioridad",
+    "whyItMatters": "Por qué importa:",
+    "triage": {
+      "attack": "Ataque al candidato",
+      "opponent_statement": "Declaración del oponente",
+      "relevant": "Relevante para la contienda",
+      "noise": "Baja prioridad"
+    },
+    "respondAs": {
+      "talking_points": "Puntos clave",
+      "press_release": "Comunicado de prensa"
+    }
   },
   "analytics": {
     "pageTitle": "Analítica",
@@ -1642,7 +1659,8 @@
       "contentBodyRequired": "Escribe o genera el contenido antes de guardar.",
       "noPlatformsSelected": "Selecciona al menos una plataforma.",
       "disclosureRequiresApproval": "Este contenido debe aprobarse antes de adjuntar una divulgación.",
-      "notScheduled": "Este contenido no está programado."
+      "notScheduled": "Este contenido no está programado.",
+      "storyNotFound": "Esa historia ya no está disponible. Ábrela de nuevo desde Monitoreo."
     },
     "admin": {
       "stripeNotConfigured": "STRIPE_SECRET_KEY no está configurada en este servidor.",

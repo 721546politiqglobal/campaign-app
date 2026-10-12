@@ -6,7 +6,7 @@ import { requireSession } from '@/lib/session';
 import { can } from '@/lib/permissions';
 import { adminDb, throwOnError } from '@/lib/supabase';
 import { upsertCandidateProfile } from '@/lib/candidate';
-import { validateCandidateProfile, PROFILE_MAX_LENGTHS, PROFILE_REQUIRED_FIELDS } from '@/lib/profile-validation';
+import { genericMonitoringTerms, validateCandidateProfile, PROFILE_MAX_LENGTHS, PROFILE_REQUIRED_FIELDS } from '@/lib/profile-validation';
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/lib/locale';
 import type { VoiceTone } from '@/domain/types';
 import type { ActionFormState } from '@/lib/form-state';
@@ -87,8 +87,16 @@ export async function saveProfileAction(_prev: ActionFormState, formData: FormDa
   };
   // Reject garbage before it reaches AI-drafting prompts (UX-3).
   const check = validateCandidateProfile(fields);
-  if (!check.ok) {
-    return { ok: false, error: t('form.fixErrors'), fieldErrors: translateFieldErrors(check.errors, fields, t), values };
+  // Generic aliases/keywords ("president", "democrats") make every political
+  // story look relevant and flood the opposition feed.
+  const monitoringErrors: Record<string, string> = {};
+  for (const name of ['opponent_aliases', 'monitoring_keywords'] as const) {
+    const generic = genericMonitoringTerms(splitList(values[name], ','));
+    if (generic.length) monitoringErrors[name] = t('validation.genericTerms', { terms: generic.join(', ') });
+  }
+  if (!check.ok || Object.keys(monitoringErrors).length) {
+    const fieldErrors = { ...(check.ok ? {} : translateFieldErrors(check.errors, fields, t)), ...monitoringErrors };
+    return { ok: false, error: t('form.fixErrors'), fieldErrors, values };
   }
 
   try {

@@ -1584,6 +1584,9 @@ tr.row:hover td, .table-hover tbody tr:hover td, tbody tr:has(.row-link):hover t
 .mon-source { font-weight: 600; font-size: 13.5px; color: var(--text); }
 .mon-time { font-size: 12px; color: var(--text-3); white-space: nowrap; }
 .mon-excerpt { font-size: 14px; line-height: 1.6; margin: 0 0 8px; color: var(--text); overflow-wrap: anywhere; }
+.mon-why { margin: 0 0 6px; color: var(--text-2); line-height: 1.5; }
+.mon-why strong { color: var(--text); font-weight: 600; }
+.mon-noise-toggle { align-self: flex-start; }
 .mon-more { background: none; border: 0; padding: 0; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .mon-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-top: var(--s-3); }
 .mon-dismiss { margin-left: auto; color: var(--text-3); }
@@ -1805,3 +1808,8 @@ tr.row:hover td, .table-hover tbody tr:hover td, tbody tr:has(.row-link):hover t
   .skeleton { animation: none; background: var(--surface-2); }
   .btn[aria-busy="true"]::after, .spinner, .channels-banner .spinner { animation: none; border-color: currentColor; opacity: 0.5; }
 }
+
+/* Content editor: the monitored story a rebuttal responds to */
+.editor-respond { border-left: 3px solid var(--accent); padding: 8px 12px; margin: 0 0 var(--s-3); background: var(--surface-2, transparent); border-radius: 6px; }
+.editor-respond-label { margin: 0 0 4px; font-weight: 600; }
+.editor-respond-excerpt { margin: 0 0 4px; color: var(--text-2); }

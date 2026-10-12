@@ -59,3 +59,18 @@ describe('validateCandidateProfile', () => {
     expect(PARTIES).toContain('Democratic');
   });
 });
+
+import { genericMonitoringTerms } from './profile-validation';
+
+describe('genericMonitoringTerms', () => {
+  it('flags single generic words and phrases that match almost every political story', () => {
+    expect(genericMonitoringTerms(['president', 'White House', 'Donal J. Trump'])).toEqual(['president', 'White House']);
+    expect(genericMonitoringTerms(['democrats', 'Venezuela', 'District 24'])).toEqual(['democrats']);
+  });
+  it('allows specific names, handles and local issues', () => {
+    expect(genericMonitoringTerms(['Trump', 'DJT', 'Doral zoning', 'District 24', 'realDonaldTrump'])).toEqual([]);
+  });
+  it('flags terms that are too short to be meaningful', () => {
+    expect(genericMonitoringTerms(['tv', 'a'])).toEqual(['tv', 'a']);
+  });
+});

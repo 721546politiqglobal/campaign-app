@@ -176,7 +176,9 @@
       },
       "typeLabel": "Content type",
       "suggestionsLabel": "Try one of these",
-      "draftHint": "You can edit the title and body before saving."
+      "draftHint": "You can edit the title and body before saving.",
+      "respondingTo": "Responding to {source}",
+      "viewStory": "Open the story"
     },
     "untitled": "Untitled",
     "description": "Every draft, review and post in one place.",
@@ -413,7 +415,8 @@
       "contentLocale": "Choose a supported content language.",
       "voiceTone": "Pick a valid voice tone.",
       "url": "Enter a valid http(s) URL.",
-      "invalid": "This value isn't valid."
+      "invalid": "This value isn't valid.",
+      "genericTerms": "Too broad for monitoring: {terms}. Use other names for the opponent (e.g. a nickname or handle) or issues specific to this race."
     },
     "profile": {
       "heading": "Candidate profile",
@@ -552,7 +555,21 @@
     "undo": "Undo",
     "restored": "Story restored.",
     "genericError": "Something went wrong. Please try again.",
-    "respondToStory": "Respond to this story from {source}: \"{excerpt}\""
+    "respondToStory": "Respond to this story from {source}: \"{excerpt}\"",
+    "priorityOnly": "Priority only",
+    "showNoise": "Show {count, plural, one {# low-priority story} other {# low-priority stories}}",
+    "hideNoise": "Hide low-priority stories",
+    "whyItMatters": "Why it matters:",
+    "triage": {
+      "attack": "Attack on candidate",
+      "opponent_statement": "Opponent statement",
+      "relevant": "Race-relevant",
+      "noise": "Low priority"
+    },
+    "respondAs": {
+      "talking_points": "Talking points",
+      "press_release": "Press statement"
+    }
   },
   "analytics": {
     "pageTitle": "Analytics",
@@ -1642,7 +1659,8 @@
       "contentBodyRequired": "Write or generate the content before saving.",
       "noPlatformsSelected": "Select at least one platform.",
       "disclosureRequiresApproval": "This content must be approved before a disclosure can be attached.",
-      "notScheduled": "This content isn’t scheduled."
+      "notScheduled": "This content isn’t scheduled.",
+      "storyNotFound": "That story is no longer available. Open it again from Monitoring."
     },
     "admin": {
       "stripeNotConfigured": "STRIPE_SECRET_KEY is not configured on this server.",

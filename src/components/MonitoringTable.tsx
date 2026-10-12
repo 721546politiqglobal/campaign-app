@@ -51,12 +51,18 @@ function detectTrending(results: MonitoringResult[]): Set<string> {
   return trendingIds;
 }
 
-// The `?brief=&type=` contract /content/new understands: the editor is
-// pre-filled with the excerpt as its instruction.
-function rebuttalHref(brief: string): string {
-  const params = new URLSearchParams({ brief, type: 'social_post' });
+// The `?brief=&type=&respondTo=` contract /content/new understands: the
+// editor is pre-filled with the brief, and the server loads the full story by
+// id (scoped to the campaign) for the AI.
+const RESPONSE_TYPES = ['social_post', 'talking_points', 'press_release'] as const;
+function rebuttalHref(brief: string, storyId: string, type: (typeof RESPONSE_TYPES)[number]): string {
+  const params = new URLSearchParams({ brief, type, respondTo: storyId });
   return `/content/new?${params.toString()}`;
 }
+
+const TRIAGE_TONE: Record<MonitoringResult['triageLevel'], BadgeTone | null> = {
+  attack: 'bad', opponent_statement: 'warn', relevant: null, noise: 'neutral',
+};
 
 export function MonitoringTable({ results, total }: { results: MonitoringResult[]; total?: number }) {
   const t = useTranslations('monitoring');
@@ -67,6 +73,8 @@ export function MonitoringTable({ results, total }: { results: MonitoringResult[
   const [opponent, setOpponent] = useState<string>(ALL_OPPONENTS);
   const [dismissing, setDismissing] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [priorityOnly, setPriorityOnly] = useState(false);
+  const [showNoise, setShowNoise] = useState(false);
 
   // The server list is the source of truth whenever the route re-renders
   // (manual add, navigation); optimistic edits live in between.
@@ -78,11 +86,17 @@ export function MonitoringTable({ results, total }: { results: MonitoringResult[
   );
   const trendingIds = useMemo(() => detectTrending(items), [items]);
 
-  const filtered = items.filter(r =>
+  const isPriority = (r: MonitoringResult) => r.triageLevel === 'attack' || r.triageLevel === 'opponent_statement';
+  const matching = items.filter(r =>
     (filter === 'all' || platformOf(r.source) === filter) &&
-    (opponent === ALL_OPPONENTS || r.opponent === opponent),
+    (opponent === ALL_OPPONENTS || r.opponent === opponent) &&
+    (!priorityOnly || isPriority(r)),
   );
-  const filtersActive = filter !== 'all' || opponent !== ALL_OPPONENTS;
+  // AI-triaged "noise" stays out of the way unless asked for.
+  const noiseCount = matching.filter(r => r.triageLevel === 'noise').length;
+  const filtered = showNoise ? matching : matching.filter(r => r.triageLevel !== 'noise');
+  const filtersActive = filter !== 'all' || opponent !== ALL_OPPONENTS || priorityOnly;
+  const clearFilters = () => { setFilter('all'); setOpponent(ALL_OPPONENTS); setPriorityOnly(false); };
 
   function toggleExpanded(id: string) {
     setExpanded(prev => {
@@ -153,6 +167,10 @@ export function MonitoringTable({ results, total }: { results: MonitoringResult[
           ))}
         </div>
         <div className="mon-toolbar-right">
+          <button type="button" className={`chip${priorityOnly ? ' on' : ''}`} aria-pressed={priorityOnly}
+            onClick={() => setPriorityOnly(v => !v)}>
+            {t('priorityOnly')}
+          </button>
           {opponents.length > 0 && (
             <Field label={t('opponentFilter')} className="mon-opponent-field">
               {(p) => (
@@ -169,13 +187,18 @@ export function MonitoringTable({ results, total }: { results: MonitoringResult[
       {total !== undefined && total > results.length && (
         <p className="subtle text-sm">{t('showingLatest', { shown: results.length, total })}</p>
       )}
+      {noiseCount > 0 && (
+        <button type="button" className="link text-sm mon-noise-toggle" aria-pressed={showNoise} onClick={() => setShowNoise(v => !v)}>
+          {showNoise ? t('hideNoise') : t('showNoise', { count: noiseCount })}
+        </button>
+      )}
 
       {filtered.length === 0 ? (
         <EmptyState
           icon="filter"
           title={t('empty.filteredTitle')}
           description={t('empty.filteredDescription')}
-          action={<button type="button" className="btn" onClick={() => { setFilter('all'); setOpponent(ALL_OPPONENTS); }}>{t('empty.clearFilters')}</button>}
+          action={<button type="button" className="btn" onClick={clearFilters}>{t('empty.clearFilters')}</button>}
         />
       ) : (
         <ul className="mon-list">
@@ -186,6 +209,9 @@ export function MonitoringTable({ results, total }: { results: MonitoringResult[
               <li key={result.id} className="card mon-card">
                 <div className="mon-card-head">
                   <div className="mon-card-meta">
+                    {TRIAGE_TONE[result.triageLevel] && (
+                      <Badge tone={TRIAGE_TONE[result.triageLevel]!} size="sm">{t(`triage.${result.triageLevel}`)}</Badge>
+                    )}
                     <span className="mon-source">{result.source}</span>
                     {result.opponent && <span className="subtle text-xs">{result.opponent}</span>}
                     <Badge tone="neutral" size="sm">{t(`category.${CATEGORY_KEY[result.category]}`)}</Badge>
@@ -197,6 +223,9 @@ export function MonitoringTable({ results, total }: { results: MonitoringResult[
                   </time>
                 </div>
 
+                {result.triageReason && result.triageLevel !== 'relevant' && (
+                  <p className="mon-why text-sm"><strong>{t('whyItMatters')}</strong> {result.triageReason}</p>
+                )}
                 <p className={`mon-excerpt${isExpanded ? '' : ' excerpt-clamp'}`}>{result.excerpt}</p>
                 {result.excerpt.length > 160 && (
                   <button type="button" className="mon-more link" aria-expanded={isExpanded} onClick={() => toggleExpanded(result.id)}>
@@ -205,10 +234,12 @@ export function MonitoringTable({ results, total }: { results: MonitoringResult[
                 )}
 
                 <div className="mon-card-actions">
-                  <Link href={rebuttalHref(brief)} className="btn btn-primary btn-sm">
+                  <Link href={rebuttalHref(brief, result.id, 'social_post')} className="btn btn-primary btn-sm">
                     <SparklesIcon size={14} />
                     {t('draftRebuttal')}
                   </Link>
+                  <Link href={rebuttalHref(brief, result.id, 'talking_points')} className="btn btn-sm">{t('respondAs.talking_points')}</Link>
+                  <Link href={rebuttalHref(brief, result.id, 'press_release')} className="btn btn-sm">{t('respondAs.press_release')}</Link>
                   {result.url && (
                     <a href={result.url} target="_blank" rel="noopener noreferrer" className="btn btn-sm">
                       {t('readArticle')}
@@ -229,7 +260,7 @@ export function MonitoringTable({ results, total }: { results: MonitoringResult[
 
       {filtersActive && filtered.length > 0 && items.length !== filtered.length && (
         <div className="mon-filter-note subtle text-xs">
-          <button type="button" className="link mon-clear" onClick={() => { setFilter('all'); setOpponent(ALL_OPPONENTS); }}>
+          <button type="button" className="link mon-clear" onClick={clearFilters}>
             {t('empty.clearFilters')}
           </button>
         </div>

@@ -617,3 +617,30 @@ describe('MockPhotoAvatarProvider', () => {
     expect(consentStatus).toBe('approved');
   });
 });
+
+describe('ClaudeContentGenerator.draft — rebuttal', () => {
+  const rebuttal = {
+    source: 'CNN', url: 'https://cnn.com/story', opponent: 'Donald J Trump', capturedAt: '2026-10-11T10:00:00Z',
+    excerpt: 'Trump says Ackerman voted to raise property taxes in 2024.', triageReason: 'Directly attacks our candidate.',
+  };
+  it('adds rebuttal rules to the system prompt and the full story, delimited, to the user message', async () => {
+    const { generator, create } = makeGenerator();
+    create.mockResolvedValue({ content: [{ type: 'text', text: 'Title: Setting the record straight\n\nBody.' }] });
+    await generator.draft({ instruction: 'Respond to this', type: 'social_post', locale: 'en', rebuttal });
+    const args = create.mock.calls[0][0] as { system: string; messages: { content: string }[] };
+    expect(args.system).toContain('REBUTTAL RULES');
+    expect(args.system).toMatch(/do not repeat the attack/i);
+    expect(args.system).toMatch(/unverified/i);
+    const user = args.messages[0].content;
+    expect(user).toContain('<story>');
+    expect(user).toContain('Trump says Ackerman voted to raise property taxes in 2024.');
+    expect(user).toContain('https://cnn.com/story');
+    expect(user).toContain('Donald J Trump');
+  });
+  it('does not add rebuttal rules to ordinary drafts', async () => {
+    const { generator, create } = makeGenerator();
+    create.mockResolvedValue({ content: [{ type: 'text', text: 'Title: T\n\nB' }] });
+    await generator.draft({ instruction: 'write something', type: 'social_post', locale: 'en' });
+    expect((create.mock.calls[0][0] as { system: string }).system).not.toContain('REBUTTAL RULES');
+  });
+});

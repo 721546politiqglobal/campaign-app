@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import type { RebuttalContext } from '@/lib/prompt';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { requireSession, signInAs, signOut } from '@/lib/session';
@@ -311,10 +312,25 @@ export async function createContentAction(_prev: CreateContentState | undefined,
 
 export type DraftResult = { ok: true; title: string; text: string; locale: Locale } | { ok: false; error: string };
 
-export async function generateDraftAction(instruction: string, type: string, locale?: string): Promise<DraftResult> {
+export async function generateDraftAction(instruction: string, type: string, locale?: string, respondToId?: string): Promise<DraftResult> {
   const s = await requireSession();
   const t = await getTranslations({ locale: s.locale, namespace: 'errors.actions' });
   const { getCandidateProfile } = await import('@/lib/candidate');
+
+  // "Draft rebuttal" from the monitoring feed: load the story server-side,
+  // scoped to the caller's campaign, so the AI gets the full text and link
+  // (not just the 200-character brief) and can't be pointed at another
+  // campaign's data.
+  let rebuttal: RebuttalContext | undefined;
+  if (respondToId) {
+    const { getMonitoringItemForCampaign } = await import('@/lib/data');
+    const story = await getMonitoringItemForCampaign(s.campaignId, respondToId);
+    if (!story) return { ok: false, error: t('storyNotFound') };
+    rebuttal = {
+      source: story.source, url: story.url, excerpt: story.excerpt,
+      opponent: story.opponent ?? null, capturedAt: story.capturedAt, triageReason: story.triageReason ?? null,
+    };
+  }
 
   const [campaign, profile] = await Promise.all([
     getCampaign(s.campaignId),
@@ -341,7 +357,7 @@ export async function generateDraftAction(instruction: string, type: string, loc
     const periodStart = contentPeriodStart(campaign.currentPeriodEnd);
     await quotaGate.checkAndIncrement(s.campaignId, 'content', periodStart, plan?.contentLimitMonthly ?? null);
     const out = await withQuotaRelease(s.campaignId, 'content', periodStart, () =>
-      contentGenerator.draft({ instruction, type, candidateProfile: profile ?? undefined, locale: resolvedLocale }));
+      contentGenerator.draft({ instruction, type, candidateProfile: profile ?? undefined, locale: resolvedLocale, rebuttal }));
     return { ok: true, title: out.title, text: out.text, locale: out.locale };
   } catch (e) {
     if (e instanceof QuotaExceeded || e instanceof BillingBlocked) return { ok: false, error: e.message };

@@ -23,7 +23,10 @@ const BRIEF_SUGGESTION_KEYS = [
 
 const INITIAL_STATE: CreateContentState = { ok: true };
 
-export function ContentEditor({ defaultLocale }: { defaultLocale: Locale }) {
+/** The monitored story a "Draft rebuttal" link is responding to (loaded server-side). */
+export type RespondToStory = { id: string; source: string; excerpt: string; url: string };
+
+export function ContentEditor({ defaultLocale, respondTo }: { defaultLocale: Locale; respondTo?: RespondToStory }) {
   const t = useTranslations('content');
   const tc = useTranslations('common');
   const confirm = useConfirm();
@@ -62,7 +65,7 @@ export function ContentEditor({ defaultLocale }: { defaultLocale: Locale }) {
     }
     setBusy(true); setError('');
     try {
-      const out = await generateDraftAction(instruction, type, locale);
+      const out = await generateDraftAction(instruction, type, locale, respondTo?.id);
       // Quota/billing refusals come back as { ok: false, error } and carry the
       // real reason (which limit, and what to do about it) — show it verbatim
       // rather than guessing on the user's behalf.
@@ -88,6 +91,16 @@ export function ContentEditor({ defaultLocale }: { defaultLocale: Locale }) {
 
       <section className="card" aria-labelledby={`${id}-brief`}>
         <h2 id={`${id}-brief`}>{t('editor.brief')}</h2>
+
+        {respondTo && (
+          <aside className="editor-respond" aria-label={t('editor.respondingTo', { source: respondTo.source })}>
+            <p className="editor-respond-label text-sm">{t('editor.respondingTo', { source: respondTo.source })}</p>
+            <p className="editor-respond-excerpt text-sm excerpt-clamp">{respondTo.excerpt}</p>
+            {respondTo.url && (
+              <a href={respondTo.url} target="_blank" rel="noopener noreferrer" className="link text-sm">{t('editor.viewStory')}</a>
+            )}
+          </aside>
+        )}
 
         <fieldset className="field editor-types">
           <legend className="field-label">{t('editor.typeLabel')}</legend>
